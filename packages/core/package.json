@@ -1,5 +1,5 @@
 {
-  "dependencies": { "@clack/prompts": "1.0.0", "banditypes": "0.3.0", "fastest-levenshtein": "1.0.16", "mri": "1.2.0" },
+  "dependencies": { "@clack/prompts": "1.1.0", "banditypes": "0.3.0", "fastest-levenshtein": "1.0.16", "mri": "1.2.0" },
   "devDependencies": { "@r5n/tools": "workspace:*" },
   "license": "Apache-2.0",
   "main": "./index.ts",
