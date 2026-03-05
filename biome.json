@@ -1,0 +1,12 @@
+{
+  "extends": ["./tools/biome.json"],
+  "files": {
+    "includes": [
+      "**/*.{ts,tsx,js,jsx,json}",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "tools/**/*.{ts,tsx,js,jsx,json}"
+    ]
+  }
+}

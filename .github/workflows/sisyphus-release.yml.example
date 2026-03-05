@@ -1,0 +1,80 @@
+name: Release with Sisyphus
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Release mode'
+        required: true
+        default: 'version'
+        type: choice
+        options:
+          - version  # Create stones from commits
+          - roll     # Roll existing stones
+          - solo     # Version and roll in one step
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup NPM auth
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      # Version mode - create stones from commits
+      - name: Create version stones
+        if: github.event.inputs.mode == 'version' || (github.event_name == 'push' && github.event.inputs.mode == '')
+        run: |
+          bunx @r5n/sisyphus version --from-commits --yes
+
+          # Commit stones if created
+          if [ -n "$(git status --porcelain .sisyphus/)" ]; then
+            git add .sisyphus/
+            git commit -m "chore: add version stones [skip ci]"
+            git push
+          fi
+
+      # Roll mode - release existing stones
+      - name: Roll stones
+        if: github.event.inputs.mode == 'roll'
+        run: bunx @r5n/sisyphus roll
+
+      # Solo mode - version and roll immediately
+      - name: Solo release
+        if: github.event.inputs.mode == 'solo'
+        run: bunx @r5n/sisyphus solo
+
+      # Create GitHub releases
+      - name: Create GitHub releases
+        if: github.event.inputs.mode == 'roll' || github.event.inputs.mode == 'solo'
+        run: |
+          # Parse git tags created by sisyphus
+          for tag in $(git tag --points-at HEAD); do
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "Released by Sisyphus 🪨" \
+              --target "$GITHUB_SHA"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

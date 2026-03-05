@@ -1,0 +1,39 @@
+name: Setup Monorepo
+description: Prepare and install everything for the monorepo
+inputs:
+  bun:
+    description: Bun setup via oven-sh/setup-bun
+    required: false
+    default: "true"
+  install-retry:
+    description: Install dependencies with retry
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: 🌭 Setup bun
+      if: inputs.bun == 'true'
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: 📦 Install dependencies
+      if: inputs.install-retry == 'true'
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 1
+        retry_on: error
+        command: bun install --frozen-lockfile
+        new_command_on_retry: |
+          git checkout .
+          rm -rf bun.lock
+          bun clean
+
+    - name: 📦 Install dependencies
+      if: inputs.install-retry == 'false'
+      shell: bash
+      run: bun install --frozen-lockfile

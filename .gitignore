@@ -1,0 +1,13 @@
+.DS_Store
+node_modules
+dist/
+gh-runners
+
+.claude
+CLAUDE.md
+
+# Bun cache
+.bun/
+var/
+
+.vscode/launch.json

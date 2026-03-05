@@ -1,0 +1,4 @@
+{
+  "extends": ["@r5n/tools/typescript/base.json"],
+  "include": ["@r5n/tools/typescript/typings.d.ts", "src", "__tests__", "build.ts"]
+}

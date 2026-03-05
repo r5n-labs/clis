@@ -1,0 +1,23 @@
+{
+  "bin": { "sisyphus": "./dist/cli.js" },
+  "description": "Sisyphus CLI - A tool for versioning and publishing packages",
+  "devDependencies": { "@clack/prompts": "1.0.0", "@r5n/cli-core": "workspace:*", "@r5n/tools": "workspace:*" },
+  "files": ["dist", "schema.json", "LICENSE"],
+  "license": "Apache-2.0",
+  "main": "dist/cli.js",
+  "name": "@r5n/sisyphus",
+  "repository": { "type": "git", "url": "git+https://github.com/r5n-labs/clis.git" },
+  "scripts": {
+    "build": "rm -rf dist && bun build.ts",
+    "clean": "rm -rf dist node_modules",
+    "dev": "bun --bun src/cli.ts",
+    "package:dryRun": "bun run package:prepare && bun publish --dry-run --no-git-checks --access public --force && bun install",
+    "package:prepare": "NODE_ENV=production bun run build && bun ../../tools/scripts/prepare-publish.ts .",
+    "package:publish": "bun run package:prepare && bun publish --access public --no-git-checks && bun install",
+    "type-check": "bun --bun tsc --noEmit",
+    "type-check:go": "tsgo"
+  },
+  "type": "module",
+  "types": "src/cli.ts",
+  "version": "0.0.1"
+}

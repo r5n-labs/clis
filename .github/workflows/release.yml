@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release(🎉):')"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure and checkout submodules
+        run: |
+          # Convert SSH URLs to HTTPS for GitHub Actions
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - uses: ./tools/github/setup
+        with:
+          bun: true
+
+      - name: Build
+        run: bun run build
+
+      - name: Check for pending stones
+        id: check-stones
+        run: |
+          # Run Sisyphus check and capture output
+          STONES_JSON=$(bun --bun packages/sisyphus/src/cli.ts check --json 2>&1 || echo '{"error": true, "stones": []}')
+
+          # Check if we got valid JSON
+          if ! echo "$STONES_JSON" | jq . >/dev/null 2>&1; then
+            echo "ERROR: Invalid JSON output from Sisyphus check"
+            echo "Raw output: $CHECK_OUTPUT"
+            exit 1
+          fi
+
+          STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length // 0')
+
+          if [[ $STONES_JSON == *'"error": true'* ]]; then
+            echo "WARNING: Error occurred while checking stones. Running with debug output:"
+            bun --bun packages/sisyphus/src/cli.ts check --debug
+            exit 1
+          fi
+
+          echo "Found $STONES_COUNT pending stones"
+          echo "STONES_COUNT=$STONES_COUNT" >> $GITHUB_ENV
+
+      - name: Roll release
+        if: env.STONES_COUNT != '0'
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          bun release:roll
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: production
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+

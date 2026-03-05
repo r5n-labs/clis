@@ -1,0 +1,53 @@
+{
+  "$comment": "Add this to your hydra.json: \"$schema\": \"https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/hydra/schema.json\"",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "directory": {
+          "default": "./gh-runners",
+          "description": "Directory where runners will be created",
+          "type": "string"
+        },
+        "labels": { "description": "Comma-separated list of labels for the runners", "type": "string" },
+        "name": { "default": "runner", "description": "Base name for the runners", "type": "string" },
+        "numberOfMachines": {
+          "default": 1,
+          "description": "Number of runner machines to create",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "os": {
+          "default": "osx",
+          "description": "Operating system for the runners",
+          "enum": ["osx", "linux", "windows"],
+          "type": "string"
+        },
+        "overwrite": { "default": false, "description": "Whether to overwrite existing runners", "type": "boolean" },
+        "run": {
+          "default": false,
+          "description": "Whether to start runners immediately after creation",
+          "type": "boolean"
+        },
+        "runnerGroup": { "description": "Runner group to assign runners to", "type": "string" },
+        "url": { "description": "GitHub repository or organization URL", "format": "uri", "type": "string" }
+      },
+      "type": "object"
+    }
+  },
+  "description": "Configuration for Hydra GitHub self-hosted runner manager",
+  "properties": {
+    "$schema": { "description": "JSON Schema reference for IDE support", "type": "string" },
+    "defaultProfile": { "description": "The default profile to use when no profile is specified", "type": "string" },
+    "profiles": {
+      "additionalProperties": { "$ref": "#/definitions/profile" },
+      "description": "Named profiles for different runner configurations",
+      "type": "object"
+    }
+  },
+  "required": ["profiles"],
+  "title": "Hydra Configuration",
+  "type": "object"
+}

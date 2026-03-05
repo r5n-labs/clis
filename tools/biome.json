@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/biomejs/biome/refs/heads/main/packages/%40biomejs/biome/configuration_schema.json",
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on",
+        "useSortedAttributes": "on",
+        "useSortedKeys": "on",
+        "useSortedProperties": "on"
+      }
+    },
+    "enabled": true
+  },
+  "css": { "formatter": { "enabled": true }, "linter": { "enabled": true } },
+  "files": {
+    "includes": [
+      "**/*.{ts,tsx,js,jsx,json,css,html}",
+      "!**/d.ts",
+      "!**/node_modules",
+      "!**/build",
+      "!**/dist",
+      "!**/.expo"
+    ]
+  },
+  "formatter": {
+    "attributePosition": "auto",
+    "bracketSameLine": true,
+    "bracketSpacing": true,
+    "enabled": true,
+    "expand": "never",
+    "formatWithErrors": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 120
+  },
+  "html": { "formatter": { "enabled": true } },
+  "javascript": {
+    "formatter": { "semicolons": "always" },
+    "globals": ["React", "Bun", "Todo", "NotWorth"],
+    "parser": { "unsafeParameterDecoratorsEnabled": true }
+  },
+  "json": {
+    "assist": { "enabled": true },
+    "formatter": { "enabled": true, "expand": "never", "indentStyle": "space", "indentWidth": 2 }
+  },
+  "linter": {
+    "domains": { "react": "all", "test": "all" },
+    "enabled": true,
+    "rules": {
+      "complexity": { "noStaticOnlyClass": "off" },
+      "correctness": {
+        "noUndeclaredDependencies": "off",
+        "noUnusedImports": { "fix": "safe", "level": "error" },
+        "useImportExtensions": "off"
+      },
+      "nursery": {
+        "noFloatingPromises": "on",
+        "noImportCycles": "on",
+        "useExplicitType": "off",
+        "useSortedClasses": { "fix": "safe", "level": "warn", "options": {} }
+      },
+      "performance": { "noBarrelFile": "off" },
+      "recommended": true,
+      "style": {
+        "noDefaultExport": "off",
+        "noImplicitBoolean": "off",
+        "noInferrableTypes": "error",
+        "noParameterAssign": "error",
+        "noUnusedTemplateLiteral": "error",
+        "noUselessElse": "error",
+        "useAsConstAssertion": "error",
+        "useBlockStatements": "off",
+        "useDefaultParameterLast": "error",
+        "useEnumInitializers": "error",
+        "useFilenamingConvention": "off",
+        "useNamingConvention": "off",
+        "useNumberNamespace": "error",
+        "useSelfClosingElements": "error",
+        "useSingleVarDeclarator": "error"
+      },
+      "suspicious": { "noExplicitAny": "off", "noReactSpecificProps": "off" }
+    }
+  },
+  "root": false
+}
