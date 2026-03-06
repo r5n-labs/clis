@@ -60,8 +60,12 @@ export class Commit {
   }
 
   static async since(commitHash?: string): Promise<Commit[]> {
-    const range = commitHash ? `${commitHash}..HEAD` : "HEAD";
-    return Commit.fetchFromRange(range);
+    if (commitHash) {
+      const commits = await Commit.tryFetchFromRange(`${commitHash}..HEAD`);
+      if (commits) return commits;
+    }
+
+    return Commit.fetchFromRange("HEAD");
   }
 
   static async inRange(base: string, head: string): Promise<Commit[]> {

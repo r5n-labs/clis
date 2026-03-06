@@ -41,7 +41,8 @@ export class PrCommand extends BaseCommand {
       throw new Exit("No packages selected");
     }
 
-    const message = ctx.args.message ?? result.pr.title;
+    const prLink = `[#${result.pr.number}](${result.pr.url})`;
+    const message = ctx.args.message ?? `${result.pr.title} (${prLink})`;
     const description = result.pr.body || undefined;
 
     const stoneData = this.buildStoneData({ bump: bumpType, commits: result.commits, description, message, packages });

@@ -2,6 +2,8 @@ import type { SisyphusConfig } from "./types";
 
 export const CLI_BIN = "sis";
 
+export const BULLET_POINT = "🪨";
+
 export const DEFAULT_CONFIG_DIR = ".sisyphus";
 export const DEFAULT_STONES_DIR = "stones";
 
