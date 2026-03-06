@@ -8,6 +8,7 @@ const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
   dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
   github: { alias: "g", description: "Create GitHub releases", type: "boolean" },
+  noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
   tags: { alias: "t", description: "Create git tags", type: "boolean" },
@@ -16,7 +17,15 @@ const rollArgs = args({
 
 type RollCtx = Ctx<typeof rollArgs>;
 
-type RollOptions = { changelog: boolean; dryRun: boolean; github: boolean; npm: boolean; push: boolean; tags: boolean };
+type RollOptions = {
+  changelog: boolean;
+  commit: boolean;
+  dryRun: boolean;
+  github: boolean;
+  npm: boolean;
+  push: boolean;
+  tags: boolean;
+};
 
 export class RollCommand extends BaseCommand {
   name = "roll";
@@ -63,6 +72,7 @@ export class RollCommand extends BaseCommand {
 
     return {
       changelog: ctx.args.changelog ?? changelog.generate,
+      commit: !ctx.args.noCommit,
       dryRun: ctx.args.dryRun,
       github: ctx.args.github ?? release.github,
       npm: ctx.args.npm ?? release.npm,
@@ -144,9 +154,11 @@ export class RollCommand extends BaseCommand {
         s.stop("Changelogs generated");
       }
 
-      s.start("Creating release commit...");
-      await orchestrator.createCommit(stone, packages);
-      s.stop("Release commit created");
+      if (options.commit) {
+        s.start("Creating release commit...");
+        await orchestrator.createCommit(stone, packages);
+        s.stop("Release commit created");
+      }
 
       if (options.tags) {
         s.start("Creating git tags...");
