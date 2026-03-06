@@ -30,6 +30,8 @@ export class PullRequestAnalyzer {
   constructor(private config: ConfigManager<SisyphusConfig>) {}
 
   async analyze(url?: string): Promise<PrAnalysisResult> {
+    await this.ensureGhAvailable();
+
     const pr = url ? await this.fetchFromUrl(url) : await this.fetchFromCurrentBranch();
 
     const parsedCommits = await Commit.inRange(pr.baseBranch, pr.branch);
@@ -141,5 +143,19 @@ export class PullRequestAnalyzer {
     }
 
     return null;
+  }
+
+  private async ensureGhAvailable(): Promise<void> {
+    try {
+      await Bun.$`which gh`.quiet();
+    } catch {
+      throw new Exit("GitHub CLI (gh) is not installed", "Install from https://cli.github.com and run: gh auth login");
+    }
+
+    try {
+      await Bun.$`gh auth status`.quiet();
+    } catch {
+      throw new Exit("GitHub CLI (gh) is not authenticated", "Run: gh auth login");
+    }
   }
 }
