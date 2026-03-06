@@ -163,14 +163,30 @@ export class ChangelogGenerator {
   }
 
   private formatStoneContent(stone: Stone, packageFilter?: string): string {
-    if (stone.description) return stone.description;
+    const parts: string[] = [];
+
+    if (stone.description) {
+      parts.push(this.formatDescription(stone.description));
+    }
 
     const commits =
       packageFilter && stone.commits
         ? this.filterCommitsForPackage(stone.commits, packageFilter)
         : (stone.commits ?? []);
 
-    return commits.length > 0 ? this.formatCommits(commits) : "";
+    if (commits.length > 0) {
+      parts.push(this.formatCommits(commits));
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private formatDescription(description: string): string {
+    const indented = description
+      .split("\n")
+      .map((l) => `  ${l}`)
+      .join("\n");
+    return `<details>\n<summary>Description</summary>\n\n${indented}\n</details>`;
   }
 
   private getDate(): string {

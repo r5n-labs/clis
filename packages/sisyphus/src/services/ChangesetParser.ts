@@ -1,7 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { StoneData } from "../domain";
-import { nonEmpty } from "../utils";
+import { nonEmpty, type StoneData } from "../domain";
 
 const CHANGESET_DIR = ".changeset";
 const CONFIG_FILE = "config.json";

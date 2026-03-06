@@ -1,6 +1,14 @@
 import { AbstractCLI, ConfigManager } from "@r5n/cli-core";
 import { version } from "../package.json";
-import { CheckCommand, InitCommand, MigrateCommand, RollCommand, StoneCommand, VersionCommand } from "./commands";
+import {
+  CheckCommand,
+  InitCommand,
+  MigrateCommand,
+  PrCommand,
+  RollCommand,
+  StoneCommand,
+  VersionCommand,
+} from "./commands";
 import { CLI_BIN, DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE, SISYPHUS_DEFAULT_CONFIG } from "./constants";
 import type { SisyphusConfig } from "./types";
 
@@ -22,6 +30,7 @@ class SisyphusCLI extends AbstractCLI {
       new CheckCommand(),
       new InitCommand(),
       new MigrateCommand(),
+      new PrCommand(),
       new RollCommand(),
       new StoneCommand(),
       new VersionCommand(),

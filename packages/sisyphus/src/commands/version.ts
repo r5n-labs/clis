@@ -1,10 +1,8 @@
 import { args, color, confirm, Exit, log, multiselect, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
-import type { Package, StoneData } from "../domain";
-import { BUMP_COLORS, BumpType } from "../domain";
+import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
 import { CommitAnalyzer, type CommitGroup, StoneManager, WorkspaceScanner } from "../services";
-import { nonEmpty } from "../utils";
 
 // biome-ignore assist/source/useSortedKeys: message must come first
 const versionPositionals = positionals({

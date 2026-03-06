@@ -43,6 +43,19 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   plugins: [],
 
+  pr: {
+    labelMapping: {
+      breaking: "major",
+      "breaking-change": "major",
+      bug: "patch",
+      chore: "patch",
+      docs: "patch",
+      enhancement: "minor",
+      feature: "minor",
+      fix: "patch",
+    },
+  },
+
   release: { github: false, npm: false, push: false, tags: false },
 
   scripts: { post: {}, pre: {} },
