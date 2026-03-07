@@ -189,11 +189,16 @@ export class ChangelogGenerator {
   }
 
   private formatDescription(description: string): string {
-    const indented = description
+    const normalized = this.convertHeadersToBold(description);
+    const indented = normalized
       .split("\n")
       .map((l) => `  ${l}`)
       .join("\n");
     return `<details>\n<summary>Description</summary>\n\n${indented}\n</details>`;
+  }
+
+  private convertHeadersToBold(text: string): string {
+    return text.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
   }
 
   private getDate(): string {
