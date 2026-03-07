@@ -2,7 +2,7 @@ import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_ORDER, type Package, Stone } from "../domain";
-import { ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
+import { ChangelogGenerator, ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
 
 const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
@@ -10,6 +10,7 @@ const rollArgs = args({
   github: { alias: "g", description: "Create GitHub releases", type: "boolean" },
   noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
+  preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
   tags: { alias: "t", description: "Create git tags", type: "boolean" },
   yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
@@ -51,6 +52,11 @@ export class RollCommand extends BaseCommand {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
     }
 
+    if (ctx.args.preview) {
+      await this.previewChangelogs(ctx, stones, updatedPackages);
+      return;
+    }
+
     this.printPreview(mergedStone, updatedPackages, options);
 
     if (!options.dryRun && !ctx.args.yes && ctx.interactive) {
@@ -64,6 +70,34 @@ export class RollCommand extends BaseCommand {
     }
 
     await this.executeRelease(ctx, mergedStone, updatedPackages, stones, options);
+  }
+
+  private async previewChangelogs(ctx: RollCtx, stones: Stone[], packages: Package[]) {
+    const changelogConfig = ctx.config.get("changelog");
+    const generator = new ChangelogGenerator(changelogConfig);
+
+    const s = spinner();
+    s.start("Generating changelog preview...");
+    await generator.generate(stones, packages);
+    s.stop("Changelog preview generated");
+
+    const fileList = packages.map((pkg) => color.dim(`  ${pkg.name}/CHANGELOG.md`)).join("\n");
+    log.info(`\nPreview files created:\n${fileList}`);
+
+    if (changelogConfig.root) {
+      log.info(color.dim("  CHANGELOG.md (root)"));
+    }
+
+    log.info("");
+
+    const shouldDelete = await confirm({ initialValue: true, message: "Delete preview files?" });
+
+    if (shouldDelete) {
+      await generator.rollback();
+      log.info(color.dim("Preview files deleted"));
+    } else {
+      log.info(color.yellow("Preview files kept - remember to clean up manually"));
+    }
   }
 
   private resolveOptions(ctx: RollCtx): RollOptions {
