@@ -157,10 +157,19 @@ export class ChangelogGenerator {
 
     for (const stone of stones) {
       lines.push("", `### ${BULLET_POINT} ${stone.message}`);
+      lines.push(this.formatStonePackages(stone));
       lines.push("", this.formatStoneContent(stone));
     }
 
     return lines.join("\n");
+  }
+
+  private formatStonePackages(stone: Stone): string {
+    const direct = [...stone.major, ...stone.minor, ...stone.patch];
+    if (direct.length === 0) return "";
+
+    const formatted = direct.map((p) => `\`${p}\``).join(" · ");
+    return `**Packages:** ${formatted}`;
   }
 
   private formatStoneContent(stone: Stone, packageFilter?: string): string {
