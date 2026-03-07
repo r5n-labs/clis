@@ -90,13 +90,13 @@ export class RollCommand extends BaseCommand {
 
     log.info("");
 
-    const shouldDelete = await confirm({ initialValue: true, message: "Delete preview files?" });
+    const shouldRevert = await confirm({ initialValue: true, message: "Revert changes?" });
 
-    if (shouldDelete) {
+    if (shouldRevert) {
       await generator.rollback();
-      log.info(color.dim("Preview files deleted"));
+      log.info(color.dim("Changes reverted"));
     } else {
-      log.info(color.yellow("Preview files kept - remember to clean up manually"));
+      log.info(color.yellow("Changes kept"));
     }
   }
 
