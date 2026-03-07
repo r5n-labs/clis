@@ -37,8 +37,6 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commit: { author: "r5n-bot", message: "release(🎉): <packageName@version>" },
 
-  configPath: DEFAULT_CONFIG_DIR,
-
   ignore: [],
 
   lastStone: { commit: "", date: "" },
@@ -63,6 +61,8 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
   scripts: { post: {}, pre: {} },
 
   single: false,
+
+  sisyphusDir: DEFAULT_CONFIG_DIR,
 
   stones: [],
 

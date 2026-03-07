@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/cli/sisyphus/schema.json",
   "changelog": { "append": true, "filename": "CHANGELOG.md", "generate": true, "root": true },
   "commit": { "author": "Sisyphus", "email": "contact@r5n.dev", "message": "release(🎉): {message}" },
-  "configPath": ".sisyphus",
+  "sisyphusDir": ".sisyphus",
   "ignore": [],
   "lastStone": { "commit": "c616a4bef9675440bb6c53f91d85e46d8502ebf2", "date": "2025-10-13T19:06:22" },
   "plugins": [],

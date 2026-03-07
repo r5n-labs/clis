@@ -11,7 +11,7 @@ export class StoneManager {
 
   private get stonesPath(): string {
     const cfg = this.config.getAll();
-    return cfg.stonesPath || join(cfg.configPath || DEFAULT_CONFIG_DIR, DEFAULT_STONES_DIR);
+    return cfg.stonesPath || join(cfg.sisyphusDir || DEFAULT_CONFIG_DIR, DEFAULT_STONES_DIR);
   }
 
   async list(): Promise<Stone[]> {

@@ -39,7 +39,7 @@ export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
-  configPath: string;
+  sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;
   plugins: string[];
