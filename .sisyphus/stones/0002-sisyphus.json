@@ -1,6 +1,0 @@
-{
-  "description": "Complete rewrite from function-based commands to class-based OOP with domain-driven design.\n\nKey changes:\n- Commands: standalone functions → classes extending BaseCommand with typed context\n- Domain: plain types → immutable objects (Package, Stone, Commit) with static factories and withX() transformers\n- Storage: markdown table stones → JSON files\n- Services: scattered helpers → clear service classes (WorkspaceScanner, StoneManager, ChangelogGenerator, etc.)",
-  "id": "0002-sisyphus",
-  "message": "Rewrite to class-based architecture with immutable domain model",
-  "minor": ["@r5n/sisyphus"]
-}

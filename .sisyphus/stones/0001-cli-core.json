@@ -1,7 +1,0 @@
-{
-  "dependency": ["@r5n/sisyphus"],
-  "description": "Transformed from a utility library (colors, git helpers, error handling, fuzzy matching) into a full CLI framework.\n\nNew abstractions:\n- AbstractCLI: command routing, dual-mode (direct + interactive), global args, error boundaries\n- AbstractCommand: typed args/positionals with inference, subcommand composition, lifecycle hooks\n- ConfigManager: typed JSON persistence with deep merge\n- Exit/Cancel error classes with built-in handling\n\nCLIs now extend the framework instead of wiring up their own dispatch.",
-  "id": "0001-cli-core",
-  "message": "Rewrite from utility library to class-based CLI framework",
-  "minor": ["@r5n/cli-core"]
-}
