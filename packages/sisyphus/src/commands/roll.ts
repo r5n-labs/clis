@@ -188,6 +188,8 @@ export class RollCommand extends BaseCommand {
         s.stop("Changelogs generated");
       }
 
+      await this.cleanup(ctx, originalStones);
+
       if (options.commit) {
         s.start("Creating release commit...");
         await orchestrator.createCommit(stone, packages);
@@ -218,8 +220,6 @@ export class RollCommand extends BaseCommand {
         s.stop("GitHub release created");
       }
 
-      await this.cleanup(ctx, originalStones);
-
       note(
         `Released ${color.bold(String(packages.length))} package(s)\n` +
           `Run ${color.green(`${CLI_BIN} check`)} to verify`,
@@ -228,6 +228,7 @@ export class RollCommand extends BaseCommand {
     } catch (error) {
       s.stop("Release failed, rolling back...");
       await orchestrator.rollback();
+      await this.restoreStones(ctx, originalStones);
       throw error;
     }
   }
@@ -240,6 +241,14 @@ export class RollCommand extends BaseCommand {
     }
 
     ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
+  }
+
+  private async restoreStones(ctx: RollCtx, stones: Stone[]) {
+    const manager = new StoneManager(ctx.config);
+
+    for (const stone of stones) {
+      await manager.save(stone);
+    }
   }
 
   private async getCurrentCommit(): Promise<string> {

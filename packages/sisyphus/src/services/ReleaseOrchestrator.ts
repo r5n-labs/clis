@@ -58,10 +58,11 @@ export class ReleaseOrchestrator {
 
     const files = packages.map((pkg) => pkg.file);
     const changelogFiles = this.getChangelogFiles(packages);
-    const allFiles = [...files, ...changelogFiles];
+    const sisyphusDir = this.config.get("sisyphusDir");
+    const allFiles = [...files, ...changelogFiles, sisyphusDir];
 
     const message = this.formatCommitMessage(stone, packages);
-    await this.run(() => Bun.$`git add -- ${allFiles}`.quiet(), "Failed to stage files");
+    await this.run(() => Bun.$`git add -A -- ${allFiles}`.quiet(), "Failed to stage files");
     await this.run(() => Bun.$`git commit -m ${message}`.quiet(), "Failed to create commit");
     this.commitCreated = true;
   }
