@@ -21,16 +21,9 @@
       "test": "Tests"
     }
   },
-  "commit": {
-    "author": "Sisyphus",
-    "message": "release(🎉): {message}",
-    "email": "contact@r5n.dev"
-  },
+  "commit": { "author": "Sisyphus", "email": "contact@r5n.dev", "message": "release(🎉): {message}" },
   "ignore": [],
-  "lastStone": {
-    "commit": "98273fb2f87b0095a93d9b863d6332bb5a1f8cb1",
-    "date": "2026-03-07T01:37:47.284Z"
-  },
+  "lastStone": { "commit": "98273fb2f87b0095a93d9b863d6332bb5a1f8cb1", "date": "2026-03-07T01:37:47.284Z" },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -44,17 +37,8 @@
       "fix": "patch"
     }
   },
-  "release": {
-    "github": true,
-    "npm": true,
-    "push": false,
-    "tags": true,
-    "commitAndPush": true
-  },
-  "scripts": {
-    "post": {},
-    "pre": {}
-  },
+  "release": { "commitAndPush": true, "github": true, "npm": true, "push": false, "tags": true },
+  "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
   "stones": [],
