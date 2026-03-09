@@ -148,8 +148,14 @@ export class ReleaseOrchestrator {
   }
 
   private formatCommitMessage(stone: Stone, packages: Package[]): string {
+    const template = this.config.get("commit").message;
     const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion}`).join("\n");
-    return `chore(release): ${stone.message}\n\n${packageList}`;
+
+    const subject = template
+      .replace("{message}", stone.message)
+      .replace("{packages}", packages.map((p) => p.name).join(", "));
+
+    return `${subject}\n\n${packageList}`;
   }
 
   private async hasStagedChanges(): Promise<boolean> {
