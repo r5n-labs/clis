@@ -1,8 +1,9 @@
 import { dirname, join } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
-import type { Package, Stone } from "../domain";
+import type { CommitInfo, Package, Stone } from "../domain";
 import type { SisyphusConfig } from "../types";
 import { ChangelogGenerator } from "./ChangelogGenerator";
+import { GitRemoteParser } from "./GitRemoteParser";
 import { PackageUpdater } from "./PackageUpdater";
 
 export type ReleaseOptions = {
@@ -17,9 +18,13 @@ export type ReleaseOptions = {
 export class ReleaseOrchestrator {
   private packageUpdater = new PackageUpdater();
   private changelogGenerator: ChangelogGenerator;
+  private remoteParser = new GitRemoteParser();
+  private commitUrlFn: ((hash: string) => string) | null = null;
   private options: ReleaseOptions;
   private createdTags: string[] = [];
+  private createdReleases: string[] = [];
   private commitCreated = false;
+  private pushedToRemote = false;
 
   constructor(
     private config: ConfigManager<SisyphusConfig>,
@@ -27,6 +32,12 @@ export class ReleaseOrchestrator {
   ) {
     this.options = options;
     this.changelogGenerator = new ChangelogGenerator(this.config.get("changelog"));
+  }
+
+  private async initCommitLinks() {
+    if (this.commitUrlFn !== null) return;
+    const remoteInfo = await this.remoteParser.getRemoteInfo();
+    this.commitUrlFn = remoteInfo?.commitUrl ?? null;
   }
 
   async preflight(packages: Package[]) {
@@ -107,14 +118,88 @@ export class ReleaseOrchestrator {
     if (this.createdTags.length > 0) {
       await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
     }
+
+    this.pushedToRemote = true;
   }
 
-  async createGithubRelease(_stone: Stone, _packages: Package[]) {
+  async createGithubRelease(stone: Stone, packages: Package[]) {
     if (this.options.dryRun) return;
-    // TODO: Implement GitHub release creation
+
+    await this.initCommitLinks();
+
+    for (const pkg of packages) {
+      if (!pkg.newVersion) continue;
+
+      const tagName = `${pkg.name}@${pkg.newVersion}`;
+      const title = `${pkg.name} v${pkg.newVersion}`;
+      const notes = this.formatReleaseNotes(stone, pkg);
+
+      await this.run(
+        () => Bun.$`gh release create ${tagName} --title ${title} --notes ${notes}`.quiet(),
+        `Failed to create GitHub release for ${tagName}`,
+      );
+      this.createdReleases.push(tagName);
+    }
+  }
+
+  private formatReleaseNotes(stone: Stone, pkg: Package): string {
+    const lines: string[] = [];
+
+    lines.push(`## ${stone.message}`);
+    lines.push("");
+
+    if (stone.description) {
+      lines.push(stone.description);
+      lines.push("");
+    }
+
+    lines.push(`**Package:** \`${pkg.name}\``);
+    lines.push(`**Version:** ${pkg.version} → ${pkg.newVersion}`);
+
+    const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
+    if (commits.length > 0) {
+      lines.push("");
+      lines.push("<details>");
+      lines.push(`<summary>Commits (${commits.length})</summary>`);
+      lines.push("");
+      for (const commit of commits) {
+        lines.push(this.formatCommitLine(commit));
+      }
+      lines.push("");
+      lines.push("</details>");
+    }
+
+    return lines.join("\n");
+  }
+
+  private filterCommitsForPackage(commits: readonly CommitInfo[] | undefined, packageName: string): CommitInfo[] {
+    if (!commits) return [];
+    return commits.filter((c) => c.packages.includes(packageName));
+  }
+
+  private formatCommitLine(commit: CommitInfo): string {
+    const hashDisplay = this.commitUrlFn
+      ? `[\`${commit.hash}\`](${this.commitUrlFn(commit.hash)})`
+      : `\`${commit.hash}\``;
+    return `- ${hashDisplay} ${commit.subject}`;
   }
 
   async rollback() {
+    for (const release of this.createdReleases) {
+      try {
+        await Bun.$`gh release delete ${release} --yes`.quiet();
+      } catch {}
+    }
+    this.createdReleases = [];
+
+    if (this.pushedToRemote) {
+      for (const tag of this.createdTags) {
+        try {
+          await Bun.$`git push origin --delete ${tag}`.quiet();
+        } catch {}
+      }
+    }
+
     for (const tag of this.createdTags) {
       try {
         await Bun.$`git tag -d ${tag}`.quiet();

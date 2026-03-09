@@ -54,7 +54,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     },
   },
 
-  commit: { author: "r5n-bot", message: "release(🎉): <packageName@version>" },
+  commit: { author: "r5n-bot", message: "chore(release): {message}" },
 
   ignore: [],
 
