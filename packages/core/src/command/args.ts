@@ -1,8 +1,10 @@
-export type ArgType = "string" | "boolean";
+export type ArgType = "string" | "boolean" | "number";
 
-export type ArgDefinition = { type: ArgType; alias?: string; default?: string | boolean; description?: string };
+export type ArgValue = string | boolean | number;
 
-type ArgTypeMap = { string: string; boolean: boolean };
+export type ArgDefinition = { type: ArgType; alias?: string; default?: ArgValue; description?: string };
+
+type ArgTypeMap = { string: string; boolean: boolean; number: number };
 
 export type InferArgs<T extends Record<string, ArgDefinition>> = {
   [K in keyof T]: ArgTypeMap[T[K]["type"]];

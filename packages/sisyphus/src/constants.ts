@@ -30,7 +30,7 @@ export const DEFAULT_CONFIG_FILE = "config.json";
 export const DEFAULT_CHANGELOG_FILE = "CHANGELOG.md";
 
 export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
-  $schema: "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/cli/sisyphus/schema.json",
+  $schema: "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/sisyphus/schema.json",
 
   changelog: {
     append: true,

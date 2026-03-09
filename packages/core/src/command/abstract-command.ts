@@ -12,7 +12,6 @@ export type Command<
   execute: (
     ctx: CommandContext<TConfig, Record<string, string | string[] | undefined>, InferArgs<TArgDefs>>,
   ) => Promise<void>;
-  promptForArgs?: () => Promise<Record<string, string | boolean>>;
 };
 
 export abstract class AbstractCommand<TConfig extends object = object> {
@@ -46,6 +45,4 @@ export abstract class AbstractCommand<TConfig extends object = object> {
   }
 
   execute?(ctx: CommandContext<TConfig>): Promise<void>;
-
-  promptForArgs?(): Promise<Record<string, string | boolean> | null>;
 }

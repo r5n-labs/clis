@@ -1,9 +1,11 @@
 import { Cancel } from "./cancel";
-import type { AbstractCommand, CommandContext } from "./command";
+import type { AbstractCommand, ArgValue, CommandContext } from "./command";
 import type { ConfigManager } from "./config-manager";
 import { log, select } from "./prompts";
 import type { CliMetadata } from "./types";
 import { handleUnknownItem, mapPositionals, parseCommandArgs, validatePositionals } from "./util";
+
+const EXIT_MENU_VALUE = "__exit__";
 
 type RouterEnv<TConfig extends object> = {
   cli: CliMetadata;
@@ -103,19 +105,10 @@ export class CommandRouter<TConfig extends object = object> {
   }
 
   private async executeInteractive(): Promise<void> {
-    const args = await this.resolveArgs();
-    if (!args) return;
-
+    const { args } = parseCommandArgs([], this.command.args);
     const positionals = mapPositionals([], this.command.positionals);
     const ctx = this.buildContext(positionals, args, true);
     await this.command.execute?.(ctx);
-  }
-
-  private async resolveArgs(): Promise<Record<string, string | boolean> | null> {
-    if (this.command.promptForArgs) {
-      return this.command.promptForArgs();
-    }
-    return parseCommandArgs([], this.command.args).args;
   }
 
   private async runSubcommandMenu(): Promise<void> {
@@ -123,7 +116,7 @@ export class CommandRouter<TConfig extends object = object> {
       const choice = await this.promptSubcommandSelectionOrBack();
       if (choice === null) return;
 
-      if (choice === "__exit__") {
+      if (choice === EXIT_MENU_VALUE) {
         this.options.onExit?.();
         return;
       }
@@ -158,8 +151,8 @@ export class CommandRouter<TConfig extends object = object> {
   private promptSubcommandSelection() {
     const { isRoot } = this.options;
     const exitOption = isRoot
-      ? { hint: this.env.cli.exitHint, label: this.env.cli.exitLabel ?? "Exit", value: "__exit__" }
-      : { hint: "Return to previous menu", label: "Back", value: "__exit__" };
+      ? { hint: this.env.cli.exitHint, label: this.env.cli.exitLabel ?? "Exit", value: EXIT_MENU_VALUE }
+      : { hint: "Return to previous menu", label: "Back", value: EXIT_MENU_VALUE };
 
     return select({
       message: isRoot ? (this.env.cli.promptMessage ?? "Select:") : `${this.command.name}:`,
@@ -172,7 +165,7 @@ export class CommandRouter<TConfig extends object = object> {
 
   private buildContext(
     positionals: Record<string, string | string[] | undefined>,
-    args: Record<string, string | boolean>,
+    args: Record<string, ArgValue>,
     interactive: boolean,
   ): CommandContext<TConfig> {
     return { ...this.env, args, interactive, positionals };
