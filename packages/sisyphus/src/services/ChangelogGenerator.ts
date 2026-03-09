@@ -158,10 +158,30 @@ export class ChangelogGenerator {
     for (const stone of stones) {
       lines.push("", `### ${BULLET_POINT} ${stone.message}`);
       lines.push(this.formatStonePackages(stone));
-      lines.push("", this.formatStoneContent(stone));
+      lines.push("", this.formatRootStoneContent(stone));
     }
 
     return lines.join("\n");
+  }
+
+  private formatRootStoneContent(stone: Stone): string {
+    const parts: string[] = [];
+
+    if (stone.description) {
+      parts.push(this.formatDescription(stone.description));
+    }
+
+    if (stone.commits && stone.commits.length > 0) {
+      const shouldGroupByType = !this.isSectionName(stone.message);
+      parts.push(this.formatRootCommits(stone.commits, shouldGroupByType));
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private formatRootCommits(commits: readonly CommitInfo[], groupByType: boolean): string {
+    const content = this.formatCommits(commits, groupByType);
+    return `<details>\n<summary>Commits (${commits.length})</summary>\n\n${content}\n\n</details>`;
   }
 
   private formatStonePackages(stone: Stone): string {
