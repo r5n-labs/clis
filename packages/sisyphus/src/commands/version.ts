@@ -54,7 +54,7 @@ export class VersionCommand extends BaseCommand {
     const message = await this.promptMessage();
     const description = await this.promptDescription();
 
-    const stoneData = this.buildStoneData(selection, message, packages, undefined, description);
+    const stoneData = this.buildStoneData({ description, message, packages, selection });
     await this.createStone(ctx, stoneData, packages);
   }
 
@@ -72,13 +72,13 @@ export class VersionCommand extends BaseCommand {
       throw new Exit(`Unknown packages: ${invalidPackages.join(", ")}`);
     }
 
-    const stoneData = this.buildStoneData(
-      selection,
-      ctx.positionals.message,
+    const stoneData = this.buildStoneData({
+      description: ctx.positionals.description,
+      message: ctx.positionals.message,
       packages,
-      ctx.args.tag,
-      ctx.positionals.description,
-    );
+      selection,
+      tag: ctx.args.tag,
+    });
     await this.createStone(ctx, stoneData, packages);
   }
 
@@ -203,13 +203,14 @@ export class VersionCommand extends BaseCommand {
     return result?.trim() || undefined;
   }
 
-  private buildStoneData(
-    selection: PackageSelection,
-    message: string,
-    packages: Map<string, Package>,
-    tag?: string,
-    description?: string,
-  ): StoneData {
+  private buildStoneData(opts: {
+    selection: PackageSelection;
+    message: string;
+    packages: Map<string, Package>;
+    tag?: string;
+    description?: string;
+  }): StoneData {
+    const { selection, message, packages, tag, description } = opts;
     const allSelected = [...selection.major, ...selection.minor, ...selection.patch];
     const dependencyPackages = this.findDependencyPackages(allSelected, packages);
 
