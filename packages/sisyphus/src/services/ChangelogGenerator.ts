@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { BULLET_POINT } from "../constants";
+import { BULLET_POINT, COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
 import type { CommitInfo, Package, Stone } from "../domain";
 import { BUMP_EMOJI } from "../domain";
 import type { ChangelogConfig } from "../types";
@@ -232,14 +232,14 @@ export class ChangelogGenerator {
 
     for (const [type, typeCommits] of grouped) {
       const sectionTitle = this.config.sections[type as keyof typeof this.config.sections] ?? `${type} changes`;
-      parts.push(`#### ${sectionTitle}\n`);
+      parts.push(`#### ${sectionTitle}`);
       parts.push(typeCommits.map((commit) => this.formatCommitLine(commit)).join("\n"));
     }
 
     return parts.join("\n\n");
   }
 
-  private groupCommitsByType(commits: readonly CommitInfo[]): Map<string, CommitInfo[]> {
+  private groupCommitsByType(commits: readonly CommitInfo[]): [string, CommitInfo[]][] {
     const grouped = new Map<string, CommitInfo[]>();
 
     for (const commit of commits) {
@@ -249,7 +249,10 @@ export class ChangelogGenerator {
       grouped.set(type, existing);
     }
 
-    return grouped;
+    return Array.from(grouped.entries()).sort(
+      ([a], [b]) =>
+        (COMMIT_TYPE_ORDER[a] ?? COMMIT_TYPE_ORDER_FALLBACK) - (COMMIT_TYPE_ORDER[b] ?? COMMIT_TYPE_ORDER_FALLBACK),
+    );
   }
 
   private formatCommitLine(commit: Readonly<CommitInfo>): string {

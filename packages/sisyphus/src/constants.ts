@@ -1,8 +1,27 @@
+import { OTHER_COMMIT_TYPE } from "./domain";
 import type { SisyphusConfig } from "./types";
 
 export const CLI_BIN = "sis";
 
 export const BULLET_POINT = "🪨";
+
+export const COMMIT_TYPE_ORDER: Record<string, number> = {
+  build: 23,
+  chore: 25,
+  ci: 24,
+  docs: 20,
+  feat: 10,
+  "feat!": 0,
+  fix: 11,
+  "fix!": 1,
+  perf: 12,
+  refactor: 13,
+  style: 21,
+  test: 22,
+  [OTHER_COMMIT_TYPE]: 100,
+};
+
+export const COMMIT_TYPE_ORDER_FALLBACK = 50;
 
 export const DEFAULT_CONFIG_DIR = ".sisyphus";
 export const DEFAULT_STONES_DIR = "stones";

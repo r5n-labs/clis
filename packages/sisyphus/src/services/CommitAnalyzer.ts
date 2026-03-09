@@ -1,26 +1,9 @@
 import type { ConfigManager } from "@r5n/cli-core";
+import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
 import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE } from "../domain";
 import type { SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages } from "../utils";
 import { WorkspaceScanner } from "./WorkspaceScanner";
-
-const GROUP_ORDER: Record<string, number> = {
-  build: 23,
-  chore: 25,
-  ci: 24,
-  docs: 20,
-  feat: 10,
-  "feat!": 0,
-  fix: 11,
-  "fix!": 1,
-  perf: 12,
-  refactor: 13,
-  style: 21,
-  test: 22,
-  [OTHER_COMMIT_TYPE]: 100,
-};
-
-const FALLBACK_ORDER = 50;
 
 const COMMIT_TYPE_TO_BUMP: Record<string, BumpType> = {
   build: BumpType.Patch,
@@ -88,7 +71,10 @@ export class CommitAnalyzer {
 
     return Array.from(typeGroups.entries())
       .filter(([, g]) => g.packages.size > 0)
-      .sort(([a], [b]) => (GROUP_ORDER[a] ?? FALLBACK_ORDER) - (GROUP_ORDER[b] ?? FALLBACK_ORDER))
+      .sort(
+        ([a], [b]) =>
+          (COMMIT_TYPE_ORDER[a] ?? COMMIT_TYPE_ORDER_FALLBACK) - (COMMIT_TYPE_ORDER[b] ?? COMMIT_TYPE_ORDER_FALLBACK),
+      )
       .map(([, g]) => g);
   }
 
