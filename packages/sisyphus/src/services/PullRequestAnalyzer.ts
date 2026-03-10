@@ -117,9 +117,7 @@ export class PullRequestAnalyzer {
 
       for (const [key, bump] of Object.entries(mapping)) {
         if (labelLower === key.toLowerCase()) {
-          if (bump === "major") return BumpType.Major;
-          if (bump === "minor") return BumpType.Minor;
-          if (bump === "patch") return BumpType.Patch;
+          return bump as BumpType;
         }
       }
     }

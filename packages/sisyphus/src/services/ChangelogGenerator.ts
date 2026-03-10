@@ -171,7 +171,7 @@ export class ChangelogGenerator {
       parts.push(this.formatDescription(stone.description));
     }
 
-    if (stone.commits && stone.commits.length > 0) {
+    if (stone.commits?.length) {
       const shouldGroupByType = !this.isSectionName(stone.message);
       parts.push(this.formatRootCommits(stone.commits, shouldGroupByType));
     }
@@ -263,10 +263,9 @@ export class ChangelogGenerator {
     const grouped = new Map<string, CommitInfo[]>();
 
     for (const commit of commits) {
-      const type = commit.type;
-      const existing = grouped.get(type) ?? [];
+      const existing = grouped.get(commit.type) ?? [];
       existing.push(commit);
-      grouped.set(type, existing);
+      grouped.set(commit.type, existing);
     }
 
     return Array.from(grouped.entries()).sort(
