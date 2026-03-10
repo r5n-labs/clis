@@ -103,15 +103,16 @@ export class RollCommand extends BaseCommand {
   private resolveOptions(ctx: RollCtx): RollOptions {
     const release = ctx.config.get("release");
     const changelog = ctx.config.get("changelog");
+    const commit = !ctx.args.noCommit;
 
     return {
       changelog: ctx.args.changelog ?? changelog.generate,
-      commit: !ctx.args.noCommit,
+      commit,
       dryRun: ctx.args.dryRun,
-      github: ctx.args.github ?? release.github,
+      github: commit ? (ctx.args.github ?? release.github) : false,
       npm: ctx.args.npm ?? release.npm,
-      push: ctx.args.push ?? release.push,
-      tags: ctx.args.tags ?? release.tags,
+      push: commit ? (ctx.args.push ?? release.push) : false,
+      tags: commit ? (ctx.args.tags ?? release.tags) : false,
     };
   }
 
@@ -188,13 +189,15 @@ export class RollCommand extends BaseCommand {
         s.stop("Changelogs generated");
       }
 
-      await this.cleanup(ctx, originalStones);
+      await this.deleteStones(ctx, originalStones);
 
       if (options.commit) {
         s.start("Creating release commit...");
         await orchestrator.createCommit(stone, packages);
         s.stop("Release commit created");
       }
+
+      ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
 
       if (options.tags) {
         s.start("Creating git tags...");
@@ -227,20 +230,21 @@ export class RollCommand extends BaseCommand {
       );
     } catch (error) {
       s.stop("Release failed, rolling back...");
-      await orchestrator.rollback();
-      await this.restoreStones(ctx, originalStones);
+      try {
+        await orchestrator.rollback();
+      } finally {
+        await this.restoreStones(ctx, originalStones);
+      }
       throw error;
     }
   }
 
-  private async cleanup(ctx: RollCtx, stones: Stone[]) {
+  private async deleteStones(ctx: RollCtx, stones: Stone[]) {
     const manager = new StoneManager(ctx.config);
 
     for (const stone of stones) {
       await manager.delete(stone.id);
     }
-
-    ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
   }
 
   private async restoreStones(ctx: RollCtx, stones: Stone[]) {
