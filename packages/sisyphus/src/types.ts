@@ -33,7 +33,9 @@ export type ScriptsConfig = { pre: Record<string, string>; post: Record<string, 
 
 export type PrLabelMapping = Record<string, "major" | "minor" | "patch">;
 
-export type PrConfig = { labelMapping: PrLabelMapping };
+export type PrSkipConfig = { labels: string[]; authors: string[]; titlePatterns: string[] };
+
+export type PrConfig = { labelMapping: PrLabelMapping; skip: PrSkipConfig };
 
 export type SisyphusConfig = {
   $schema: string;

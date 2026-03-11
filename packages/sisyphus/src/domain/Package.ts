@@ -1,5 +1,6 @@
 import { VersionCalculator } from "../services/VersionCalculator";
-import type { BumpType } from "./BumpType";
+import { BUMP_ORDER, type BumpType } from "./BumpType";
+import type { Stone } from "./Stone";
 
 export type PackageJson = {
   name: string;
@@ -37,6 +38,21 @@ export class Package {
 
   static fromJson(json: PackageJson, file: string): Package {
     return new Package({ file, name: json.name, version: json.version || "0.0.0" });
+  }
+
+  static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
+    const updated: Package[] = [];
+
+    for (const bump of BUMP_ORDER) {
+      for (const name of stone.getPackages(bump)) {
+        const pkg = packages.get(name);
+        if (pkg) {
+          updated.push(pkg.withBump(bump, stone.tag));
+        }
+      }
+    }
+
+    return updated;
   }
 
   get newVersion(): string | undefined {

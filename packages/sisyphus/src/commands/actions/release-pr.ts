@@ -1,0 +1,233 @@
+import { args, color, Exit, log, spinner } from "@r5n/cli-core";
+import { BaseCommand, type Ctx } from "../../base-command";
+import { Package, Stone } from "../../domain";
+import { ChangelogGenerator, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
+
+const RELEASE_BRANCH = "sisyphus/release";
+const RELEASE_LABEL = "sisyphus-release";
+const PR_TITLE_PREFIX = "chore(release):";
+const DEFAULT_BASE_BRANCH = "main";
+
+const releasePrArgs = args({
+  dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
+});
+
+type ReleasePrCtx = Ctx<typeof releasePrArgs>;
+
+export class ActionsReleasePrCommand extends BaseCommand {
+  name = "release-pr";
+  description = "Create or update a release PR from pending stones";
+  args = releasePrArgs;
+
+  async execute(ctx: ReleasePrCtx) {
+    const manager = new StoneManager(ctx.config);
+    const stones = await manager.list();
+
+    if (stones.length === 0) {
+      log.info(color.dim("No pending stones found, skipping release PR"));
+      return;
+    }
+
+    const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+    const mergedStone = Stone.mergeAll(stones);
+    const updatedPackages = Package.applyStone(mergedStone, packages);
+
+    if (updatedPackages.length === 0) {
+      throw new Exit("No packages to update", "Stones don't reference any known packages");
+    }
+
+    const prTitle = this.buildPrTitle(updatedPackages);
+    const prBody = this.buildPrBody(mergedStone, updatedPackages, stones);
+
+    log.info(`${color.bold("Release PR:")} ${prTitle}`);
+    log.info(`${color.dim("Packages:")} ${updatedPackages.map((p) => p.name).join(", ")}`);
+
+    if (ctx.args.dryRun) {
+      log.info(color.yellow("\n[dry-run] Would create/update release PR"));
+      log.info(color.dim("\nPR Body preview:"));
+      log.info(prBody);
+      return;
+    }
+
+    const s = spinner();
+
+    const existingPr = await this.findExistingReleasePr();
+
+    try {
+      if (existingPr) {
+        s.start("Updating release branch...");
+        await this.updateReleaseBranch(ctx, stones, updatedPackages);
+        s.stop("Release branch updated");
+
+        s.start("Updating PR...");
+        await this.updatePr(existingPr.number, prTitle, prBody);
+        s.stop(`PR #${existingPr.number} updated`);
+
+        log.info(`\n${color.green("Release PR updated:")} ${existingPr.url}`);
+      } else {
+        s.start("Creating release branch...");
+        await this.createReleaseBranch(ctx, stones, updatedPackages);
+        s.stop("Release branch created");
+
+        s.start("Creating PR...");
+        const pr = await this.createPr(prTitle, prBody);
+        s.stop(`PR #${pr.number} created`);
+
+        log.info(`\n${color.green("Release PR created:")} ${pr.url}`);
+      }
+    } catch (error) {
+      s.stop("Failed");
+      await this.restoreMainBranch();
+      throw error;
+    }
+  }
+
+  private async restoreMainBranch() {
+    const baseBranch = await this.getDefaultBranch();
+    try {
+      await Bun.$`git checkout ${baseBranch}`.quiet();
+    } catch {}
+  }
+
+  private buildPrTitle(packages: Package[]): string {
+    const names = packages.map((p) => `${p.name}@${p.newVersion}`).join(", ");
+    return `${PR_TITLE_PREFIX} ${names}`;
+  }
+
+  private buildPrBody(stone: Stone, packages: Package[], stones: Stone[]): string {
+    const lines: string[] = [];
+
+    lines.push("## Release Summary");
+    lines.push("");
+    lines.push(`**Message:** ${stone.message}`);
+    if (stone.description) {
+      lines.push("");
+      lines.push(stone.description);
+    }
+    lines.push("");
+
+    lines.push("## Packages");
+    lines.push("");
+    for (const pkg of packages) {
+      lines.push(`- \`${pkg.name}\` ${pkg.version} → ${pkg.newVersion}`);
+    }
+    lines.push("");
+
+    if (stones.length > 1) {
+      lines.push("## Stones");
+      lines.push("");
+      for (const s of stones) {
+        lines.push(`- **${s.id}**: ${s.message}`);
+      }
+      lines.push("");
+    }
+
+    lines.push("---");
+    lines.push("*This PR was automatically created by [Sisyphus](https://github.com/r5n-labs/clis).*");
+    lines.push("*Merging this PR will trigger the release workflow.*");
+
+    return lines.join("\n");
+  }
+
+  private async findExistingReleasePr(): Promise<{ number: number; url: string } | null> {
+    try {
+      const result =
+        await Bun.$`gh pr list --head ${RELEASE_BRANCH} --label ${RELEASE_LABEL} --json number,url --limit 1`.quiet();
+      const prs = JSON.parse(result.stdout.toString());
+      return prs[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async createReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
+    const baseBranch = await this.getDefaultBranch();
+
+    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`.quiet();
+
+    await this.applyReleaseChanges(ctx, stones, packages);
+
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`.quiet();
+    await Bun.$`git push -u origin ${RELEASE_BRANCH} --force`.quiet();
+
+    await Bun.$`git checkout ${baseBranch}`.quiet();
+  }
+
+  private async updateReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
+    const baseBranch = await this.getDefaultBranch();
+
+    await Bun.$`git fetch origin ${baseBranch}`.quiet();
+    await Bun.$`git checkout ${RELEASE_BRANCH}`.quiet();
+    await Bun.$`git reset --hard origin/${baseBranch}`.quiet();
+
+    await this.applyReleaseChanges(ctx, stones, packages);
+
+    await Bun.$`git add -A`.quiet();
+
+    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow().quiet();
+    if (hasChanges.exitCode !== 0) {
+      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`.quiet();
+    }
+
+    await Bun.$`git push origin ${RELEASE_BRANCH} --force`.quiet();
+
+    await Bun.$`git checkout ${baseBranch}`.quiet();
+  }
+
+  private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
+    const changelogConfig = ctx.config.get("changelog");
+    const generator = new ChangelogGenerator(changelogConfig);
+    const updater = new PackageUpdater();
+
+    await updater.updateAll(packages);
+
+    if (changelogConfig.generate) {
+      await generator.generate(stones, packages);
+    }
+
+    const manager = new StoneManager(ctx.config);
+    for (const stone of stones) {
+      await manager.delete(stone.id);
+    }
+  }
+
+  private async createPr(title: string, body: string): Promise<{ number: number; url: string }> {
+    const baseBranch = await this.getDefaultBranch();
+
+    await this.ensureLabelExists();
+
+    const result =
+      await Bun.$`gh pr create --head ${RELEASE_BRANCH} --base ${baseBranch} --title ${title} --body ${body} --label ${RELEASE_LABEL}`.quiet();
+
+    const url = result.stdout.toString().trim();
+    const number = this.extractPrNumber(url);
+
+    return { number, url };
+  }
+
+  private extractPrNumber(url: string): number {
+    const match = url.match(/\/pull\/(\d+)$/);
+    if (!match?.[1]) throw new Exit("Failed to parse PR number from URL", url);
+    return Number.parseInt(match[1], 10);
+  }
+
+  private async ensureLabelExists() {
+    try {
+      await Bun.$`gh label create ${RELEASE_LABEL} --description "Sisyphus release PR" --color 6f42c1 --force`.quiet();
+    } catch {}
+  }
+
+  private async updatePr(prNumber: number, title: string, body: string) {
+    await Bun.$`gh pr edit ${prNumber} --title ${title} --body ${body}`.quiet();
+  }
+
+  private async getDefaultBranch(): Promise<string> {
+    try {
+      const result = await Bun.$`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.quiet();
+      return result.stdout.toString().trim() || DEFAULT_BASE_BRANCH;
+    } catch {
+      return DEFAULT_BASE_BRANCH;
+    }
+  }
+}

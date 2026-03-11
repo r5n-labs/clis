@@ -1,7 +1,7 @@
 import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
-import { BUMP_ORDER, type Package, Stone } from "../domain";
+import { Package, Stone } from "../domain";
 import { ChangelogGenerator, ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
 
 const rollArgs = args({
@@ -45,8 +45,8 @@ export class RollCommand extends BaseCommand {
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
 
-    const mergedStone = this.mergeStones(stones);
-    const updatedPackages = this.preparePackages(mergedStone, packages);
+    const mergedStone = Stone.mergeAll(stones);
+    const updatedPackages = Package.applyStone(mergedStone, packages);
 
     if (updatedPackages.length === 0) {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
@@ -114,30 +114,6 @@ export class RollCommand extends BaseCommand {
       push: commit ? (ctx.args.push ?? release.push) : false,
       tags: commit ? (ctx.args.tags ?? release.tags) : false,
     };
-  }
-
-  private mergeStones(stones: Stone[]): Stone {
-    const [first, ...rest] = stones;
-    if (!first) throw new Exit("No stones to merge");
-    if (rest.length === 0) return first;
-
-    const messages = stones.map((s) => s.message).join("; ");
-    return Stone.merge(stones, messages).stone;
-  }
-
-  private preparePackages(stone: Stone, packages: Map<string, Package>): Package[] {
-    const updated: Package[] = [];
-
-    for (const bump of BUMP_ORDER) {
-      for (const name of stone.getPackages(bump)) {
-        const pkg = packages.get(name);
-        if (pkg) {
-          updated.push(pkg.withBump(bump, stone.tag));
-        }
-      }
-    }
-
-    return updated;
   }
 
   private printPreview(stone: Stone, packages: Package[], options: RollOptions) {

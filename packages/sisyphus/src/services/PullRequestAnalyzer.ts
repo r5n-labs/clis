@@ -34,7 +34,11 @@ export class PullRequestAnalyzer {
 
     const pr = url ? await this.fetchFromUrl(url) : await this.fetchFromCurrentBranch();
 
-    const parsedCommits = await Commit.inRange(pr.baseBranch, pr.branch);
+    let parsedCommits = await Commit.inRange(pr.baseBranch, pr.branch);
+
+    if (parsedCommits.length === 0 && url) {
+      parsedCommits = await this.fetchCommitsFromApi(url);
+    }
 
     const { packages } = await WorkspaceScanner.scan({ single: this.config.get("single") });
     const packagePaths = buildPackagePathMap(packages);
@@ -56,6 +60,28 @@ export class PullRequestAnalyzer {
     const suggestedBump = this.inferBumpFromLabels(pr.labels) ?? this.inferBumpFromTitle(pr.title);
 
     return { commits, packages: affectedPackages, pr, suggestedBump };
+  }
+
+  private async fetchCommitsFromApi(url: string): Promise<Commit[]> {
+    const match = url.match(GITHUB_PR_URL_REGEX);
+    if (!match) return [];
+
+    const [, owner, repo, number] = match;
+
+    try {
+      const result = await Bun.$`gh api repos/${owner}/${repo}/pulls/${number}/commits --jq '.[].sha'`.quiet();
+      const hashes = result.stdout.toString().trim().split("\n").filter(Boolean);
+
+      const commits: Commit[] = [];
+      for (const hash of hashes) {
+        const commit = await Commit.fromHash(hash);
+        if (commit) commits.push(commit);
+      }
+
+      return commits;
+    } catch {
+      return [];
+    }
   }
 
   async fetchFromCurrentBranch(): Promise<PullRequestInfo> {

@@ -79,6 +79,21 @@ export class Commit {
     return [];
   }
 
+  static async fromHash(hash: string): Promise<Commit | null> {
+    try {
+      const result = await Bun.$`git log -1 --pretty=format:"%H|%s" ${hash}`.quiet();
+      const output = result.stdout.toString().trim();
+      if (!output) return null;
+
+      const [fullHash, subject] = output.split("|");
+      if (!fullHash || !subject) return null;
+
+      return Commit.hydrate(fullHash, subject);
+    } catch {
+      return null;
+    }
+  }
+
   private static async tryFetchFromRange(range: string): Promise<Commit[] | null> {
     try {
       return await Commit.fetchFromRange(range);

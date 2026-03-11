@@ -73,6 +73,11 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
       feature: "minor",
       fix: "patch",
     },
+    skip: {
+      authors: ["github-actions[bot]"],
+      labels: ["sisyphus-release", "skip-stone"],
+      titlePatterns: ["^chore\\(release\\):"],
+    },
   },
 
   release: { github: false, npm: false, push: false, tags: false },

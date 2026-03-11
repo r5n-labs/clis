@@ -1,6 +1,7 @@
 import { AbstractCLI, ConfigManager } from "@r5n/cli-core";
 import { version } from "../package.json";
 import {
+  ActionsCommand,
   CheckCommand,
   InitCommand,
   MigrateCommand,
@@ -27,6 +28,7 @@ class SisyphusCLI extends AbstractCLI {
 
   init() {
     this.registerCommands([
+      new ActionsCommand(),
       new CheckCommand(),
       new InitCommand(),
       new MigrateCommand(),

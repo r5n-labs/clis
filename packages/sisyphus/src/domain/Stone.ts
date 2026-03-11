@@ -53,6 +53,15 @@ export class Stone {
     return Stone.fromData(json.id, json);
   }
 
+  static mergeAll(stones: Stone[]): Stone {
+    const [first, ...rest] = stones;
+    if (!first) throw new Error("No stones to merge");
+    if (rest.length === 0) return first;
+
+    const messages = stones.map((s) => s.message).join("; ");
+    return Stone.merge(stones, messages).stone;
+  }
+
   static merge(stones: Stone[], message: string): MergeResult {
     const packageBumps = new Map<string, BumpType>();
     const conflicts: string[] = [];
