@@ -40,6 +40,14 @@ async function detectRemoteInfo(): Promise<RemoteInfo | null> {
   return parseRemoteUrl(url);
 }
 
+export async function detectProvider(): Promise<Provider> {
+  const info = await detectRemoteInfo();
+  if (!info) {
+    throw new Exit("Could not detect git provider", "Make sure you have a git remote configured (origin)");
+  }
+  return info.provider;
+}
+
 async function getRemoteUrl(): Promise<string | null> {
   try {
     const result = await Bun.$`git remote get-url origin`.quiet();

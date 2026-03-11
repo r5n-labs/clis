@@ -1,0 +1,8 @@
+release:
+  stage: sisyphus
+  image: oven/bun:latest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged" && $CI_MERGE_REQUEST_LABELS =~ /sisyphus-release/
+  script:
+    - bun install
+    - bunx @r5n/sisyphus roll --yes

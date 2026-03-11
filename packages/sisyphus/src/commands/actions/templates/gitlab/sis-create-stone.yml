@@ -1,0 +1,13 @@
+create-stone:
+  stage: sisyphus
+  image: oven/bun:latest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged"
+  script:
+    - bun install
+    - bunx @r5n/sisyphus pr --url $CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID --yes
+    - git config user.name "gitlab-ci[bot]"
+    - git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+    - git add .sisyphus/stones/
+    - 'git diff --cached --quiet || git commit -m "chore: add stone from MR !$CI_MERGE_REQUEST_IID"'
+    - git push https://oauth2:$GITLAB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git HEAD:$CI_DEFAULT_BRANCH
