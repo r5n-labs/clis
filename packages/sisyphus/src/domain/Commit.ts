@@ -88,7 +88,7 @@ export class Commit {
   }
 
   private static async fetchFromRange(range: string): Promise<Commit[]> {
-    const result = await Bun.$`git log ${range} --pretty=format:"%H|%s" --no-merges`.quiet();
+    const result = await Bun.$`git log ${range} --pretty=format:"%H%x1f%s" --no-merges`.quiet();
     const output = result.stdout.toString().trim();
 
     if (!output) return [];
@@ -96,7 +96,10 @@ export class Commit {
     const commits: Commit[] = [];
 
     for (const line of output.split("\n")) {
-      const [hash, subject] = line.split("|");
+      const sepIndex = line.indexOf("\x1f");
+      if (sepIndex === -1) continue;
+      const hash = line.slice(0, sepIndex);
+      const subject = line.slice(sepIndex + 1);
       if (!hash || !subject) continue;
 
       const commit = await Commit.hydrate(hash, subject);

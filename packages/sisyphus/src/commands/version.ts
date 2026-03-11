@@ -3,6 +3,7 @@ import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
 import { CommitAnalyzer, type CommitGroup, StoneManager, WorkspaceScanner } from "../services";
+import { findDependencyPackages } from "../utils";
 
 // biome-ignore assist/source/useSortedKeys: message must come first
 const versionPositionals = positionals({
@@ -212,7 +213,7 @@ export class VersionCommand extends BaseCommand {
   }): StoneData {
     const { selection, message, packages, tag, description } = opts;
     const allSelected = [...selection.major, ...selection.minor, ...selection.patch];
-    const dependencyPackages = this.findDependencyPackages(allSelected, packages);
+    const dependencyPackages = findDependencyPackages(allSelected, packages);
 
     return {
       dependency: nonEmpty(dependencyPackages),
@@ -234,27 +235,10 @@ export class VersionCommand extends BaseCommand {
     else if (group.bump === BumpType.Minor) data.minor = pkgNames;
     else data.patch = pkgNames;
 
-    const deps = this.findDependencyPackages(pkgNames, packages);
+    const deps = findDependencyPackages(pkgNames, packages);
     if (deps.length > 0) data.dependency = deps;
 
     return data;
-  }
-
-  private findDependencyPackages(selectedNames: string[], packages: Map<string, Package>): string[] {
-    const deps = new Set<string>();
-
-    for (const name of selectedNames) {
-      const pkg = packages.get(name);
-      if (pkg?.dependencyOf) {
-        for (const dep of pkg.dependencyOf) {
-          if (!selectedNames.includes(dep)) {
-            deps.add(dep);
-          }
-        }
-      }
-    }
-
-    return Array.from(deps);
   }
 
   private async createStone(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>) {

@@ -237,8 +237,8 @@ export class ReleaseOrchestrator {
     const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion}`).join("\n");
 
     const subject = template
-      .replace("{message}", stone.message)
-      .replace("{packages}", packages.map((p) => p.name).join(", "));
+      .replace("{message}", () => stone.message)
+      .replace("{packages}", () => packages.map((p) => p.name).join(", "));
 
     return `${subject}\n\n${packageList}`;
   }

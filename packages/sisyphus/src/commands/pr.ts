@@ -1,9 +1,11 @@
 import { args, color, confirm, Exit, log, multiselect, note, select } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
-import type { CommitInfo, StoneData } from "../domain";
-import { BumpType, isBumpType } from "../domain";
-import { PullRequestAnalyzer, type PullRequestInfo, StoneManager } from "../services";
+import type { CommitInfo, Package, StoneData } from "../domain";
+import { BumpType, isBumpType, nonEmpty } from "../domain";
+import type { PullRequestInfo } from "../services";
+import { PullRequestAnalyzer, StoneManager, WorkspaceScanner } from "../services";
+import { findDependencyPackages } from "../utils";
 
 const DESCRIPTION_PREVIEW_LENGTH = 100;
 
@@ -41,11 +43,20 @@ export class PrCommand extends BaseCommand {
       throw new Exit("No packages selected");
     }
 
+    const { packages: allPackages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+
     const prLink = `[#${result.pr.number}](${result.pr.url})`;
     const message = ctx.args.message ?? `${result.pr.title} (${prLink})`;
     const description = result.pr.body || undefined;
 
-    const stoneData = this.buildStoneData({ bump: bumpType, commits: result.commits, description, message, packages });
+    const stoneData = this.buildStoneData({
+      allPackages,
+      bump: bumpType,
+      commits: result.commits,
+      description,
+      message,
+      packages,
+    });
 
     this.logPreview(stoneData, ctx.args.dryRun);
 
@@ -83,7 +94,7 @@ export class PrCommand extends BaseCommand {
       if (!isBumpType(ctx.args.bump)) {
         throw new Exit(`Invalid bump type: ${ctx.args.bump}`, "Use major, minor, or patch");
       }
-      return ctx.args.bump as BumpType;
+      return ctx.args.bump;
     }
 
     if (suggested) {
@@ -163,18 +174,21 @@ export class PrCommand extends BaseCommand {
   }
 
   private buildStoneData(options: {
+    allPackages: Map<string, Package>;
     bump: BumpType;
     packages: string[];
     message: string;
     description: string | undefined;
     commits: readonly CommitInfo[] | undefined;
   }): StoneData {
-    const { bump, commits, description, message, packages } = options;
+    const { allPackages, bump, commits, description, message, packages } = options;
     const data: StoneData = { commits, description, message };
 
     if (bump === BumpType.Major) data.major = packages;
     else if (bump === BumpType.Minor) data.minor = packages;
     else data.patch = packages;
+
+    data.dependency = nonEmpty(findDependencyPackages(packages, allPackages));
 
     return data;
   }
