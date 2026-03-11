@@ -41,14 +41,15 @@ export class PullRequestAnalyzer {
       parsedCommits = await this.fetchCommitsFromApi(provider, url);
     }
 
-    const { packages } = await WorkspaceScanner.scan({ single: this.config.get("single") });
+    const isSinglePackage = this.config.get("single");
+    const { packages } = await WorkspaceScanner.scan({ single: isSinglePackage });
     const packagePaths = buildPackagePathMap(packages);
 
     const commits: CommitInfo[] = [];
     const affectedPackages = new Set<string>();
 
     for (const commit of parsedCommits) {
-      const pkgs = findAffectedPackages(commit.files, packagePaths, false);
+      const pkgs = findAffectedPackages(commit.files, packagePaths, isSinglePackage);
       if (pkgs.size === 0) continue;
 
       commits.push(commit.toInfo([...pkgs]));
