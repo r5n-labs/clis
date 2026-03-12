@@ -6,8 +6,8 @@ import { ChangelogGenerator, ReleaseOrchestrator, StoneManager, WorkspaceScanner
 
 const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
+  createRelease: { alias: "r", description: "Create a release on git provider", type: "boolean" },
   dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
-  github: { alias: "g", description: "Create GitHub releases", type: "boolean" },
   noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
   preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
@@ -21,8 +21,8 @@ type RollCtx = Ctx<typeof rollArgs>;
 type RollOptions = {
   changelog: boolean;
   commit: boolean;
+  createRelease: boolean;
   dryRun: boolean;
-  github: boolean;
   npm: boolean;
   push: boolean;
   tags: boolean;
@@ -108,8 +108,8 @@ export class RollCommand extends BaseCommand {
     return {
       changelog: ctx.args.changelog ?? changelog.generate,
       commit,
+      createRelease: commit ? (ctx.args.createRelease ?? release.createRelease) : false,
       dryRun: ctx.args.dryRun,
-      github: commit ? (ctx.args.github ?? release.github) : false,
       npm: ctx.args.npm ?? release.npm,
       push: commit ? (ctx.args.push ?? release.push) : false,
       tags: commit ? (ctx.args.tags ?? release.tags) : false,
@@ -137,7 +137,7 @@ export class RollCommand extends BaseCommand {
     lines.push(color.dim(`Git tags: ${options.tags ? "yes" : "no"}`));
     lines.push(color.dim(`NPM publish: ${options.npm ? "yes" : "no"}`));
     lines.push(color.dim(`Push to remote: ${options.push ? "yes" : "no"}`));
-    lines.push(color.dim(`GitHub release: ${options.github ? "yes" : "no"}`));
+    lines.push(color.dim(`Create release: ${options.createRelease ? "yes" : "no"}`));
 
     log.step(lines.join("\n"));
   }
@@ -193,10 +193,10 @@ export class RollCommand extends BaseCommand {
         s.stop("Pushed to remote");
       }
 
-      if (options.github) {
-        s.start("Creating GitHub release...");
-        await orchestrator.createGithubRelease(stone, packages);
-        s.stop("GitHub release created");
+      if (options.createRelease) {
+        s.start("Creating release...");
+        await orchestrator.createGitRelease(stone, packages);
+        s.stop("Release created");
       }
 
       note(

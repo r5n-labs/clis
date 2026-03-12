@@ -80,7 +80,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     },
   },
 
-  release: { github: false, npm: false, push: false, tags: false },
+  release: { createRelease: false, npm: false, push: false, tags: false },
 
   scripts: { post: {}, pre: {} },
 

@@ -1,12 +1,10 @@
 import type { ConfigManager } from "@r5n/cli-core";
 import { Exit } from "@r5n/cli-core";
 import { BumpType, Commit, type CommitInfo } from "../domain";
+import { createGitProvider, type GitProvider, type PullRequest, parsePrUrl } from "../providers";
 import type { SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages } from "../utils";
 import { WorkspaceScanner } from "./WorkspaceScanner";
-
-const GITHUB_PR_URL_REGEX = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
-const GITLAB_MR_URL_REGEX = /gitlab\.com\//;
 
 export type PullRequestInfo = {
   number: number;
@@ -27,17 +25,20 @@ export type PrAnalysisResult = {
 };
 
 export class PullRequestAnalyzer {
+  private provider: GitProvider | null = null;
+
   constructor(private config: ConfigManager<SisyphusConfig>) {}
 
   async analyze(url?: string): Promise<PrAnalysisResult> {
-    await this.ensureGhAvailable();
+    const provider = await this.getProvider();
+    await provider.ensureAvailable();
 
-    const pr = url ? await this.fetchFromUrl(url) : await this.fetchFromCurrentBranch();
+    const pr = url ? await this.fetchFromUrl(provider, url) : await this.fetchFromCurrentBranch(provider);
 
     let parsedCommits = await Commit.inRange(pr.baseBranch, pr.branch);
 
     if (parsedCommits.length === 0 && url) {
-      parsedCommits = await this.fetchCommitsFromApi(url);
+      parsedCommits = await this.fetchCommitsFromApi(provider, url);
     }
 
     const { packages } = await WorkspaceScanner.scan({ single: this.config.get("single") });
@@ -62,15 +63,19 @@ export class PullRequestAnalyzer {
     return { commits, packages: affectedPackages, pr, suggestedBump };
   }
 
-  private async fetchCommitsFromApi(url: string): Promise<Commit[]> {
-    const match = url.match(GITHUB_PR_URL_REGEX);
-    if (!match) return [];
+  private async getProvider(): Promise<GitProvider> {
+    if (!this.provider) {
+      this.provider = await createGitProvider();
+    }
+    return this.provider;
+  }
 
-    const [, owner, repo, number] = match;
+  private async fetchCommitsFromApi(provider: GitProvider, url: string): Promise<Commit[]> {
+    const urlInfo = parsePrUrl(url);
+    if (!urlInfo) return [];
 
     try {
-      const result = await Bun.$`gh api repos/${owner}/${repo}/pulls/${number}/commits --jq '.[].sha'`.quiet();
-      const hashes = result.stdout.toString().trim().split("\n").filter(Boolean);
+      const hashes = await provider.getPrCommits(urlInfo.number);
 
       const commits: Commit[] = [];
       for (const hash of hashes) {
@@ -84,55 +89,40 @@ export class PullRequestAnalyzer {
     }
   }
 
-  async fetchFromCurrentBranch(): Promise<PullRequestInfo> {
-    try {
-      const result = await Bun.$`gh pr view --json number,title,body,labels,author,headRefName,baseRefName,url`.quiet();
-      const data = JSON.parse(result.stdout.toString());
-
-      return {
-        author: data.author?.login ?? "unknown",
-        baseBranch: data.baseRefName,
-        body: data.body ?? "",
-        branch: data.headRefName,
-        labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
-        number: data.number,
-        title: data.title,
-        url: data.url,
-      };
-    } catch {
-      throw new Exit("No PR found for current branch", "Make sure you have an open PR or provide a URL with --url");
-    }
+  private async fetchFromCurrentBranch(provider: GitProvider): Promise<PullRequestInfo> {
+    const pr = await provider.getPrFromCurrentBranch();
+    return this.mapPullRequest(pr);
   }
 
-  async fetchFromUrl(url: string): Promise<PullRequestInfo> {
-    if (GITLAB_MR_URL_REGEX.test(url)) {
-      throw new Exit("GitLab is not supported yet", "Only GitHub PRs are currently supported");
+  private async fetchFromUrl(provider: GitProvider, url: string): Promise<PullRequestInfo> {
+    const urlInfo = parsePrUrl(url);
+
+    if (!urlInfo) {
+      throw new Exit("Invalid PR URL", "Expected a PR/MR URL from GitHub, GitLab, or Bitbucket");
     }
 
-    const match = url.match(GITHUB_PR_URL_REGEX);
-    if (!match) {
-      throw new Exit("Invalid PR URL", "Expected a GitHub PR URL like https://github.com/owner/repo/pull/123");
+    if (urlInfo.provider !== provider.name) {
+      throw new Exit(
+        `PR URL is from ${urlInfo.provider}, but repository is on ${provider.name}`,
+        "Make sure the PR URL matches the repository provider",
+      );
     }
 
-    const [, owner, repo, number] = match;
+    const pr = await provider.getPr(urlInfo.number);
+    return this.mapPullRequest(pr);
+  }
 
-    try {
-      const result = await Bun.$`gh api repos/${owner}/${repo}/pulls/${number}`.quiet();
-      const data = JSON.parse(result.stdout.toString());
-
-      return {
-        author: data.user?.login ?? "unknown",
-        baseBranch: data.base?.ref ?? "main",
-        body: data.body ?? "",
-        branch: data.head?.ref ?? "",
-        labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
-        number: data.number,
-        title: data.title,
-        url: data.html_url,
-      };
-    } catch {
-      throw new Exit(`Failed to fetch PR #${number}`, "Make sure the PR exists and you have access");
-    }
+  private mapPullRequest(pr: PullRequest): PullRequestInfo {
+    return {
+      author: pr.author,
+      baseBranch: pr.baseBranch,
+      body: pr.body,
+      branch: pr.headBranch,
+      labels: pr.labels,
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+    };
   }
 
   inferBumpFromLabels(labels: string[]): BumpType | null {
@@ -167,19 +157,5 @@ export class PullRequestAnalyzer {
     }
 
     return null;
-  }
-
-  private async ensureGhAvailable(): Promise<void> {
-    try {
-      await Bun.$`which gh`.quiet();
-    } catch {
-      throw new Exit("GitHub CLI (gh) is not installed", "Install from https://cli.github.com and run: gh auth login");
-    }
-
-    try {
-      await Bun.$`gh auth status`.quiet();
-    } catch {
-      throw new Exit("GitHub CLI (gh) is not authenticated", "Run: gh auth login");
-    }
   }
 }

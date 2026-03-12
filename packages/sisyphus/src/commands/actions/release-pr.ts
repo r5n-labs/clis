@@ -1,12 +1,14 @@
 import { args, color, Exit, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
+import { createGitProvider, type GitProvider } from "../../providers";
 import { ChangelogGenerator, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
 
 const RELEASE_BRANCH = "sisyphus/release";
 const RELEASE_LABEL = "sisyphus-release";
+const RELEASE_LABEL_DESCRIPTION = "Sisyphus release PR";
+const RELEASE_LABEL_COLOR = "6f42c1";
 const PR_TITLE_PREFIX = "chore(release):";
-const DEFAULT_BASE_BRANCH = "main";
 
 const releasePrArgs = args({
   dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
@@ -18,6 +20,16 @@ export class ActionsReleasePrCommand extends BaseCommand {
   name = "release-pr";
   description = "Create or update a release PR from pending stones";
   args = releasePrArgs;
+
+  private provider: GitProvider | null = null;
+
+  private async getProvider(): Promise<GitProvider> {
+    if (!this.provider) {
+      this.provider = await createGitProvider();
+      await this.provider.ensureAvailable();
+    }
+    return this.provider;
+  }
 
   async execute(ctx: ReleasePrCtx) {
     const manager = new StoneManager(ctx.config);
@@ -82,13 +94,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
   }
 
-  private async restoreMainBranch() {
-    const baseBranch = await this.getDefaultBranch();
-    try {
-      await Bun.$`git checkout ${baseBranch}`.quiet();
-    } catch {}
-  }
-
   private buildPrTitle(packages: Package[]): string {
     const names = packages.map((p) => `${p.name}@${p.newVersion}`).join(", ");
     return `${PR_TITLE_PREFIX} ${names}`;
@@ -130,18 +135,14 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private async findExistingReleasePr(): Promise<{ number: number; url: string } | null> {
-    try {
-      const result =
-        await Bun.$`gh pr list --head ${RELEASE_BRANCH} --label ${RELEASE_LABEL} --json number,url --limit 1`.quiet();
-      const prs = JSON.parse(result.stdout.toString());
-      return prs[0] ?? null;
-    } catch {
-      return null;
-    }
+    const provider = await this.getProvider();
+    const pr = await provider.findPr({ head: RELEASE_BRANCH, label: RELEASE_LABEL });
+    return pr ? { number: pr.number, url: pr.url } : null;
   }
 
   private async createReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
-    const baseBranch = await this.getDefaultBranch();
+    const provider = await this.getProvider();
+    const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`.quiet();
 
@@ -155,7 +156,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private async updateReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
-    const baseBranch = await this.getDefaultBranch();
+    const provider = await this.getProvider();
+    const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git fetch origin ${baseBranch}`.quiet();
     await Bun.$`git checkout ${RELEASE_BRANCH}`.quiet();
@@ -193,41 +195,35 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private async createPr(title: string, body: string): Promise<{ number: number; url: string }> {
-    const baseBranch = await this.getDefaultBranch();
+    const provider = await this.getProvider();
+    const baseBranch = await provider.getDefaultBranch();
 
-    await this.ensureLabelExists();
+    await provider.ensureLabelExists(RELEASE_LABEL, {
+      color: RELEASE_LABEL_COLOR,
+      description: RELEASE_LABEL_DESCRIPTION,
+    });
 
-    const result =
-      await Bun.$`gh pr create --head ${RELEASE_BRANCH} --base ${baseBranch} --title ${title} --body ${body} --label ${RELEASE_LABEL}`.quiet();
+    const pr = await provider.createPr({
+      base: baseBranch,
+      body,
+      head: RELEASE_BRANCH,
+      labels: [RELEASE_LABEL],
+      title,
+    });
 
-    const url = result.stdout.toString().trim();
-    const number = this.extractPrNumber(url);
-
-    return { number, url };
-  }
-
-  private extractPrNumber(url: string): number {
-    const match = url.match(/\/pull\/(\d+)$/);
-    if (!match?.[1]) throw new Exit("Failed to parse PR number from URL", url);
-    return Number.parseInt(match[1], 10);
-  }
-
-  private async ensureLabelExists() {
-    try {
-      await Bun.$`gh label create ${RELEASE_LABEL} --description "Sisyphus release PR" --color 6f42c1 --force`.quiet();
-    } catch {}
+    return { number: pr.number, url: pr.url };
   }
 
   private async updatePr(prNumber: number, title: string, body: string) {
-    await Bun.$`gh pr edit ${prNumber} --title ${title} --body ${body}`.quiet();
+    const provider = await this.getProvider();
+    await provider.updatePr(prNumber, { body, title });
   }
 
-  private async getDefaultBranch(): Promise<string> {
+  private async restoreMainBranch() {
+    const provider = await this.getProvider();
+    const baseBranch = await provider.getDefaultBranch();
     try {
-      const result = await Bun.$`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.quiet();
-      return result.stdout.toString().trim() || DEFAULT_BASE_BRANCH;
-    } catch {
-      return DEFAULT_BASE_BRANCH;
-    }
+      await Bun.$`git checkout ${baseBranch}`.quiet();
+    } catch {}
   }
 }

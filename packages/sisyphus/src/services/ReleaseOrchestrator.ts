@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
 import type { CommitInfo, Package, Stone } from "../domain";
+import { createGitProvider, type GitProvider } from "../providers";
 import type { SisyphusConfig } from "../types";
 import { ChangelogGenerator } from "./ChangelogGenerator";
 import { GitRemoteParser } from "./GitRemoteParser";
@@ -8,8 +9,8 @@ import { PackageUpdater } from "./PackageUpdater";
 
 export type ReleaseOptions = {
   changelog: boolean;
+  createRelease: boolean;
   dryRun: boolean;
-  github: boolean;
   npm: boolean;
   push: boolean;
   tags: boolean;
@@ -19,6 +20,7 @@ export class ReleaseOrchestrator {
   private packageUpdater = new PackageUpdater();
   private changelogGenerator: ChangelogGenerator;
   private remoteParser = new GitRemoteParser();
+  private provider: GitProvider | null = null;
   private commitUrlFn: ((hash: string) => string) | null = null;
   private options: ReleaseOptions;
   private createdTags: string[] = [];
@@ -32,6 +34,13 @@ export class ReleaseOrchestrator {
   ) {
     this.options = options;
     this.changelogGenerator = new ChangelogGenerator(this.config.get("changelog"));
+  }
+
+  private async getProvider(): Promise<GitProvider> {
+    if (!this.provider) {
+      this.provider = await createGitProvider();
+    }
+    return this.provider;
   }
 
   private async initCommitLinks() {
@@ -122,10 +131,11 @@ export class ReleaseOrchestrator {
     this.pushedToRemote = true;
   }
 
-  async createGithubRelease(stone: Stone, packages: Package[]) {
+  async createGitRelease(stone: Stone, packages: Package[]) {
     if (this.options.dryRun) return;
 
     await this.initCommitLinks();
+    const provider = await this.getProvider();
 
     for (const pkg of packages) {
       if (!pkg.newVersion) continue;
@@ -135,8 +145,8 @@ export class ReleaseOrchestrator {
       const notes = this.formatReleaseNotes(stone, pkg);
 
       await this.run(
-        () => Bun.$`gh release create ${tagName} --title ${title} --notes ${notes}`.quiet(),
-        `Failed to create GitHub release for ${tagName}`,
+        () => provider.createRelease({ notes, tag: tagName, title }),
+        `Failed to create release for ${tagName}`,
       );
       this.createdReleases.push(tagName);
     }
@@ -185,10 +195,11 @@ export class ReleaseOrchestrator {
   }
 
   async rollback() {
-    for (const release of this.createdReleases) {
-      try {
-        await Bun.$`gh release delete ${release} --yes`.quiet();
-      } catch {}
+    if (this.createdReleases.length > 0) {
+      const provider = await this.getProvider();
+      for (const release of this.createdReleases) {
+        await provider.deleteRelease(release);
+      }
     }
     this.createdReleases = [];
 
