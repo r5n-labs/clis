@@ -4,7 +4,7 @@ import { ActionsReleasePrCommand } from "./release-pr";
 
 export class ActionsCommand extends BaseCommand {
   name = "actions";
-  description = "GitHub Actions integration";
+  description = "CI/CD integration";
 
   init() {
     this.registerSubcommands([new ActionsInitCommand(), new ActionsReleasePrCommand()]);

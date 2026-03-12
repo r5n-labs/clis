@@ -13,7 +13,6 @@ const initArgs = args({
   createStone: { default: false, description: "Install create-stone workflow", type: "boolean" },
   dryRun: { alias: "d", default: false, description: "Preview without writing files", type: "boolean" },
   release: { default: false, description: "Install release workflow", type: "boolean" },
-  releasePr: { default: false, description: "Install release-pr workflow", type: "boolean" },
   yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
 });
 
@@ -100,7 +99,6 @@ export class ActionsInitCommand extends BaseCommand {
   private getWorkflowsFromFlags(ctx: InitCtx): WorkflowType[] {
     const selected: WorkflowType[] = [];
     if (ctx.args.createStone) selected.push("create-stone");
-    if (ctx.args.releasePr) selected.push("release-pr");
     if (ctx.args.release) selected.push("release");
     return selected;
   }

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Provider } from "../../providers";
 
-export type WorkflowType = "create-stone" | "release-pr" | "release";
+export type WorkflowType = "create-stone" | "release";
 
 export type WorkflowFile = { path: string; content: string };
 
@@ -12,14 +12,10 @@ export type WorkflowConfig = { name: string; description: string };
 
 export const WORKFLOW_CONFIGS: Record<WorkflowType, WorkflowConfig> = {
   "create-stone": {
-    description: "When a PR is merged, automatically create a stone",
-    name: "Auto-create stone from PR",
+    description: "When a PR is merged, create stone and update release PR",
+    name: "Handle PR merge (stone + release PR)",
   },
-  release: { description: "When the release PR is merged, run the release", name: "Auto-release on PR merge" },
-  "release-pr": {
-    description: "When stones are added, create or update a release PR",
-    name: "Create/update release PR",
-  },
+  release: { description: "When the release PR is merged, publish packages", name: "Publish release" },
 };
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "templates");
@@ -27,7 +23,6 @@ const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "templates")
 const TEMPLATE_FILENAMES: Record<WorkflowType, string> = {
   "create-stone": "sis-create-stone.yml",
   release: "sis-release.yml",
-  "release-pr": "sis-release-pr.yml",
 };
 
 export abstract class CiGenerator {
