@@ -1,13 +1,46 @@
 {
   "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/cli/sisyphus/schema.json",
-  "changelog": { "append": true, "filename": "CHANGELOG.md", "generate": true, "root": true },
+  "changelog": {
+    "append": true,
+    "filename": "CHANGELOG.md",
+    "generate": true,
+    "root": true,
+    "sections": {
+      "breaking": "Breaking changes",
+      "build": "Build",
+      "chore": "Chores",
+      "ci": "CI",
+      "dependencies": "Dependency updates",
+      "docs": "Documentation",
+      "feat": "Features",
+      "fix": "Bug fixes",
+      "other": "Other changes",
+      "perf": "Performance",
+      "refactor": "Refactoring",
+      "style": "Styling",
+      "test": "Tests"
+    }
+  },
   "commit": { "author": "Sisyphus", "email": "contact@r5n.dev", "message": "release(🎉): {message}" },
-  "configPath": ".sisyphus",
   "ignore": [],
-  "lastStone": { "commit": "c616a4bef9675440bb6c53f91d85e46d8502ebf2", "date": "2025-10-13T19:06:22" },
+  "lastStone": { "commit": "98273fb2f87b0095a93d9b863d6332bb5a1f8cb1", "date": "2026-03-07T01:37:47.284Z" },
   "plugins": [],
-  "release": { "commitAndPush": true, "github": true, "npm": true, "tags": true },
+  "pr": {
+    "labelMapping": {
+      "breaking": "major",
+      "breaking-change": "major",
+      "bug": "patch",
+      "chore": "patch",
+      "docs": "patch",
+      "enhancement": "minor",
+      "feature": "minor",
+      "fix": "patch"
+    }
+  },
+  "release": { "commitAndPush": true, "github": true, "npm": true, "push": false, "tags": true },
+  "scripts": { "post": {}, "pre": {} },
   "single": false,
+  "sisyphusDir": ".sisyphus",
   "stones": [],
   "tag": "latest"
 }

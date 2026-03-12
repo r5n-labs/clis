@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { nonEmpty } from "../utils";
 import { BUMP_ORDER, BumpType, higherBump } from "./BumpType";
 import type { CommitInfo } from "./Commit";
+import { nonEmpty } from "./helpers";
 
 export type StoneData = {
   message: string;

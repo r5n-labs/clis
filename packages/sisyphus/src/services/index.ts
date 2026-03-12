@@ -3,6 +3,7 @@ export * from "./ChangesetParser";
 export * from "./CommitAnalyzer";
 export * from "./GitRemoteParser";
 export * from "./PackageUpdater";
+export * from "./PullRequestAnalyzer";
 export * from "./ReleaseOrchestrator";
 export * from "./StoneManager";
 export * from "./VersionCalculator";

@@ -1,10 +1,9 @@
 import { args, color, confirm, Exit, log, multiselect, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
-import type { Package, StoneData } from "../domain";
-import { BUMP_COLORS, BumpType } from "../domain";
+import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
 import { CommitAnalyzer, type CommitGroup, StoneManager, WorkspaceScanner } from "../services";
-import { nonEmpty } from "../utils";
+import { findDependencyPackages } from "../utils";
 
 // biome-ignore assist/source/useSortedKeys: message must come first
 const versionPositionals = positionals({
@@ -56,7 +55,7 @@ export class VersionCommand extends BaseCommand {
     const message = await this.promptMessage();
     const description = await this.promptDescription();
 
-    const stoneData = this.buildStoneData(selection, message, packages, undefined, description);
+    const stoneData = this.buildStoneData({ description, message, packages, selection });
     await this.createStone(ctx, stoneData, packages);
   }
 
@@ -74,13 +73,13 @@ export class VersionCommand extends BaseCommand {
       throw new Exit(`Unknown packages: ${invalidPackages.join(", ")}`);
     }
 
-    const stoneData = this.buildStoneData(
-      selection,
-      ctx.positionals.message,
+    const stoneData = this.buildStoneData({
+      description: ctx.positionals.description,
+      message: ctx.positionals.message,
       packages,
-      ctx.args.tag,
-      ctx.positionals.description,
-    );
+      selection,
+      tag: ctx.args.tag,
+    });
     await this.createStone(ctx, stoneData, packages);
   }
 
@@ -205,15 +204,16 @@ export class VersionCommand extends BaseCommand {
     return result?.trim() || undefined;
   }
 
-  private buildStoneData(
-    selection: PackageSelection,
-    message: string,
-    packages: Map<string, Package>,
-    tag?: string,
-    description?: string,
-  ): StoneData {
+  private buildStoneData(opts: {
+    selection: PackageSelection;
+    message: string;
+    packages: Map<string, Package>;
+    tag?: string;
+    description?: string;
+  }): StoneData {
+    const { selection, message, packages, tag, description } = opts;
     const allSelected = [...selection.major, ...selection.minor, ...selection.patch];
-    const dependencyPackages = this.findDependencyPackages(allSelected, packages);
+    const dependencyPackages = findDependencyPackages(allSelected, packages);
 
     return {
       dependency: nonEmpty(dependencyPackages),
@@ -235,27 +235,10 @@ export class VersionCommand extends BaseCommand {
     else if (group.bump === BumpType.Minor) data.minor = pkgNames;
     else data.patch = pkgNames;
 
-    const deps = this.findDependencyPackages(pkgNames, packages);
+    const deps = findDependencyPackages(pkgNames, packages);
     if (deps.length > 0) data.dependency = deps;
 
     return data;
-  }
-
-  private findDependencyPackages(selectedNames: string[], packages: Map<string, Package>): string[] {
-    const deps = new Set<string>();
-
-    for (const name of selectedNames) {
-      const pkg = packages.get(name);
-      if (pkg?.dependencyOf) {
-        for (const dep of pkg.dependencyOf) {
-          if (!selectedNames.includes(dep)) {
-            deps.add(dep);
-          }
-        }
-      }
-    }
-
-    return Array.from(deps);
   }
 
   private async createStone(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>) {

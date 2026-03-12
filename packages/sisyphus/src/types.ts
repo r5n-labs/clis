@@ -31,14 +31,19 @@ export type ChangelogConfig = {
 
 export type ScriptsConfig = { pre: Record<string, string>; post: Record<string, string> };
 
+export type PrLabelMapping = Record<string, "major" | "minor" | "patch">;
+
+export type PrConfig = { labelMapping: PrLabelMapping };
+
 export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
-  configPath: string;
+  sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;
   plugins: string[];
+  pr: PrConfig;
   release: ReleaseConfig;
   scripts: ScriptsConfig;
   single: boolean;

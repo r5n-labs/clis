@@ -2,13 +2,15 @@ import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_ORDER, type Package, Stone } from "../domain";
-import { ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
+import { ChangelogGenerator, ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
 
 const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
   dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
   github: { alias: "g", description: "Create GitHub releases", type: "boolean" },
+  noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
+  preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
   tags: { alias: "t", description: "Create git tags", type: "boolean" },
   yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
@@ -16,7 +18,15 @@ const rollArgs = args({
 
 type RollCtx = Ctx<typeof rollArgs>;
 
-type RollOptions = { changelog: boolean; dryRun: boolean; github: boolean; npm: boolean; push: boolean; tags: boolean };
+type RollOptions = {
+  changelog: boolean;
+  commit: boolean;
+  dryRun: boolean;
+  github: boolean;
+  npm: boolean;
+  push: boolean;
+  tags: boolean;
+};
 
 export class RollCommand extends BaseCommand {
   name = "roll";
@@ -42,6 +52,11 @@ export class RollCommand extends BaseCommand {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
     }
 
+    if (ctx.args.preview) {
+      await this.previewChangelogs(ctx, stones, updatedPackages);
+      return;
+    }
+
     this.printPreview(mergedStone, updatedPackages, options);
 
     if (!options.dryRun && !ctx.args.yes && ctx.interactive) {
@@ -57,17 +72,47 @@ export class RollCommand extends BaseCommand {
     await this.executeRelease(ctx, mergedStone, updatedPackages, stones, options);
   }
 
+  private async previewChangelogs(ctx: RollCtx, stones: Stone[], packages: Package[]) {
+    const changelogConfig = ctx.config.get("changelog");
+    const generator = new ChangelogGenerator(changelogConfig);
+
+    const s = spinner();
+    s.start("Generating changelog preview...");
+    await generator.generate(stones, packages);
+    s.stop("Changelog preview generated");
+
+    const fileList = packages.map((pkg) => color.dim(`  ${pkg.name}/CHANGELOG.md`)).join("\n");
+    log.info(`\nPreview files created:\n${fileList}`);
+
+    if (changelogConfig.root) {
+      log.info(color.dim("  CHANGELOG.md (root)"));
+    }
+
+    log.info("");
+
+    const shouldRevert = await confirm({ initialValue: true, message: "Revert changes?" });
+
+    if (shouldRevert) {
+      await generator.rollback();
+      log.info(color.dim("Changes reverted"));
+    } else {
+      log.info(color.yellow("Changes kept"));
+    }
+  }
+
   private resolveOptions(ctx: RollCtx): RollOptions {
     const release = ctx.config.get("release");
     const changelog = ctx.config.get("changelog");
+    const commit = !ctx.args.noCommit;
 
     return {
       changelog: ctx.args.changelog ?? changelog.generate,
+      commit,
       dryRun: ctx.args.dryRun,
-      github: ctx.args.github ?? release.github,
+      github: commit ? (ctx.args.github ?? release.github) : false,
       npm: ctx.args.npm ?? release.npm,
-      push: ctx.args.push ?? release.push,
-      tags: ctx.args.tags ?? release.tags,
+      push: commit ? (ctx.args.push ?? release.push) : false,
+      tags: commit ? (ctx.args.tags ?? release.tags) : false,
     };
   }
 
@@ -144,9 +189,15 @@ export class RollCommand extends BaseCommand {
         s.stop("Changelogs generated");
       }
 
-      s.start("Creating release commit...");
-      await orchestrator.createCommit(stone, packages);
-      s.stop("Release commit created");
+      await this.deleteStones(ctx, originalStones);
+
+      if (options.commit) {
+        s.start("Creating release commit...");
+        await orchestrator.createCommit(stone, packages);
+        s.stop("Release commit created");
+      }
+
+      ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
 
       if (options.tags) {
         s.start("Creating git tags...");
@@ -172,8 +223,6 @@ export class RollCommand extends BaseCommand {
         s.stop("GitHub release created");
       }
 
-      await this.cleanup(ctx, originalStones);
-
       note(
         `Released ${color.bold(String(packages.length))} package(s)\n` +
           `Run ${color.green(`${CLI_BIN} check`)} to verify`,
@@ -181,19 +230,29 @@ export class RollCommand extends BaseCommand {
       );
     } catch (error) {
       s.stop("Release failed, rolling back...");
-      await orchestrator.rollback();
+      try {
+        await orchestrator.rollback();
+      } finally {
+        await this.restoreStones(ctx, originalStones);
+      }
       throw error;
     }
   }
 
-  private async cleanup(ctx: RollCtx, stones: Stone[]) {
+  private async deleteStones(ctx: RollCtx, stones: Stone[]) {
     const manager = new StoneManager(ctx.config);
 
     for (const stone of stones) {
       await manager.delete(stone.id);
     }
+  }
 
-    ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
+  private async restoreStones(ctx: RollCtx, stones: Stone[]) {
+    const manager = new StoneManager(ctx.config);
+
+    for (const stone of stones) {
+      await manager.save(stone);
+    }
   }
 
   private async getCurrentCommit(): Promise<string> {

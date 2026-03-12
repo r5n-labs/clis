@@ -1,14 +1,14 @@
 import mri from "mri";
-import type { ArgDefinition, PositionalDefinition } from "../command";
+import type { ArgDefinition, ArgValue, PositionalDefinition } from "../command";
 
 export type MriOptions = {
   alias: Record<string, string>;
   boolean: string[];
   string: string[];
-  default: Record<string, string | boolean>;
+  default: Record<string, ArgValue>;
 };
 
-export type ParsedArgs = Record<string, string | boolean>;
+export type ParsedArgs = Record<string, ArgValue>;
 
 export type GlobalParseResult = { command: string | undefined; flags: ParsedArgs; restArgs: string[] };
 
@@ -38,6 +38,28 @@ export function buildMriOptions(argDefs: Record<string, ArgDefinition>): MriOpti
   return opts;
 }
 
+export function convertNumbers(
+  args: Record<string, string | boolean>,
+  argDefs: Record<string, ArgDefinition>,
+): ParsedArgs {
+  const result: ParsedArgs = { ...args };
+
+  for (const [key, def] of Object.entries(argDefs)) {
+    if (def.type !== "number") continue;
+
+    const value = args[key];
+    if (value === undefined || typeof value === "boolean") continue;
+
+    const num = Number(value);
+    if (Number.isNaN(num)) {
+      throw new Error(`Invalid number for --${key}: "${value}"`);
+    }
+    result[key] = num;
+  }
+
+  return result;
+}
+
 export function parseGlobalArgs(argv: string[], globalArgs: Record<string, ArgDefinition>): GlobalParseResult {
   const opts = buildMriOptions(globalArgs);
   const parsed = mri(argv, opts);
@@ -45,18 +67,20 @@ export function parseGlobalArgs(argv: string[], globalArgs: Record<string, ArgDe
   const command = parsed._[0] as string | undefined;
   const cmdIndex = command ? argv.indexOf(command) : -1;
 
-  const { _, ...flags } = parsed;
+  const { _, ...stringFlags } = parsed;
+  const flags = convertNumbers(stringFlags as Record<string, string | boolean>, globalArgs);
 
-  return { command, flags: flags as ParsedArgs, restArgs: cmdIndex >= 0 ? argv.slice(cmdIndex + 1) : [] };
+  return { command, flags, restArgs: cmdIndex >= 0 ? argv.slice(cmdIndex + 1) : [] };
 }
 
 export function parseCommandArgs(argv: string[], argDefs: Record<string, ArgDefinition> = {}): CommandParseResult {
   const opts = buildMriOptions(argDefs);
   const parsed = mri(argv, opts);
 
-  const { _: rawPositionals, ...args } = parsed;
+  const { _: rawPositionals, ...stringArgs } = parsed;
+  const args = convertNumbers(stringArgs as Record<string, string | boolean>, argDefs);
 
-  return { args: args as ParsedArgs, rawPositionals: rawPositionals as string[] };
+  return { args, rawPositionals: rawPositionals as string[] };
 }
 
 export function mapPositionals(

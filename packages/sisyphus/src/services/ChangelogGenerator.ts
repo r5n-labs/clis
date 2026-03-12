@@ -1,5 +1,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { BULLET_POINT, COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
 import type { CommitInfo, Package, Stone } from "../domain";
 import { BUMP_EMOJI } from "../domain";
 import type { ChangelogConfig } from "../types";
@@ -128,7 +129,7 @@ export class ChangelogGenerator {
     const lines = [`## ${emoji} ${version} (${date})`];
 
     for (const stone of stones) {
-      lines.push("", `### ${stone.message}`);
+      lines.push("", `### ${BULLET_POINT} ${stone.message}`);
       lines.push("", this.formatStoneContent(stone, pkg.name));
     }
 
@@ -155,22 +156,78 @@ export class ChangelogGenerator {
     }
 
     for (const stone of stones) {
-      lines.push("", `### ${stone.message}`);
-      lines.push("", this.formatStoneContent(stone));
+      lines.push("", `### ${BULLET_POINT} ${stone.message}`);
+      lines.push(this.formatStonePackages(stone));
+      lines.push("", this.formatRootStoneContent(stone));
     }
 
     return lines.join("\n");
   }
 
+  private formatRootStoneContent(stone: Stone): string {
+    const parts: string[] = [];
+
+    if (stone.description) {
+      parts.push(this.formatDescription(stone.description));
+    }
+
+    if (stone.commits?.length) {
+      const shouldGroupByType = !this.isSectionName(stone.message);
+      parts.push(this.formatRootCommits(stone.commits, shouldGroupByType));
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private formatRootCommits(commits: readonly CommitInfo[], groupByType: boolean): string {
+    const content = this.formatCommits(commits, groupByType);
+    return `<details>\n<summary>Commits (${commits.length})</summary>\n\n${content}\n\n</details>`;
+  }
+
+  private formatStonePackages(stone: Stone): string {
+    const direct = [...stone.major, ...stone.minor, ...stone.patch];
+    if (direct.length === 0) return "";
+
+    const formatted = direct.map((p) => `\`${p}\``).join(" · ");
+    return `**Packages:** ${formatted}`;
+  }
+
   private formatStoneContent(stone: Stone, packageFilter?: string): string {
-    if (stone.description) return stone.description;
+    const parts: string[] = [];
+
+    if (stone.description) {
+      parts.push(this.formatDescription(stone.description));
+    }
 
     const commits =
       packageFilter && stone.commits
         ? this.filterCommitsForPackage(stone.commits, packageFilter)
         : (stone.commits ?? []);
 
-    return commits.length > 0 ? this.formatCommits(commits) : "";
+    if (commits.length > 0) {
+      const shouldGroupByType = !this.isSectionName(stone.message);
+      parts.push(this.formatCommits(commits, shouldGroupByType));
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private isSectionName(message: string): boolean {
+    const sectionNames = Object.values(this.config.sections);
+    return sectionNames.includes(message);
+  }
+
+  private formatDescription(description: string): string {
+    const normalized = this.convertHeadersToBold(description);
+    const indented = normalized
+      .split("\n")
+      .map((l) => `  ${l}`)
+      .join("\n");
+    return `<details>\n<summary>Description</summary>\n\n${indented}\n</details>`;
+  }
+
+  private convertHeadersToBold(text: string): string {
+    return text.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
   }
 
   private getDate(): string {
@@ -185,8 +242,36 @@ export class ChangelogGenerator {
     return commits.filter((commit) => commit.packages.includes(packageName));
   }
 
-  private formatCommits(commits: readonly CommitInfo[]): string {
-    return commits.map((commit) => this.formatCommitLine(commit)).join("\n");
+  private formatCommits(commits: readonly CommitInfo[], groupByType: boolean): string {
+    if (!groupByType) {
+      return commits.map((commit) => this.formatCommitLine(commit)).join("\n");
+    }
+
+    const grouped = this.groupCommitsByType(commits);
+    const parts: string[] = [];
+
+    for (const [type, typeCommits] of grouped) {
+      const sectionTitle = this.config.sections[type as keyof typeof this.config.sections] ?? `${type} changes`;
+      parts.push(`#### ${sectionTitle}`);
+      parts.push(typeCommits.map((commit) => this.formatCommitLine(commit)).join("\n"));
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private groupCommitsByType(commits: readonly CommitInfo[]): [string, CommitInfo[]][] {
+    const grouped = new Map<string, CommitInfo[]>();
+
+    for (const commit of commits) {
+      const existing = grouped.get(commit.type) ?? [];
+      existing.push(commit);
+      grouped.set(commit.type, existing);
+    }
+
+    return Array.from(grouped.entries()).sort(
+      ([a], [b]) =>
+        (COMMIT_TYPE_ORDER[a] ?? COMMIT_TYPE_ORDER_FALLBACK) - (COMMIT_TYPE_ORDER[b] ?? COMMIT_TYPE_ORDER_FALLBACK),
+    );
   }
 
   private formatCommitLine(commit: Readonly<CommitInfo>): string {
