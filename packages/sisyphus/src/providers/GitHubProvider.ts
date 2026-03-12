@@ -59,7 +59,7 @@ export class GitHubProvider extends GitProvider {
     const labelArgs = options.labels?.flatMap((l) => ["--label", l]) ?? [];
 
     const result =
-      await Bun.$`gh pr create --head ${options.head} --base ${options.base} --title ${options.title} --body ${options.body} ${labelArgs}`.quiet();
+      await Bun.$`gh pr create --head ${options.head} --base ${options.base} --title ${options.title} --body ${options.body} ${labelArgs}`;
 
     const url = result.stdout.toString().trim();
     const number = this.extractPrNumber(url);
@@ -72,7 +72,7 @@ export class GitHubProvider extends GitProvider {
     if (options.title) optionalArgs.push("--title", options.title);
     if (options.body) optionalArgs.push("--body", options.body);
 
-    await Bun.$`gh pr edit ${number} ${optionalArgs}`.quiet();
+    await Bun.$`gh pr edit ${number} ${optionalArgs}`;
   }
 
   async getPr(number: number): Promise<PullRequest> {
@@ -134,7 +134,7 @@ export class GitHubProvider extends GitProvider {
   }
 
   async createRelease(options: CreateReleaseOptions): Promise<void> {
-    await Bun.$`gh release create ${options.tag} --title ${options.title} --notes ${options.notes}`.quiet();
+    await Bun.$`gh release create ${options.tag} --title ${options.title} --notes ${options.notes}`;
   }
 
   async deleteRelease(tag: string): Promise<void> {

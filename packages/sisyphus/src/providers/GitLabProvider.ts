@@ -62,7 +62,7 @@ export class GitLabProvider extends GitProvider {
     const labelArgs = options.labels?.flatMap((l) => ["--label", l]) ?? [];
 
     const result =
-      await Bun.$`glab mr create --source-branch ${options.head} --target-branch ${options.base} --title ${options.title} --description ${options.body} ${labelArgs} --yes`.quiet();
+      await Bun.$`glab mr create --source-branch ${options.head} --target-branch ${options.base} --title ${options.title} --description ${options.body} ${labelArgs} --yes`;
 
     const iid = this.extractMrNumber(result.stdout.toString());
     return this.getPr(iid);
@@ -73,7 +73,7 @@ export class GitLabProvider extends GitProvider {
     if (options.title) optionalArgs.push("--title", options.title);
     if (options.body) optionalArgs.push("--description", options.body);
 
-    await Bun.$`glab mr update ${number} ${optionalArgs}`.quiet();
+    await Bun.$`glab mr update ${number} ${optionalArgs}`;
   }
 
   async getPr(number: number): Promise<PullRequest> {
@@ -114,7 +114,7 @@ export class GitLabProvider extends GitProvider {
   }
 
   async createRelease(options: CreateReleaseOptions): Promise<void> {
-    await Bun.$`glab release create ${options.tag} --name ${options.title} --notes ${options.notes}`.quiet();
+    await Bun.$`glab release create ${options.tag} --name ${options.title} --notes ${options.notes}`;
   }
 
   async deleteRelease(tag: string): Promise<void> {
