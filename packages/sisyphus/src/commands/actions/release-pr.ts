@@ -189,9 +189,16 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     const manager = new StoneManager(ctx.config);
-    for (const stone of stones) {
-      await manager.delete(stone.id);
+    const timestamp = await manager.archive(stones);
+
+    const packageVersions: Record<string, string> = {};
+    for (const pkg of packages) {
+      if (pkg.newVersion) {
+        packageVersions[pkg.name] = pkg.newVersion;
+      }
     }
+
+    ctx.config.set("currentRelease", { packages: packageVersions, stoneIds: stones.map((s) => s.id), timestamp });
   }
 
   private async createPr(title: string, body: string): Promise<{ number: number; url: string }> {

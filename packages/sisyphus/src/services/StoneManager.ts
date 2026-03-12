@@ -1,17 +1,24 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConfigManager } from "@r5n/cli-core";
-import { DEFAULT_CONFIG_DIR, DEFAULT_STONES_DIR } from "../constants";
+import { DEFAULT_CONFIG_DIR, DEFAULT_RELEASED_DIR, DEFAULT_STONES_DIR } from "../constants";
 import { Stone, type StoneData, type StoneJson } from "../domain";
 import type { SisyphusConfig } from "../types";
 
 export class StoneManager {
   constructor(private config: ConfigManager<SisyphusConfig>) {}
 
+  private get sisyphusDir(): string {
+    return this.config.get("sisyphusDir") || DEFAULT_CONFIG_DIR;
+  }
+
   private get stonesPath(): string {
-    const cfg = this.config.getAll();
-    return cfg.stonesPath || join(cfg.sisyphusDir || DEFAULT_CONFIG_DIR, DEFAULT_STONES_DIR);
+    return this.config.get("stonesPath") || join(this.sisyphusDir, DEFAULT_STONES_DIR);
+  }
+
+  private get releasedPath(): string {
+    return join(this.sisyphusDir, DEFAULT_RELEASED_DIR);
   }
 
   async list(): Promise<Stone[]> {
@@ -100,8 +107,53 @@ export class StoneManager {
     return ids.length;
   }
 
+  async archive(stones: Stone[]): Promise<string> {
+    if (stones.length === 0) return "";
+
+    const timestamp = this.createTimestamp();
+    const archiveDir = join(this.releasedPath, timestamp);
+
+    await mkdir(archiveDir, { recursive: true });
+
+    for (const stone of stones) {
+      const sourcePath = this.getFilePath(stone.id);
+      const destPath = join(archiveDir, `${stone.id}.json`);
+
+      if (existsSync(sourcePath)) {
+        await rename(sourcePath, destPath);
+        this.removeFromConfigStones(stone.id);
+      }
+    }
+
+    return timestamp;
+  }
+
+  async getReleasedStones(timestamp: string): Promise<Stone[]> {
+    const archiveDir = join(this.releasedPath, timestamp);
+    if (!existsSync(archiveDir)) return [];
+
+    const files = await readdir(archiveDir);
+    const stones: Stone[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+
+      try {
+        const content = await readFile(join(archiveDir, file), "utf-8");
+        const json: StoneJson = JSON.parse(content);
+        stones.push(Stone.fromJson(json));
+      } catch {}
+    }
+
+    return stones;
+  }
+
   getFilePath(id: string): string {
     return join(this.stonesPath, `${id}.json`);
+  }
+
+  private createTimestamp(): string {
+    return new Date().toISOString().replace(/[:.]/g, "-");
   }
 
   private async ensureStorageExists(): Promise<void> {

@@ -11,6 +11,7 @@ const rollArgs = args({
   noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
   preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
+  publishOnly: { default: false, description: "Publish from currentRelease (no file changes)", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
   tags: { alias: "t", description: "Create git tags", type: "boolean" },
   yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
@@ -28,12 +29,19 @@ type RollOptions = {
   tags: boolean;
 };
 
+type PublishOnlyOptions = { createRelease: boolean; dryRun: boolean; npm: boolean; tags: boolean };
+
 export class RollCommand extends BaseCommand {
   name = "roll";
   description = "Execute a release from pending stones";
   args = rollArgs;
 
   async execute(ctx: RollCtx) {
+    if (ctx.args.publishOnly) {
+      await this.executePublishOnly(ctx);
+      return;
+    }
+
     const options = this.resolveOptions(ctx);
 
     const manager = new StoneManager(ctx.config);
@@ -238,5 +246,120 @@ export class RollCommand extends BaseCommand {
     } catch {
       return "";
     }
+  }
+
+  private async executePublishOnly(ctx: RollCtx) {
+    const currentRelease = ctx.config.get("currentRelease");
+
+    if (!currentRelease) {
+      throw new Exit("No currentRelease found in config", "Run `sis actions release-pr` first to prepare a release");
+    }
+
+    const packageEntries = Object.entries(currentRelease.packages);
+    if (packageEntries.length === 0) {
+      throw new Exit("No packages in currentRelease", "The release config appears to be empty");
+    }
+
+    const { packages: allPackages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+    const packagesToPublish: Package[] = [];
+
+    for (const [name, version] of packageEntries) {
+      const pkg = allPackages.get(name);
+      if (pkg) {
+        packagesToPublish.push(pkg.withVersion(version));
+      }
+    }
+
+    if (packagesToPublish.length === 0) {
+      throw new Exit("No matching packages found", "Packages in currentRelease don't exist in workspace");
+    }
+
+    log.info(color.bold("Publish-only mode"));
+    log.info(color.dim(`Timestamp: ${currentRelease.timestamp}`));
+    log.info(color.dim(`Stones: ${currentRelease.stoneIds.join(", ")}`));
+    log.info("");
+
+    log.info(color.bold("Packages to publish:"));
+    for (const pkg of packagesToPublish) {
+      log.info(`  ${pkg.name}@${pkg.version}`);
+    }
+    log.info("");
+
+    const release = ctx.config.get("release");
+    const options: PublishOnlyOptions = {
+      createRelease: ctx.args.createRelease ?? release.createRelease,
+      dryRun: ctx.args.dryRun,
+      npm: ctx.args.npm ?? release.npm,
+      tags: ctx.args.tags ?? release.tags,
+    };
+
+    if (options.dryRun) {
+      log.info(color.yellow("[dry-run] Would publish packages"));
+      return;
+    }
+
+    if (!ctx.args.yes && ctx.interactive) {
+      const confirmed = await confirm({ initialValue: true, message: "Proceed with publishing?" });
+      if (!confirmed) return;
+    }
+
+    await this.executePublish(ctx, packagesToPublish, currentRelease, options);
+  }
+
+  private async executePublish(
+    ctx: RollCtx,
+    packages: Package[],
+    currentRelease: { stoneIds: string[]; timestamp: string },
+    options: PublishOnlyOptions,
+  ) {
+    const orchestrator = new ReleaseOrchestrator(ctx.config, {
+      changelog: false,
+      createRelease: options.createRelease,
+      dryRun: options.dryRun,
+      npm: options.npm,
+      push: false,
+      tags: options.tags,
+    });
+    const s = spinner();
+
+    try {
+      if (options.tags) {
+        s.start("Creating git tags...");
+        await orchestrator.createGitTags(packages);
+        s.stop("Git tags created");
+      }
+
+      if (options.npm) {
+        s.start("Publishing to NPM...");
+        await orchestrator.publishToNpm(packages);
+        s.stop("Published to NPM");
+      }
+
+      if (options.createRelease) {
+        s.start("Creating release...");
+        const manager = new StoneManager(ctx.config);
+        const stones = await manager.getReleasedStones(currentRelease.timestamp);
+        const mergedStone = stones.length > 0 ? Stone.mergeAll(stones) : this.createFallbackStone(packages);
+        await orchestrator.createGitRelease(mergedStone, packages);
+        s.stop("Release created");
+      }
+
+      ctx.config.set("currentRelease", undefined);
+      ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
+
+      note(
+        `Published ${color.bold(String(packages.length))} package(s)\n` +
+          `Run ${color.green(`${CLI_BIN} check`)} to verify`,
+        color.green("Publish complete"),
+      );
+    } catch (error) {
+      s.stop("Publish failed");
+      throw error;
+    }
+  }
+
+  private createFallbackStone(packages: Package[]): Stone {
+    const message = `Release ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`;
+    return Stone.create({ message }, 0);
   }
 }

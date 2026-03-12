@@ -4,6 +4,8 @@ export type CommitConfig = { author: string; email?: string; message: string };
 
 export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolean; tags: boolean };
 
+export type CurrentRelease = { packages: Record<string, string>; stoneIds: string[]; timestamp: string };
+
 export type ChangelogSections = {
   breaking: string;
   build: string;
@@ -41,6 +43,7 @@ export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
+  currentRelease?: CurrentRelease;
   sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;

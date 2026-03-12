@@ -73,6 +73,10 @@ export class Package {
     return new Package({ ...this.toOptions(), bump, tag });
   }
 
+  withVersion(version: string): Package {
+    return new Package({ ...this.toOptions(), version });
+  }
+
   private toOptions(): PackageOptions {
     return {
       bump: this.bump,

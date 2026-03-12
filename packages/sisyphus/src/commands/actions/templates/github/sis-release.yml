@@ -22,8 +22,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run release
-        run: bunx @r5n/sisyphus roll --yes
+      - name: Publish release
+        run: bunx @r5n/sisyphus roll --publish-only --yes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

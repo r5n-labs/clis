@@ -25,6 +25,7 @@ export const COMMIT_TYPE_ORDER_FALLBACK = 50;
 
 export const DEFAULT_CONFIG_DIR = ".sisyphus";
 export const DEFAULT_STONES_DIR = "stones";
+export const DEFAULT_RELEASED_DIR = "released";
 
 export const DEFAULT_CONFIG_FILE = "config.json";
 export const DEFAULT_CHANGELOG_FILE = "CHANGELOG.md";
