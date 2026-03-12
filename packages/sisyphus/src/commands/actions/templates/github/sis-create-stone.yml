@@ -30,12 +30,15 @@ jobs:
       - name: Create stone from PR
         id: stone
         run: |
-          OUTPUT=$(bunx @r5n/sisyphus pr --url ${{ github.event.pull_request.html_url }} --yes 2>&1) || true
+          OUTPUT=$(bunx @r5n/sisyphus pr --url ${{ github.event.pull_request.html_url }} --yes 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
           echo "$OUTPUT"
           if echo "$OUTPUT" | grep -q "Skipping:"; then
             echo "skipped=true" >> $GITHUB_OUTPUT
           else
             echo "skipped=false" >> $GITHUB_OUTPUT
+            if [ $EXIT_CODE -ne 0 ]; then
+              exit $EXIT_CODE
+            fi
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
