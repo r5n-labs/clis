@@ -3,6 +3,7 @@ const CONVENTIONAL_COMMIT_REGEX = /^(\w+)(?:\(([^)]+)\))?(!)?: (.+)$/;
 export const OTHER_COMMIT_TYPE = "other";
 
 const SHORT_HASH_LENGTH = 7;
+const FIELD_SEPARATOR = "\x1f";
 
 const KNOWN_COMMIT_TYPES = new Set([
   "build",
@@ -81,11 +82,11 @@ export class Commit {
 
   static async fromHash(hash: string): Promise<Commit | null> {
     try {
-      const result = await Bun.$`git log -1 --pretty=format:"%H|%s" ${hash}`.quiet();
+      const result = await Bun.$`git log -1 --pretty=format:"%H%x1f%s" ${hash}`.quiet();
       const output = result.stdout.toString().trim();
       if (!output) return null;
 
-      const [fullHash, subject] = output.split("|");
+      const [fullHash, subject] = output.split(FIELD_SEPARATOR);
       if (!fullHash || !subject) return null;
 
       return Commit.hydrate(fullHash, subject);
@@ -111,7 +112,7 @@ export class Commit {
     const commits: Commit[] = [];
 
     for (const line of output.split("\n")) {
-      const sepIndex = line.indexOf("\x1f");
+      const sepIndex = line.indexOf(FIELD_SEPARATOR);
       if (sepIndex === -1) continue;
       const hash = line.slice(0, sepIndex);
       const subject = line.slice(sepIndex + 1);
