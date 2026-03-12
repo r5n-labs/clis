@@ -102,10 +102,8 @@ export class ReleaseOrchestrator {
     if (this.options.dryRun) return;
 
     for (const pkg of packages) {
-      const newVersion = pkg.newVersion;
-      if (!newVersion) continue;
-
-      const tagName = `${pkg.name}@${newVersion}`;
+      const version = pkg.newVersion ?? pkg.version;
+      const tagName = `${pkg.name}@${version}`;
       await this.run(() => Bun.$`git tag ${tagName}`.quiet(), `Failed to create tag ${tagName}`);
       this.createdTags.push(tagName);
     }
@@ -125,10 +123,17 @@ export class ReleaseOrchestrator {
     await this.run(() => Bun.$`git push`.quiet(), "Failed to push commits");
 
     if (this.createdTags.length > 0) {
-      await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
+      await this.pushTags();
     }
 
     this.pushedToRemote = true;
+  }
+
+  async pushTags() {
+    if (this.options.dryRun) return;
+    if (this.createdTags.length === 0) return;
+
+    await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
   }
 
   async createGitRelease(stone: Stone, packages: Package[]) {
@@ -138,10 +143,9 @@ export class ReleaseOrchestrator {
     const provider = await this.getProvider();
 
     for (const pkg of packages) {
-      if (!pkg.newVersion) continue;
-
-      const tagName = `${pkg.name}@${pkg.newVersion}`;
-      const title = `${pkg.name} v${pkg.newVersion}`;
+      const version = pkg.newVersion ?? pkg.version;
+      const tagName = `${pkg.name}@${version}`;
+      const title = `${pkg.name} v${version}`;
       const notes = this.formatReleaseNotes(stone, pkg);
 
       await this.run(
@@ -163,8 +167,9 @@ export class ReleaseOrchestrator {
       lines.push("");
     }
 
+    const version = pkg.newVersion ?? pkg.version;
     lines.push(`**Package:** \`${pkg.name}\``);
-    lines.push(`**Version:** ${pkg.version} → ${pkg.newVersion}`);
+    lines.push(`**Version:** ${pkg.version} → ${version}`);
 
     const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
     if (commits.length > 0) {
@@ -230,9 +235,6 @@ export class ReleaseOrchestrator {
   }
 
   private async publishPackage(pkg: Package) {
-    const newVersion = pkg.newVersion;
-    if (!newVersion) return;
-
     const tag = this.config.get("tag") || "latest";
     const pkgDir = dirname(pkg.file);
 
@@ -245,7 +247,7 @@ export class ReleaseOrchestrator {
 
   private formatCommitMessage(stone: Stone, packages: Package[]): string {
     const template = this.config.get("commit").message;
-    const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion}`).join("\n");
+    const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion ?? pkg.version}`).join("\n");
 
     const subject = template
       .replace("{message}", () => stone.message)

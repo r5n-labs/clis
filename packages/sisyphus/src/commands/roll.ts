@@ -324,9 +324,10 @@ export class RollCommand extends BaseCommand {
 
     try {
       if (options.tags) {
-        s.start("Creating git tags...");
+        s.start("Creating and pushing git tags...");
         await orchestrator.createGitTags(packages);
-        s.stop("Git tags created");
+        await orchestrator.pushTags();
+        s.stop("Git tags pushed");
       }
 
       if (options.npm) {
