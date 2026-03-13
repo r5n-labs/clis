@@ -147,9 +147,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
-    await this.applyReleaseChanges(ctx, stones, packages);
+    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
 
-    await Bun.$`git add -A`;
+    await Bun.$`git add ${changedFiles}`;
     await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
     await Bun.$`git push -u origin ${RELEASE_BRANCH} --force`;
 
@@ -164,9 +164,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
-    await this.applyReleaseChanges(ctx, stones, packages);
+    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
 
-    await Bun.$`git add -A`;
+    await Bun.$`git add ${changedFiles}`;
 
     const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
     if (hasChanges.exitCode !== 0) {
@@ -182,15 +182,20 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await Bun.$`git stash --include-untracked`.nothrow();
   }
 
-  private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
+  private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]): Promise<string[]> {
     const changelogConfig = ctx.config.get("changelog");
     const generator = new ChangelogGenerator(changelogConfig);
     const updater = new PackageUpdater();
+    const sisyphusDir = ctx.config.get("sisyphusDir");
+
+    const changedFiles: string[] = [];
 
     await updater.updateAll(packages);
+    changedFiles.push(...packages.map((p) => p.file));
 
     if (changelogConfig.generate) {
       await generator.generate(stones, packages);
+      changedFiles.push(changelogConfig.filename, `**/${changelogConfig.filename}`);
     }
 
     const manager = new StoneManager(ctx.config);
@@ -204,6 +209,10 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     ctx.config.set("currentRelease", { packages: packageVersions, stoneIds: stones.map((s) => s.id), timestamp });
+
+    changedFiles.push(sisyphusDir);
+
+    return changedFiles;
   }
 
   private async createPr(title: string, body: string): Promise<{ number: number; url: string }> {
