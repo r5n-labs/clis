@@ -80,8 +80,8 @@ export class ActionsInitCommand extends BaseCommand {
     const fromFlags = this.getWorkflowsFromFlags(ctx);
     if (fromFlags.length > 0) return fromFlags;
 
-    if (ctx.args.all || !ctx.interactive) {
-      return Object.keys(WORKFLOW_CONFIGS) as WorkflowType[];
+    if (!ctx.interactive) {
+      throw new Exit("No workflows specified", "Use --all or specify workflows with --createStone, --release");
     }
 
     return multiselect({
@@ -97,6 +97,8 @@ export class ActionsInitCommand extends BaseCommand {
   }
 
   private getWorkflowsFromFlags(ctx: InitCtx): WorkflowType[] {
+    if (ctx.args.all) return Object.keys(WORKFLOW_CONFIGS) as WorkflowType[];
+
     const selected: WorkflowType[] = [];
     if (ctx.args.createStone) selected.push("create-stone");
     if (ctx.args.release) selected.push("release");
