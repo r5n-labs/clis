@@ -281,7 +281,7 @@ export class RollCommand extends BaseCommand {
 
     log.info(color.bold("Packages to publish:"));
     for (const pkg of packagesToPublish) {
-      log.info(`  ${pkg.name}@${pkg.version}`);
+      log.info(`  ${pkg.name}@${pkg.newVersion ?? pkg.version}`);
     }
     log.info("");
 
