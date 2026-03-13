@@ -56,15 +56,18 @@ export class GitHubProvider extends GitProvider {
   }
 
   async createPr(options: CreatePrOptions): Promise<PullRequest> {
-    const labelArgs = options.labels?.flatMap((l) => ["--label", l]) ?? [];
-
     const result =
-      await Bun.$`gh pr create --head ${options.head} --base ${options.base} --title ${options.title} --body ${options.body} ${labelArgs}`;
+      await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls --method POST -f head=${options.head} -f base=${options.base} -f title=${options.title} -f body=${options.body}`.quiet();
 
-    const url = result.stdout.toString().trim();
-    const number = this.extractPrNumber(url);
+    const data = JSON.parse(result.stdout.toString());
+    const prNumber = data.number as number;
 
-    return this.getPr(number);
+    if (options.labels && options.labels.length > 0) {
+      const labelArgs = options.labels.flatMap((l) => ["-f", `labels[]=${l}`]);
+      await Bun.$`gh api repos/${this.owner}/${this.repo}/issues/${prNumber}/labels --method POST ${labelArgs}`.quiet();
+    }
+
+    return this.getPr(prNumber);
   }
 
   async updatePr(number: number, options: UpdatePrOptions): Promise<void> {
@@ -141,12 +144,6 @@ export class GitHubProvider extends GitProvider {
     try {
       await Bun.$`gh release delete ${tag} --yes`.quiet();
     } catch {}
-  }
-
-  private extractPrNumber(url: string): number {
-    const match = url.match(/\/pull\/(\d+)$/);
-    if (!match?.[1]) throw new Exit("Failed to parse PR number from URL", url);
-    return Number.parseInt(match[1], 10);
   }
 
   private mapPrResponse(data: Record<string, unknown>): PullRequest {
