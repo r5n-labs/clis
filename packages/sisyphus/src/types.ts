@@ -4,7 +4,9 @@ export type CommitConfig = { author: string; email?: string; message: string };
 
 export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolean; tags: boolean };
 
-export type CurrentRelease = { packages: Record<string, string>; stoneIds: string[]; timestamp: string };
+export type PackageRelease = { oldVersion: string; newVersion: string };
+
+export type CurrentRelease = { packages: Record<string, PackageRelease>; stoneIds: string[]; timestamp: string };
 
 export type ChangelogSections = {
   breaking: string;

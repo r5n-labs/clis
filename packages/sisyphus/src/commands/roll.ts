@@ -263,10 +263,10 @@ export class RollCommand extends BaseCommand {
     const { packages: allPackages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const packagesToPublish: Package[] = [];
 
-    for (const [name, version] of packageEntries) {
+    for (const [name, { oldVersion, newVersion }] of packageEntries) {
       const pkg = allPackages.get(name);
       if (pkg) {
-        packagesToPublish.push(pkg.withVersion(version));
+        packagesToPublish.push(pkg.withVersions(oldVersion, newVersion));
       }
     }
 

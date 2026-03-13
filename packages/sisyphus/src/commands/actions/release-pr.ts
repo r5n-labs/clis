@@ -3,6 +3,7 @@ import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
 import { ChangelogGenerator, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
+import type { PackageRelease } from "../../types";
 
 const RELEASE_BRANCH = "sisyphus/release";
 const RELEASE_LABEL = "sisyphus-release";
@@ -201,10 +202,10 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const timestamp = await manager.archive(stones);
 
-    const packageVersions: Record<string, string> = {};
+    const packageVersions: Record<string, PackageRelease> = {};
     for (const pkg of packages) {
       if (pkg.newVersion) {
-        packageVersions[pkg.name] = pkg.newVersion;
+        packageVersions[pkg.name] = { newVersion: pkg.newVersion, oldVersion: pkg.version };
       }
     }
 

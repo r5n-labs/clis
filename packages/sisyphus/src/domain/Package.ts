@@ -17,6 +17,7 @@ export type PackageOptions = {
   dependencyOf?: readonly string[];
   bump?: BumpType;
   tag?: string;
+  newVersion?: string;
 };
 
 export class Package {
@@ -26,6 +27,7 @@ export class Package {
   readonly dependencyOf: readonly string[];
   readonly bump?: BumpType;
   readonly tag?: string;
+  private readonly _newVersion?: string;
 
   constructor(options: PackageOptions) {
     this.name = options.name;
@@ -34,6 +36,7 @@ export class Package {
     this.dependencyOf = options.dependencyOf ?? [];
     this.bump = options.bump;
     this.tag = options.tag;
+    this._newVersion = options.newVersion;
   }
 
   static fromJson(json: PackageJson, file: string): Package {
@@ -56,6 +59,7 @@ export class Package {
   }
 
   get newVersion(): string | undefined {
+    if (this._newVersion) return this._newVersion;
     if (!this.bump) return undefined;
     return VersionCalculator.bump(this.version, this.bump, this.tag);
   }
@@ -77,12 +81,17 @@ export class Package {
     return new Package({ ...this.toOptions(), version });
   }
 
+  withVersions(oldVersion: string, newVersion: string): Package {
+    return new Package({ ...this.toOptions(), newVersion, version: oldVersion });
+  }
+
   private toOptions(): PackageOptions {
     return {
       bump: this.bump,
       dependencyOf: this.dependencyOf,
       file: this.file,
       name: this.name,
+      newVersion: this._newVersion,
       tag: this.tag,
       version: this.version,
     };
