@@ -1,13 +1,14 @@
 name: Release
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches: [main]
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'sisyphus-release')
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'sisyphus-release'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
