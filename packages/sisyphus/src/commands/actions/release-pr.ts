@@ -144,6 +144,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
+    await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
     await this.applyReleaseChanges(ctx, stones, packages);
@@ -160,8 +161,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git fetch origin ${baseBranch}`;
-    await Bun.$`git checkout ${RELEASE_BRANCH}`;
-    await Bun.$`git reset --hard origin/${baseBranch}`;
+    await this.stashChanges();
+    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
     await this.applyReleaseChanges(ctx, stones, packages);
 
@@ -175,6 +176,10 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
 
     await Bun.$`git checkout ${baseBranch}`;
+  }
+
+  private async stashChanges() {
+    await Bun.$`git stash --include-untracked`.nothrow();
   }
 
   private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
