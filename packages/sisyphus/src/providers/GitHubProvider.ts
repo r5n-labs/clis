@@ -57,14 +57,14 @@ export class GitHubProvider extends GitProvider {
 
   async createPr(options: CreatePrOptions): Promise<PullRequest> {
     const result =
-      await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls --method POST -f head=${options.head} -f base=${options.base} -f title=${options.title} -f body=${options.body}`.quiet();
+      await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls --method POST -f head=${options.head} -f base=${options.base} -f title=${options.title} -f body=${options.body}`;
 
     const data = JSON.parse(result.stdout.toString());
     const prNumber = data.number as number;
 
     if (options.labels && options.labels.length > 0) {
       const labelArgs = options.labels.flatMap((l) => ["-f", `labels[]=${l}`]);
-      await Bun.$`gh api repos/${this.owner}/${this.repo}/issues/${prNumber}/labels --method POST ${labelArgs}`.quiet();
+      await Bun.$`gh api repos/${this.owner}/${this.repo}/issues/${prNumber}/labels --method POST ${labelArgs}`;
     }
 
     return this.getPr(prNumber);

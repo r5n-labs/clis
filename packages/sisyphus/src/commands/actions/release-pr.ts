@@ -144,37 +144,37 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
-    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`.quiet();
+    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
     await this.applyReleaseChanges(ctx, stones, packages);
 
-    await Bun.$`git add -A`.quiet();
-    await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`.quiet();
-    await Bun.$`git push -u origin ${RELEASE_BRANCH} --force`.quiet();
+    await Bun.$`git add -A`;
+    await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
+    await Bun.$`git push -u origin ${RELEASE_BRANCH} --force`;
 
-    await Bun.$`git checkout ${baseBranch}`.quiet();
+    await Bun.$`git checkout ${baseBranch}`;
   }
 
   private async updateReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
-    await Bun.$`git fetch origin ${baseBranch}`.quiet();
-    await Bun.$`git checkout ${RELEASE_BRANCH}`.quiet();
-    await Bun.$`git reset --hard origin/${baseBranch}`.quiet();
+    await Bun.$`git fetch origin ${baseBranch}`;
+    await Bun.$`git checkout ${RELEASE_BRANCH}`;
+    await Bun.$`git reset --hard origin/${baseBranch}`;
 
     await this.applyReleaseChanges(ctx, stones, packages);
 
-    await Bun.$`git add -A`.quiet();
+    await Bun.$`git add -A`;
 
-    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow().quiet();
+    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
     if (hasChanges.exitCode !== 0) {
-      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`.quiet();
+      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
     }
 
-    await Bun.$`git push origin ${RELEASE_BRANCH} --force`.quiet();
+    await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
 
-    await Bun.$`git checkout ${baseBranch}`.quiet();
+    await Bun.$`git checkout ${baseBranch}`;
   }
 
   private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
