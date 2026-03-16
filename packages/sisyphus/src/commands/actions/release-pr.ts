@@ -50,7 +50,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     const prTitle = this.buildPrTitle(updatedPackages);
-    const prBody = this.buildPrBody(mergedStone, updatedPackages, stones);
+    const prBody = this.buildPrBody(updatedPackages, stones);
 
     log.info(`${color.bold("Release PR:")} ${prTitle}`);
     log.info(`${color.dim("Packages:")} ${updatedPackages.map((p) => p.name).join(", ")}`);
@@ -100,17 +100,19 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return `${PR_TITLE_PREFIX} ${names}`;
   }
 
-  private buildPrBody(stone: Stone, packages: Package[], stones: Stone[]): string {
+  private buildPrBody(packages: Package[], stones: Stone[]): string {
     const lines: string[] = [];
 
-    lines.push("## Release Summary");
+    lines.push("## Changes");
     lines.push("");
-    lines.push(`**Message:** ${stone.message}`);
-    if (stone.description) {
+    for (const s of stones) {
+      lines.push(`### ${s.message}`);
+      if (s.description) {
+        lines.push("");
+        lines.push(s.description);
+      }
       lines.push("");
-      lines.push(stone.description);
     }
-    lines.push("");
 
     lines.push("## Packages");
     lines.push("");
@@ -119,14 +121,12 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
     lines.push("");
 
-    if (stones.length > 1) {
-      lines.push("## Stones");
-      lines.push("");
-      for (const s of stones) {
-        lines.push(`- **${s.id}**: ${s.message}`);
-      }
-      lines.push("");
+    lines.push("## Stones");
+    lines.push("");
+    for (const s of stones) {
+      lines.push(`- \`${s.id}\`: ${s.message}`);
     }
+    lines.push("");
 
     lines.push("---");
     lines.push("*This PR was automatically created by [Sisyphus](https://github.com/r5n-labs/clis).*");
