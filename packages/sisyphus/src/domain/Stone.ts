@@ -179,6 +179,10 @@ export class Stone {
     return this.allPackages.length === 0;
   }
 
+  affectsPackage(packageName: string): boolean {
+    return this.allPackages.includes(packageName);
+  }
+
   getPackages(bump: BumpType): readonly string[] {
     return this._packages.get(bump) ?? [];
   }

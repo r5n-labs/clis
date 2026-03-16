@@ -203,7 +203,7 @@ export class RollCommand extends BaseCommand {
 
       if (options.createRelease) {
         s.start("Creating release...");
-        await orchestrator.createGitRelease(stone, packages);
+        await orchestrator.createGitRelease(originalStones, packages);
         s.stop("Release created");
       }
 
@@ -340,8 +340,8 @@ export class RollCommand extends BaseCommand {
         s.start("Creating release...");
         const manager = new StoneManager(ctx.config);
         const stones = await manager.getReleasedStones(currentRelease.timestamp);
-        const mergedStone = stones.length > 0 ? Stone.mergeAll(stones) : this.createFallbackStone(packages);
-        await orchestrator.createGitRelease(mergedStone, packages);
+        const releaseStones = stones.length > 0 ? stones : [this.createFallbackStone(packages)];
+        await orchestrator.createGitRelease(releaseStones, packages);
         s.stop("Release created");
       }
 

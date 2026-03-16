@@ -136,7 +136,7 @@ export class ReleaseOrchestrator {
     await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
   }
 
-  async createGitRelease(stone: Stone, packages: Package[]) {
+  async createGitRelease(stones: Stone[], packages: Package[]) {
     if (this.options.dryRun) return;
 
     await this.initCommitLinks();
@@ -146,7 +146,8 @@ export class ReleaseOrchestrator {
       const version = pkg.newVersion ?? pkg.version;
       const tagName = `${pkg.name}@${version}`;
       const title = `${pkg.name} v${version}`;
-      const notes = this.formatReleaseNotes(stone, pkg);
+      const relevantStones = this.filterStonesForPackage(stones, pkg.name);
+      const notes = this.formatReleaseNotes(relevantStones, pkg);
 
       await this.run(
         () => provider.createRelease({ notes, tag: tagName, title }),
@@ -156,33 +157,45 @@ export class ReleaseOrchestrator {
     }
   }
 
-  private formatReleaseNotes(stone: Stone, pkg: Package): string {
-    const lines: string[] = [];
+  private filterStonesForPackage(stones: Stone[], packageName: string): Stone[] {
+    return stones.filter((s) => s.affectsPackage(packageName));
+  }
 
-    lines.push(`## ${stone.message}`);
+  private formatReleaseNotes(stones: Stone[], pkg: Package): string {
+    const lines: string[] = [];
+    const version = pkg.newVersion ?? pkg.version;
+
+    lines.push(`\`${pkg.name}\` ${pkg.version} → ${version}`);
+
+    if (stones.length === 0) return lines.join("\n");
+
+    lines.push("");
+    lines.push("<details>");
+    lines.push(`<summary>Stones (${stones.length})</summary>`);
     lines.push("");
 
-    if (stone.description) {
-      lines.push(stone.description);
+    for (const stone of stones) {
+      lines.push(`### ${stone.message}`);
       lines.push("");
-    }
-
-    const version = pkg.newVersion ?? pkg.version;
-    lines.push(`**Package:** \`${pkg.name}\``);
-    lines.push(`**Version:** ${pkg.version} → ${version}`);
-
-    const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
-    if (commits.length > 0) {
-      lines.push("");
-      lines.push("<details>");
-      lines.push(`<summary>Commits (${commits.length})</summary>`);
-      lines.push("");
-      for (const commit of commits) {
-        lines.push(this.formatCommitLine(commit));
+      if (stone.description) {
+        lines.push(stone.description);
+        lines.push("");
       }
-      lines.push("");
-      lines.push("</details>");
+      const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
+      if (commits.length > 0) {
+        lines.push("<details>");
+        lines.push(`<summary>Commits (${commits.length})</summary>`);
+        lines.push("");
+        for (const commit of commits) {
+          lines.push(this.formatCommitLine(commit));
+        }
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+      }
     }
+
+    lines.push("</details>");
 
     return lines.join("\n");
   }
