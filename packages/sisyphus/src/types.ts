@@ -28,7 +28,9 @@ export type ChangelogConfig = {
   append: boolean;
   filename: string;
   generate: boolean;
+  packageHeader: string;
   root: boolean;
+  rootHeader: string;
   sections: ChangelogSections;
   template?: string;
 };

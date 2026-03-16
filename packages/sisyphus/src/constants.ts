@@ -41,7 +41,9 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     append: true,
     filename: DEFAULT_CHANGELOG_FILE,
     generate: true,
+    packageHeader: "{emoji} {version} ({date})",
     root: false,
+    rootHeader: "{date} - {packages}",
     sections: {
       breaking: "Breaking changes",
       build: "Build",
