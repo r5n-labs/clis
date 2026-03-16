@@ -82,9 +82,18 @@ export class ReleaseOrchestrator {
     const allFiles = [...files, ...changelogFiles, sisyphusDir];
 
     const message = this.formatCommitMessage(stone, packages);
+    const authorArg = this.getCommitAuthorArg();
+
     await this.run(() => Bun.$`git add -A -- ${allFiles}`.quiet(), "Failed to stage files");
-    await this.run(() => Bun.$`git commit -m ${message}`.quiet(), "Failed to create commit");
+    await this.run(() => Bun.$`git commit ${authorArg} -m ${message}`.quiet(), "Failed to create commit");
     this.commitCreated = true;
+  }
+
+  private getCommitAuthorArg(): string[] {
+    const { author, email } = this.config.get("commit");
+    if (!author) return [];
+    const authorString = email ? `${author} <${email}>` : author;
+    return ["--author", authorString];
   }
 
   private getChangelogFiles(packages: Package[]): string[] {
