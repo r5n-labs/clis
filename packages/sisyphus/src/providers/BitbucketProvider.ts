@@ -48,6 +48,10 @@ export class BitbucketProvider extends GitProvider {
     this.notImplemented();
   }
 
+  async getPrFiles(_number: number): Promise<string[]> {
+    this.notImplemented();
+  }
+
   async ensureLabelExists(_name: string, _options?: CreateLabelOptions): Promise<void> {
     this.notImplemented();
   }

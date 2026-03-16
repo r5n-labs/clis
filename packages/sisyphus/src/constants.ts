@@ -1,9 +1,10 @@
-import { OTHER_COMMIT_TYPE } from "./domain";
 import type { SisyphusConfig } from "./types";
 
 export const CLI_BIN = "sis";
 
 export const BULLET_POINT = "🪨";
+
+export const OTHER_COMMIT_TYPE = "other";
 
 export const COMMIT_TYPE_ORDER: Record<string, number> = {
   build: 23,
@@ -26,6 +27,9 @@ export const COMMIT_TYPE_ORDER_FALLBACK = 50;
 export const DEFAULT_CONFIG_DIR = ".sisyphus";
 export const DEFAULT_STONES_DIR = "stones";
 export const DEFAULT_RELEASED_DIR = "released";
+
+export const SHORT_HASH_LENGTH = 7;
+export const UNKNOWN_HASH = "unknown";
 
 export const DEFAULT_CONFIG_FILE = "config.json";
 export const DEFAULT_CHANGELOG_FILE = "CHANGELOG.md";

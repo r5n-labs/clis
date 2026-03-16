@@ -1,3 +1,5 @@
+export type MergeMethod = "merge" | "squash" | "rebase";
+
 export type PullRequest = {
   number: number;
   url: string;
@@ -7,6 +9,8 @@ export type PullRequest = {
   author: string;
   headBranch: string;
   baseBranch: string;
+  merged: boolean;
+  mergeCommitSha: string | null;
 };
 
 export type CreatePrOptions = { head: string; base: string; title: string; body: string; labels?: string[] };
@@ -46,6 +50,7 @@ export abstract class GitProvider {
   abstract getPr(number: number): Promise<PullRequest>;
   abstract getPrFromCurrentBranch(): Promise<PullRequest>;
   abstract getPrCommits(number: number): Promise<string[]>;
+  abstract getPrFiles(number: number): Promise<string[]>;
 
   abstract ensureLabelExists(name: string, options?: CreateLabelOptions): Promise<void>;
 

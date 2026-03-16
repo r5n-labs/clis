@@ -105,6 +105,18 @@ export class GitLabProvider extends GitProvider {
     }
   }
 
+  async getPrFiles(number: number): Promise<string[]> {
+    try {
+      const result =
+        await Bun.$`glab api projects/${this.owner}%2F${this.repo}/merge_requests/${number}/changes`.quiet();
+      const data = JSON.parse(result.stdout.toString());
+      const changes = data.changes as { new_path: string }[];
+      return changes?.map((c) => c.new_path) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   async ensureLabelExists(name: string, options?: CreateLabelOptions): Promise<void> {
     try {
       const description = options?.description ?? "";
@@ -140,6 +152,8 @@ export class GitLabProvider extends GitProvider {
       body: (data.description as string) ?? "",
       headBranch: (data.source_branch as string) ?? "",
       labels: (data.labels as string[]) ?? [],
+      mergeCommitSha: (data.merge_commit_sha as string) ?? null,
+      merged: data.state === "merged",
       number: data.iid as number,
       title: data.title as string,
       url: data.web_url as string,

@@ -1,8 +1,7 @@
+import { OTHER_COMMIT_TYPE, SHORT_HASH_LENGTH } from "../constants";
+
 const CONVENTIONAL_COMMIT_REGEX = /^(\w+)(?:\(([^)]+)\))?(!)?: (.+)$/;
 
-export const OTHER_COMMIT_TYPE = "other";
-
-const SHORT_HASH_LENGTH = 7;
 const FIELD_SEPARATOR = "\x1f";
 
 const KNOWN_COMMIT_TYPES = new Set([
@@ -92,6 +91,18 @@ export class Commit {
       return Commit.hydrate(fullHash, subject);
     } catch {
       return null;
+    }
+  }
+
+  static async fromMerge(mergeCommitSha: string): Promise<Commit[]> {
+    try {
+      const result = await Bun.$`git rev-parse ${mergeCommitSha}^2`.quiet();
+      const branchTip = result.stdout.toString().trim();
+      if (!branchTip) return [];
+
+      return Commit.fetchFromRange(`${mergeCommitSha}^1..${branchTip}`);
+    } catch {
+      return [];
     }
   }
 

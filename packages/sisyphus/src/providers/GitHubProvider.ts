@@ -44,7 +44,7 @@ export class GitHubProvider extends GitProvider {
       if (options.label) optionalArgs.push("--label", options.label);
 
       const result =
-        await Bun.$`gh pr list --json number,url,title,body,labels,author,headRefName,baseRefName --limit 1 ${optionalArgs}`.quiet();
+        await Bun.$`gh pr list --json number,url,title,body,labels,author,headRefName,baseRefName,mergeCommit,state --limit 1 ${optionalArgs}`.quiet();
       const prs = JSON.parse(result.stdout.toString());
 
       if (!prs[0]) return null;
@@ -89,6 +89,8 @@ export class GitHubProvider extends GitProvider {
         body: data.body ?? "",
         headBranch: data.head?.ref ?? "",
         labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
+        mergeCommitSha: data.merge_commit_sha ?? null,
+        merged: data.merged ?? false,
         number: data.number,
         title: data.title,
         url: data.html_url,
@@ -100,7 +102,8 @@ export class GitHubProvider extends GitProvider {
 
   async getPrFromCurrentBranch(): Promise<PullRequest> {
     try {
-      const result = await Bun.$`gh pr view --json number,title,body,labels,author,headRefName,baseRefName,url`.quiet();
+      const result =
+        await Bun.$`gh pr view --json number,title,body,labels,author,headRefName,baseRefName,url,mergeCommit,state`.quiet();
       const data = JSON.parse(result.stdout.toString());
 
       return {
@@ -109,6 +112,8 @@ export class GitHubProvider extends GitProvider {
         body: data.body ?? "",
         headBranch: data.headRefName,
         labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
+        mergeCommitSha: data.mergeCommit?.oid ?? null,
+        merged: data.state === "MERGED",
         number: data.number,
         title: data.title,
         url: data.url,
@@ -122,6 +127,16 @@ export class GitHubProvider extends GitProvider {
     try {
       const result =
         await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}/commits --jq '.[].sha'`.quiet();
+      return result.stdout.toString().trim().split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  async getPrFiles(number: number): Promise<string[]> {
+    try {
+      const result =
+        await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}/files --jq '.[].filename'`.quiet();
       return result.stdout.toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];
@@ -147,12 +162,15 @@ export class GitHubProvider extends GitProvider {
   }
 
   private mapPrResponse(data: Record<string, unknown>): PullRequest {
+    const mergeCommit = data.mergeCommit as { oid?: string } | undefined;
     return {
       author: (data.author as { login?: string })?.login ?? "unknown",
       baseBranch: data.baseRefName as string,
       body: (data.body as string) ?? "",
       headBranch: data.headRefName as string,
       labels: ((data.labels as { name: string }[]) ?? []).map((l) => l.name),
+      mergeCommitSha: mergeCommit?.oid ?? null,
+      merged: data.state === "MERGED",
       number: data.number as number,
       title: data.title as string,
       url: data.url as string,

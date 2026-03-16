@@ -7,7 +7,14 @@ import type { Provider, PrUrlInfo, RemoteInfo } from "./GitProvider";
 export { BitbucketProvider } from "./BitbucketProvider";
 export { GitHubProvider } from "./GitHubProvider";
 export { GitLabProvider } from "./GitLabProvider";
-export { GitProvider, type Provider, type PrUrlInfo, type PullRequest, type RemoteInfo } from "./GitProvider";
+export {
+  GitProvider,
+  type MergeMethod,
+  type Provider,
+  type PrUrlInfo,
+  type PullRequest,
+  type RemoteInfo,
+} from "./GitProvider";
 
 const GITHUB_PATTERN = /github\.com[:/]([^/]+)\/([^/.]+)/;
 const GITLAB_PATTERN = /gitlab\.com[:/]([^/]+)\/([^/.]+)/;
