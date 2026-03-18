@@ -33,16 +33,58 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   async execute(ctx: ReleasePrCtx) {
-    const manager = new StoneManager(ctx.config);
+    const baseBranch = await this.checkoutReleaseBranch();
 
-    await this.generateStonesFromCommits(ctx, manager);
+    try {
+      const { stones, packages } = await this.collectReleaseData(ctx);
 
-    const stones = await manager.list();
+      if (stones.length === 0) {
+        log.info(color.dim("No pending stones found, skipping release PR"));
+        await Bun.$`git checkout ${baseBranch}`;
+        return;
+      }
 
-    if (stones.length === 0) {
-      log.info(color.dim("No pending stones found, skipping release PR"));
-      return;
+      const prTitle = this.buildPrTitle(packages);
+      const prBody = this.buildPrBody(packages, stones);
+
+      log.info(`${color.bold("Release PR:")} ${prTitle}`);
+      log.info(`${color.dim("Packages:")} ${packages.map((p) => p.name).join(", ")}`);
+
+      if (ctx.args.dryRun) {
+        log.info(color.yellow("\n[dry-run] Would create/update release PR"));
+        log.info(color.dim("\nPR Body preview:"));
+        log.info(prBody);
+        await Bun.$`git checkout ${baseBranch}`;
+        return;
+      }
+
+      await this.commitAndPushChanges(ctx, stones, packages);
+      await this.createOrUpdatePr(prTitle, prBody);
+      await Bun.$`git checkout ${baseBranch}`;
+    } catch (error) {
+      await this.restoreMainBranch();
+      throw error;
     }
+  }
+
+  private async checkoutReleaseBranch(): Promise<string> {
+    const provider = await this.getProvider();
+    const baseBranch = await provider.getDefaultBranch();
+
+    await Bun.$`git fetch origin ${baseBranch}`;
+    await this.stashChanges();
+    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
+
+    return baseBranch;
+  }
+
+  private async collectReleaseData(ctx: ReleasePrCtx): Promise<{ stones: Stone[]; packages: Package[] }> {
+    const manager = new StoneManager(ctx.config);
+    const generatedStones = await this.generateStonesFromCommits(ctx, manager, ctx.args.dryRun);
+    const pendingStones = await manager.list();
+    const stones = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
+
+    if (stones.length === 0) return { packages: [], stones: [] };
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const mergedStone = Stone.mergeAll(stones);
@@ -52,49 +94,39 @@ export class ActionsReleasePrCommand extends BaseCommand {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
     }
 
-    const prTitle = this.buildPrTitle(updatedPackages);
-    const prBody = this.buildPrBody(updatedPackages, stones);
+    return { packages: updatedPackages, stones };
+  }
 
-    log.info(`${color.bold("Release PR:")} ${prTitle}`);
-    log.info(`${color.dim("Packages:")} ${updatedPackages.map((p) => p.name).join(", ")}`);
+  private async commitAndPushChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
+    const s = spinner();
+    s.start("Applying release changes...");
 
-    if (ctx.args.dryRun) {
-      log.info(color.yellow("\n[dry-run] Would create/update release PR"));
-      log.info(color.dim("\nPR Body preview:"));
-      log.info(prBody);
-      return;
+    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
+    await Bun.$`git add ${changedFiles}`;
+
+    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
+    if (hasChanges.exitCode !== 0) {
+      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
     }
 
-    const s = spinner();
+    await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
+    s.stop("Release branch ready");
+  }
 
+  private async createOrUpdatePr(title: string, body: string) {
+    const s = spinner();
     const existingPr = await this.findExistingReleasePr();
 
-    try {
-      if (existingPr) {
-        s.start("Updating release branch...");
-        await this.updateReleaseBranch(ctx, stones, updatedPackages);
-        s.stop("Release branch updated");
-
-        s.start("Updating PR...");
-        await this.updatePr(existingPr.number, prTitle, prBody);
-        s.stop(`PR #${existingPr.number} updated`);
-
-        log.info(`\n${color.green("Release PR updated:")} ${existingPr.url}`);
-      } else {
-        s.start("Creating release branch...");
-        await this.createReleaseBranch(ctx, stones, updatedPackages);
-        s.stop("Release branch created");
-
-        s.start("Creating PR...");
-        const pr = await this.createPr(prTitle, prBody);
-        s.stop(`PR #${pr.number} created`);
-
-        log.info(`\n${color.green("Release PR created:")} ${pr.url}`);
-      }
-    } catch (error) {
-      s.stop("Failed");
-      await this.restoreMainBranch();
-      throw error;
+    if (existingPr) {
+      s.start("Updating PR...");
+      await this.updatePr(existingPr.number, title, body);
+      s.stop(`PR #${existingPr.number} updated`);
+      log.info(`\n${color.green("Release PR updated:")} ${existingPr.url}`);
+    } else {
+      s.start("Creating PR...");
+      const pr = await this.createPr(title, body);
+      s.stop(`PR #${pr.number} created`);
+      log.info(`\n${color.green("Release PR created:")} ${pr.url}`);
     }
   }
 
@@ -148,64 +180,29 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return pr ? { number: pr.number, url: pr.url } : null;
   }
 
-  private async createReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
-    const provider = await this.getProvider();
-    const baseBranch = await provider.getDefaultBranch();
-
-    await this.stashChanges();
-    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
-
-    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
-
-    await Bun.$`git add ${changedFiles}`;
-    await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
-    await Bun.$`git push -u origin ${RELEASE_BRANCH} --force`;
-
-    await Bun.$`git checkout ${baseBranch}`;
-  }
-
-  private async updateReleaseBranch(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
-    const provider = await this.getProvider();
-    const baseBranch = await provider.getDefaultBranch();
-
-    await Bun.$`git fetch origin ${baseBranch}`;
-    await this.stashChanges();
-    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
-
-    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
-
-    await Bun.$`git add ${changedFiles}`;
-
-    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
-    if (hasChanges.exitCode !== 0) {
-      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
-    }
-
-    await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
-
-    await Bun.$`git checkout ${baseBranch}`;
-  }
-
-  private async generateStonesFromCommits(ctx: ReleasePrCtx, manager: StoneManager): Promise<void> {
+  private async generateStonesFromCommits(ctx: ReleasePrCtx, manager: StoneManager, dryRun: boolean): Promise<Stone[]> {
     const analyzer = new CommitAnalyzer(ctx.config);
     const commitGroups = await analyzer.analyze({ single: ctx.config.get("single") });
 
-    if (commitGroups.length === 0) return;
+    if (commitGroups.length === 0) return [];
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
-    const createdStones: Stone[] = [];
+    const stones: Stone[] = [];
 
-    for (const group of commitGroups) {
+    for (const [index, group] of commitGroups.entries()) {
       const stoneData = CommitAnalyzer.buildStoneData(group, packages);
 
-      if (ctx.args.dryRun) {
+      if (dryRun) {
         log.info(`${color.dim("[dry-run] Would generate stone:")} ${group.message}`);
+        stones.push(Stone.create(stoneData, index));
       } else {
         const stone = await manager.create(stoneData);
-        createdStones.push(stone);
+        stones.push(stone);
         log.info(`${color.dim("Generated stone:")} ${stone.id}`);
       }
     }
+
+    return stones;
   }
 
   private async findNewestCommitHash(stones: Stone[]): Promise<string | null> {

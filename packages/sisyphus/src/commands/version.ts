@@ -11,7 +11,6 @@ const versionPositionals = positionals({
   description: { description: "Stone description (optional details)" },
 });
 
-// biome-ignore assist/source/useSortedKeys: cleaner order
 const versionArgs = args({
   dryRun: { alias: "d", default: false, description: "Preview without writing files", type: "boolean" },
   filter: { alias: "f", description: "Filter packages by name", type: "string" },
