@@ -109,8 +109,12 @@ export class PrCommand extends BaseCommand {
     }
 
     for (const pattern of skip.titlePatterns) {
-      if (new RegExp(pattern, "i").test(pr.title)) {
-        return `title matches skip pattern "${pattern}"`;
+      try {
+        if (new RegExp(pattern, "i").test(pr.title)) {
+          return `title matches skip pattern "${pattern}"`;
+        }
+      } catch {
+        log.warn(color.yellow(`Invalid regex pattern in pr.skip.titlePatterns: "${pattern}"`));
       }
     }
 

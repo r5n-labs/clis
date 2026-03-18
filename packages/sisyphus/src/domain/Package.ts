@@ -74,11 +74,7 @@ export class Package {
   }
 
   withBump(bump: BumpType, tag?: string): Package {
-    return new Package({ ...this.toOptions(), bump, tag });
-  }
-
-  withVersion(version: string): Package {
-    return new Package({ ...this.toOptions(), version });
+    return new Package({ ...this.toOptions(), bump, newVersion: undefined, tag });
   }
 
   withVersions(oldVersion: string, newVersion: string): Package {
