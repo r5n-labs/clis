@@ -193,12 +193,34 @@ export class ActionsReleasePrCommand extends BaseCommand {
     if (commitGroups.length === 0) return;
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+    const createdStones: Stone[] = [];
 
     for (const group of commitGroups) {
       const stoneData = CommitAnalyzer.buildStoneData(group, packages);
-      const stone = await manager.create(stoneData);
-      log.info(`${color.dim("Generated stone:")} ${stone.id}`);
+
+      if (ctx.args.dryRun) {
+        log.info(`${color.dim("[dry-run] Would generate stone:")} ${group.message}`);
+      } else {
+        const stone = await manager.create(stoneData);
+        createdStones.push(stone);
+        log.info(`${color.dim("Generated stone:")} ${stone.id}`);
+      }
     }
+
+    if (!ctx.args.dryRun && createdStones.length > 0) {
+      const newestCommit = await this.findNewestCommitHash(createdStones);
+      if (newestCommit) {
+        ctx.config.set("lastStone", { commit: newestCommit, date: new Date().toISOString() });
+      }
+    }
+  }
+
+  private async findNewestCommitHash(stones: Stone[]): Promise<string | null> {
+    const hashes = stones.flatMap((s) => s.commits ?? []).map((c) => c.hash);
+    if (hashes.length === 0) return null;
+
+    const result = await Bun.$`git log -1 --format=%H ${hashes}`.quiet().nothrow();
+    return result.stdout.toString().trim() || null;
   }
 
   private async stashChanges() {
