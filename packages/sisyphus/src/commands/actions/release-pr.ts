@@ -110,8 +110,12 @@ export class ActionsReleasePrCommand extends BaseCommand {
     lines.push("");
     for (const s of stones) {
       lines.push(`### ${s.message}`);
-      if (s.description) {
-        lines.push("");
+      lines.push("");
+      if (s.commits && s.commits.length > 0) {
+        for (const commit of s.commits) {
+          lines.push(`- ${commit.message} (\`${commit.hash}\`)`);
+        }
+      } else if (s.description) {
         lines.push(s.description);
       }
       lines.push("");
