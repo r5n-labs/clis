@@ -63,6 +63,13 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commit: { author: "r5n-bot", message: "chore(release): {message}" },
 
+  commits: {
+    skip: {
+      authors: ["github-actions[bot]", "r5n-bot"],
+      messagePatterns: ["^chore\\(release\\):", "^chore: add stone"],
+    },
+  },
+
   ignore: [],
 
   lastStone: { commit: "", date: "" },

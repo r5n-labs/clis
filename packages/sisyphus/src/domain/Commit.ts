@@ -30,6 +30,7 @@ export type CommitInfo = {
 type CommitOptions = {
   hash: string;
   subject: string;
+  author: string;
   body?: string;
   type: string;
   scope?: string;
@@ -41,6 +42,7 @@ type CommitOptions = {
 export class Commit {
   readonly hash: string;
   readonly subject: string;
+  readonly author: string;
   readonly body?: string;
   readonly type: string;
   readonly scope?: string;
@@ -51,6 +53,7 @@ export class Commit {
   private constructor(options: CommitOptions) {
     this.hash = options.hash;
     this.subject = options.subject;
+    this.author = options.author;
     this.body = options.body;
     this.type = options.type;
     this.scope = options.scope;
@@ -81,14 +84,16 @@ export class Commit {
 
   static async fromHash(hash: string): Promise<Commit | null> {
     try {
-      const result = await Bun.$`git log -1 --pretty=format:"%H%x1f%s" ${hash}`.quiet();
+      const result = await Bun.$`git log -1 --pretty=format:"%H%x1f%s%x1f%an" ${hash}`.quiet();
       const output = result.stdout.toString().trim();
       if (!output) return null;
 
-      const [fullHash, subject] = output.split(FIELD_SEPARATOR);
-      if (!fullHash || !subject) return null;
+      const parts = output.split(FIELD_SEPARATOR);
+      if (parts.length < 3) return null;
+      const [fullHash, subject, author] = parts;
+      if (!fullHash || !subject || !author) return null;
 
-      return Commit.hydrate(fullHash, subject);
+      return Commit.hydrate(fullHash, subject, author);
     } catch {
       return null;
     }
@@ -115,7 +120,7 @@ export class Commit {
   }
 
   private static async fetchFromRange(range: string): Promise<Commit[]> {
-    const result = await Bun.$`git log ${range} --pretty=format:"%H%x1f%s" --no-merges`.quiet();
+    const result = await Bun.$`git log ${range} --pretty=format:"%H%x1f%s%x1f%an" --no-merges`.quiet();
     const output = result.stdout.toString().trim();
 
     if (!output) return [];
@@ -123,24 +128,23 @@ export class Commit {
     const commits: Commit[] = [];
 
     for (const line of output.split("\n")) {
-      const sepIndex = line.indexOf(FIELD_SEPARATOR);
-      if (sepIndex === -1) continue;
-      const hash = line.slice(0, sepIndex);
-      const subject = line.slice(sepIndex + 1);
-      if (!hash || !subject) continue;
+      const parts = line.split(FIELD_SEPARATOR);
+      if (parts.length < 3) continue;
+      const [hash, subject, author] = parts;
+      if (!hash || !subject || !author) continue;
 
-      const commit = await Commit.hydrate(hash, subject);
+      const commit = await Commit.hydrate(hash, subject, author);
       commits.push(commit);
     }
 
     return commits;
   }
 
-  private static async hydrate(hash: string, subject: string): Promise<Commit> {
+  private static async hydrate(hash: string, subject: string, author: string): Promise<Commit> {
     const files = await Commit.getFiles(hash);
     const body = await Commit.getBody(hash);
 
-    return Commit.parse(hash, subject).withFiles(files).withBody(body);
+    return Commit.parse(hash, subject, author).withFiles(files).withBody(body);
   }
 
   private static async getFiles(hash: string): Promise<string[]> {
@@ -154,17 +158,17 @@ export class Commit {
     return body || undefined;
   }
 
-  static parse(hash: string, subject: string): Commit {
+  static parse(hash: string, subject: string, author: string): Commit {
     const match = subject.match(CONVENTIONAL_COMMIT_REGEX);
 
     if (match) {
       const [, type = "", scope, breaking, message = ""] = match;
       if (type && KNOWN_COMMIT_TYPES.has(type)) {
-        return new Commit({ breaking: !!breaking, files: [], hash, message, scope, subject, type });
+        return new Commit({ author, breaking: !!breaking, files: [], hash, message, scope, subject, type });
       }
     }
 
-    return new Commit({ breaking: false, files: [], hash, message: subject, subject, type: OTHER_COMMIT_TYPE });
+    return new Commit({ author, breaking: false, files: [], hash, message: subject, subject, type: OTHER_COMMIT_TYPE });
   }
 
   get shortHash(): string {
@@ -197,6 +201,7 @@ export class Commit {
 
   private toOptions(): CommitOptions {
     return {
+      author: this.author,
       body: this.body,
       breaking: this.breaking,
       files: this.files,

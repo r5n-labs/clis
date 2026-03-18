@@ -1,7 +1,7 @@
-import type { ConfigManager } from "@r5n/cli-core";
-import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
+import { type ConfigManager, color, log } from "@r5n/cli-core";
+import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK, SISYPHUS_DEFAULT_CONFIG } from "../constants";
 import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE } from "../domain";
-import type { SisyphusConfig } from "../types";
+import type { CommitsSkipConfig, SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages } from "../utils";
 import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
@@ -41,7 +41,25 @@ export class CommitAnalyzer {
       if (commits.length === 0) return [];
     }
 
+    const skipConfig = this.config.get("commits")?.skip ?? SISYPHUS_DEFAULT_CONFIG.commits.skip;
+    commits = commits.filter((c) => !this.shouldSkipCommit(c, skipConfig));
+    if (commits.length === 0) return [];
+
     return this.groupByPackage(commits, options);
+  }
+
+  private shouldSkipCommit(commit: Commit, skip: CommitsSkipConfig): boolean {
+    if (skip.authors.includes(commit.author)) return true;
+
+    for (const pattern of skip.messagePatterns) {
+      try {
+        if (new RegExp(pattern, "i").test(commit.subject)) return true;
+      } catch {
+        log.warn(color.yellow(`Invalid regex pattern in commits.skip.messagePatterns: "${pattern}"`));
+      }
+    }
+
+    return false;
   }
 
   get commitCount(): Promise<number> {

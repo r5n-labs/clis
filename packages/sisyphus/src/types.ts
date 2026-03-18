@@ -43,10 +43,15 @@ export type PrSkipConfig = { labels: string[]; authors: string[]; titlePatterns:
 
 export type PrConfig = { labelMapping: PrLabelMapping; skip: PrSkipConfig };
 
+export type CommitsSkipConfig = { authors: string[]; messagePatterns: string[] };
+
+export type CommitsConfig = { skip: CommitsSkipConfig };
+
 export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
+  commits: CommitsConfig;
   currentRelease?: CurrentRelease;
   sisyphusDir: string;
   ignore: string[];
