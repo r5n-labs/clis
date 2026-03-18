@@ -3,6 +3,7 @@ import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
 import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE } from "../domain";
 import type { SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages } from "../utils";
+import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
 const COMMIT_TYPE_TO_BUMP: Record<string, BumpType> = {
@@ -24,11 +25,21 @@ export type CommitGroup = { message: string; bump: BumpType; packages: Set<strin
 export type AnalyzeOptions = { filter?: string; single?: boolean };
 
 export class CommitAnalyzer {
-  constructor(private config: ConfigManager<SisyphusConfig>) {}
+  private stoneManager: StoneManager;
+
+  constructor(private config: ConfigManager<SisyphusConfig>) {
+    this.stoneManager = new StoneManager(config);
+  }
 
   async analyze(options: AnalyzeOptions = {}): Promise<CommitGroup[]> {
-    const commits = await this.getCommitsSinceLastRelease();
+    let commits = await this.getCommitsSinceLastRelease();
     if (commits.length === 0) return [];
+
+    const trackedHashes = await this.stoneManager.getAllTrackedCommitHashes();
+    if (trackedHashes.size > 0) {
+      commits = commits.filter((c) => !trackedHashes.has(c.shortHash));
+      if (commits.length === 0) return [];
+    }
 
     return this.groupByPackage(commits, options);
   }

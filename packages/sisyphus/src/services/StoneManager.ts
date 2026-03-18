@@ -148,6 +148,26 @@ export class StoneManager {
     return stones;
   }
 
+  async listReleasedTimestamps(): Promise<string[]> {
+    if (!existsSync(this.releasedPath)) return [];
+
+    const entries = await readdir(this.releasedPath, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  }
+
+  async getAllTrackedCommitHashes(): Promise<Set<string>> {
+    const allStones = await this.listAllStones();
+    const hashes = allStones.flatMap((stone) => stone.commits ?? []).map((commit) => commit.hash);
+    return new Set(hashes);
+  }
+
+  private async listAllStones(): Promise<Stone[]> {
+    const pending = await this.list();
+    const timestamps = await this.listReleasedTimestamps();
+    const released = await Promise.all(timestamps.map((t) => this.getReleasedStones(t)));
+    return [...pending, ...released.flat()];
+  }
+
   getFilePath(id: string): string {
     return join(this.stonesPath, `${id}.json`);
   }
