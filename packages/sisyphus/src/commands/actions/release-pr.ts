@@ -206,13 +206,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
         log.info(`${color.dim("Generated stone:")} ${stone.id}`);
       }
     }
-
-    if (!ctx.args.dryRun && createdStones.length > 0) {
-      const newestCommit = await this.findNewestCommitHash(createdStones);
-      if (newestCommit) {
-        ctx.config.set("lastStone", { commit: newestCommit, date: new Date().toISOString() });
-      }
-    }
   }
 
   private async findNewestCommitHash(stones: Stone[]): Promise<string | null> {
@@ -254,6 +247,11 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     ctx.config.set("currentRelease", { packages: packageVersions, stoneIds: stones.map((s) => s.id), timestamp });
+
+    const newestCommit = await this.findNewestCommitHash(stones);
+    if (newestCommit) {
+      ctx.config.set("lastStone", { commit: newestCommit, date: new Date().toISOString() });
+    }
 
     changedFiles.push(sisyphusDir);
 
