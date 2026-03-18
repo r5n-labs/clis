@@ -2,7 +2,7 @@ import { args, color, confirm, Exit, log, multiselect, note, positionals, text }
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
-import { CommitAnalyzer, type CommitGroup, StoneManager, WorkspaceScanner } from "../services";
+import { CommitAnalyzer, StoneManager, WorkspaceScanner } from "../services";
 import { findDependencyPackages } from "../utils";
 
 // biome-ignore assist/source/useSortedKeys: message must come first
@@ -126,7 +126,7 @@ export class VersionCommand extends BaseCommand {
     let createdCount = 0;
 
     for (const group of commitGroups) {
-      const stoneData = this.buildStoneDataFromCommitGroup(group, packages, ctx.args.tag);
+      const stoneData = CommitAnalyzer.buildStoneData(group, packages, ctx.args.tag);
 
       if (ctx.args.dryRun) {
         this.logDryRunStone(stoneData);
@@ -224,21 +224,6 @@ export class VersionCommand extends BaseCommand {
       patch: nonEmpty(selection.patch),
       tag,
     };
-  }
-
-  private buildStoneDataFromCommitGroup(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
-    const pkgNames = Array.from(group.packages);
-    const commits = group.commits.length > 0 ? group.commits : undefined;
-    const data: StoneData = { commits, message: group.message, tag };
-
-    if (group.bump === BumpType.Major) data.major = pkgNames;
-    else if (group.bump === BumpType.Minor) data.minor = pkgNames;
-    else data.patch = pkgNames;
-
-    const deps = findDependencyPackages(pkgNames, packages);
-    if (deps.length > 0) data.dependency = deps;
-
-    return data;
   }
 
   private async createStone(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>) {

@@ -1,8 +1,8 @@
 import { type ConfigManager, color, log } from "@r5n/cli-core";
 import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK, SISYPHUS_DEFAULT_CONFIG } from "../constants";
-import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE } from "../domain";
+import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE, type Package, type StoneData } from "../domain";
 import type { CommitsSkipConfig, SisyphusConfig } from "../types";
-import { buildPackagePathMap, findAffectedPackages } from "../utils";
+import { buildPackagePathMap, findAffectedPackages, findDependencyPackages } from "../utils";
 import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
@@ -111,5 +111,20 @@ export class CommitAnalyzer {
     const sections = this.config.get("changelog").sections;
     if (commit.breaking) return sections.breaking;
     return sections[commit.type as keyof typeof sections] ?? `${commit.type} updates`;
+  }
+
+  static buildStoneData(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
+    const pkgNames = Array.from(group.packages);
+    const commits = group.commits.length > 0 ? group.commits : undefined;
+    const data: StoneData = { commits, message: group.message, tag };
+
+    if (group.bump === BumpType.Major) data.major = pkgNames;
+    else if (group.bump === BumpType.Minor) data.minor = pkgNames;
+    else data.patch = pkgNames;
+
+    const deps = findDependencyPackages(pkgNames, packages);
+    if (deps.length > 0) data.dependency = deps;
+
+    return data;
   }
 }

@@ -2,7 +2,7 @@ import { args, color, Exit, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
-import { ChangelogGenerator, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
+import { ChangelogGenerator, CommitAnalyzer, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
 import type { PackageRelease } from "../../types";
 
 const RELEASE_BRANCH = "sisyphus/release";
@@ -34,6 +34,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
 
   async execute(ctx: ReleasePrCtx) {
     const manager = new StoneManager(ctx.config);
+
+    await this.generateStonesFromCommits(ctx, manager);
+
     const stones = await manager.list();
 
     if (stones.length === 0) {
@@ -177,6 +180,21 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
 
     await Bun.$`git checkout ${baseBranch}`;
+  }
+
+  private async generateStonesFromCommits(ctx: ReleasePrCtx, manager: StoneManager): Promise<void> {
+    const analyzer = new CommitAnalyzer(ctx.config);
+    const commitGroups = await analyzer.analyze({ single: ctx.config.get("single") });
+
+    if (commitGroups.length === 0) return;
+
+    const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+
+    for (const group of commitGroups) {
+      const stoneData = CommitAnalyzer.buildStoneData(group, packages);
+      const stone = await manager.create(stoneData);
+      log.info(`${color.dim("Generated stone:")} ${stone.id}`);
+    }
   }
 
   private async stashChanges() {
