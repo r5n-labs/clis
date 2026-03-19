@@ -100,7 +100,7 @@ export function createCiGenerator(provider: Provider): CiGenerator {
       return new GitHubCiGenerator();
     case "gitlab":
       return new GitLabCiGenerator();
-    case "bitbucket":
-      throw new Error("Bitbucket CI generation is not supported yet");
+    default:
+      throw new Error(`CI generation is not supported for ${provider}`);
   }
 }

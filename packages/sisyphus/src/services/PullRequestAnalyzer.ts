@@ -194,19 +194,8 @@ export class PullRequestAnalyzer {
     return this.mapPullRequest(pr);
   }
 
-  private mapPullRequest(pr: PullRequest): PullRequestInfo {
-    return {
-      author: pr.author,
-      baseBranch: pr.baseBranch,
-      body: pr.body,
-      branch: pr.headBranch,
-      labels: pr.labels,
-      mergeCommitSha: pr.mergeCommitSha,
-      merged: pr.merged,
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-    };
+  private mapPullRequest({ headBranch, ...pr }: PullRequest): PullRequestInfo {
+    return { ...pr, branch: headBranch };
   }
 
   inferBumpFromLabels(labels: string[]): BumpType | null {

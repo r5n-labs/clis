@@ -116,15 +116,14 @@ export class CommitAnalyzer {
   static buildStoneData(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
     const pkgNames = Array.from(group.packages);
     const commits = group.commits.length > 0 ? group.commits : undefined;
-    const data: StoneData = { commits, message: group.message, tag };
-
-    if (group.bump === BumpType.Major) data.major = pkgNames;
-    else if (group.bump === BumpType.Minor) data.minor = pkgNames;
-    else data.patch = pkgNames;
-
     const deps = findDependencyPackages(pkgNames, packages);
-    if (deps.length > 0) data.dependency = deps;
 
-    return data;
+    return {
+      [group.bump]: pkgNames,
+      commits,
+      dependency: deps.length > 0 ? deps : undefined,
+      message: group.message,
+      tag,
+    };
   }
 }

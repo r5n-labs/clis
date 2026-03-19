@@ -38,6 +38,8 @@ export async function createGitProvider() {
       return new GitLabProvider(info);
     case "bitbucket":
       return new BitbucketProvider(info);
+    default:
+      throw new Exit(`Unsupported provider: ${info.provider}`);
   }
 }
 
@@ -73,11 +75,11 @@ function parseRemoteUrl(url: string): RemoteInfo | null {
 
   for (const [pattern, provider] of patterns) {
     const match = url.match(pattern);
-    if (match) {
-      const [, owner, repo] = match;
-      if (owner && repo) {
-        return { owner, provider, repo };
-      }
+    if (!match) continue;
+
+    const [, owner, repo] = match;
+    if (owner && repo) {
+      return { owner, provider, repo };
     }
   }
 
@@ -93,11 +95,11 @@ export function parsePrUrl(url: string): PrUrlInfo | null {
 
   for (const [pattern, provider] of patterns) {
     const match = url.match(pattern);
-    if (match) {
-      const [, owner, repo, number] = match;
-      if (owner && repo && number) {
-        return { number: Number.parseInt(number, 10), owner, provider, repo };
-      }
+    if (!match) continue;
+
+    const [, owner, repo, number] = match;
+    if (owner && repo && number) {
+      return { number: Number.parseInt(number, 10), owner, provider, repo };
     }
   }
 
