@@ -285,6 +285,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const baseBranch = await provider.getDefaultBranch();
     try {
       await Bun.$`git checkout ${baseBranch}`.quiet();
-    } catch {}
+    } catch (error) {
+      log.warn(color.dim(`Failed to restore branch: ${error}`));
+    }
   }
 }

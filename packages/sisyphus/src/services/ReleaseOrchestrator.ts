@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { type ConfigManager, Exit } from "@r5n/cli-core";
+import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
 import type { CommitInfo, Package, Stone } from "../domain";
 import { createGitProvider, type GitProvider } from "../providers";
 import type { SisyphusConfig } from "../types";
@@ -234,21 +234,27 @@ export class ReleaseOrchestrator {
       for (const tag of this.createdTags) {
         try {
           await Bun.$`git push origin --delete ${tag}`.quiet();
-        } catch {}
+        } catch (error) {
+          log.warn(color.dim(`Failed to delete remote tag "${tag}": ${error}`));
+        }
       }
     }
 
     for (const tag of this.createdTags) {
       try {
         await Bun.$`git tag -d ${tag}`.quiet();
-      } catch {}
+      } catch (error) {
+        log.warn(color.dim(`Failed to delete local tag "${tag}": ${error}`));
+      }
     }
     this.createdTags = [];
 
     if (this.commitCreated) {
       try {
         await Bun.$`git reset HEAD~1`.quiet();
-      } catch {}
+      } catch (error) {
+        log.warn(color.dim(`Failed to reset commit: ${error}`));
+      }
       this.commitCreated = false;
     }
 

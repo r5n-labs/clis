@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ConfigManager } from "@r5n/cli-core";
+import { type ConfigManager, color, log } from "@r5n/cli-core";
 import { DEFAULT_CONFIG_DIR, DEFAULT_RELEASED_DIR, DEFAULT_STONES_DIR } from "../constants";
 import { Stone, type StoneData, type StoneJson } from "../domain";
 import type { SisyphusConfig } from "../types";
@@ -142,7 +142,9 @@ export class StoneManager {
         const content = await readFile(join(archiveDir, file), "utf-8");
         const json: StoneJson = JSON.parse(content);
         stones.push(Stone.fromJson(json));
-      } catch {}
+      } catch (error) {
+        log.warn(color.dim(`Failed to parse stone "${file}": ${error}`));
+      }
     }
 
     return stones;
