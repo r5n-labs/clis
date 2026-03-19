@@ -1,6 +1,6 @@
 import type { ConfigManager } from "@r5n/cli-core";
 import { Exit } from "@r5n/cli-core";
-import { SHORT_HASH_LENGTH, UNKNOWN_HASH } from "../constants";
+import { OTHER_COMMIT_TYPE, SHORT_HASH_LENGTH, UNKNOWN_HASH } from "../constants";
 import { BumpType, Commit, type CommitInfo } from "../domain";
 import { createGitProvider, type GitProvider, type MergeMethod, type PullRequest, parsePrUrl } from "../providers";
 import type { SisyphusConfig } from "../types";
@@ -154,7 +154,7 @@ export class PullRequestAnalyzer {
 
   private inferCommitType(title: string): string {
     const match = title.match(/^(\w+)(?:\(.*?\))?!?:/);
-    return match?.[1] ?? "other";
+    return match?.[1] ?? OTHER_COMMIT_TYPE;
   }
 
   private async getProvider(): Promise<GitProvider> {

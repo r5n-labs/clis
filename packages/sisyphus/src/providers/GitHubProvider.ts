@@ -1,4 +1,5 @@
 import { Exit } from "@r5n/cli-core";
+import { DEFAULT_BRANCH, UNKNOWN_AUTHOR } from "../constants";
 import {
   type CreateLabelOptions,
   type CreatePrOptions,
@@ -9,7 +10,32 @@ import {
   type UpdatePrOptions,
 } from "./GitProvider";
 
-const DEFAULT_BRANCH = "main";
+type GitHubRestPrResponse = {
+  number: number;
+  title: string;
+  body: string | null;
+  html_url: string;
+  state: string;
+  merged: boolean;
+  merge_commit_sha: string | null;
+  user: { login: string } | null;
+  base: { ref: string } | null;
+  head: { ref: string } | null;
+  labels: { name: string }[] | null;
+};
+
+type GitHubCliPrResponse = {
+  number: number;
+  title: string;
+  body: string | null;
+  url: string;
+  state: string;
+  baseRefName: string;
+  headRefName: string;
+  author: { login: string } | null;
+  labels: { name: string }[] | null;
+  mergeCommit: { oid: string } | null;
+};
 
 export class GitHubProvider extends GitProvider {
   readonly name = "github" as const;
@@ -83,18 +109,7 @@ export class GitHubProvider extends GitProvider {
       const result = await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}`.quiet();
       const data = JSON.parse(result.stdout.toString());
 
-      return {
-        author: data.user?.login ?? "unknown",
-        baseBranch: data.base?.ref ?? DEFAULT_BRANCH,
-        body: data.body ?? "",
-        headBranch: data.head?.ref ?? "",
-        labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
-        mergeCommitSha: data.merge_commit_sha ?? null,
-        merged: data.merged ?? false,
-        number: data.number,
-        title: data.title,
-        url: data.html_url,
-      };
+      return this.mapRestApiResponse(data);
     } catch {
       throw new Exit(`Failed to fetch PR #${number}`, "Make sure the PR exists and you have access");
     }
@@ -106,18 +121,7 @@ export class GitHubProvider extends GitProvider {
         await Bun.$`gh pr view --json number,title,body,labels,author,headRefName,baseRefName,url,mergeCommit,state`.quiet();
       const data = JSON.parse(result.stdout.toString());
 
-      return {
-        author: data.author?.login ?? "unknown",
-        baseBranch: data.baseRefName,
-        body: data.body ?? "",
-        headBranch: data.headRefName,
-        labels: data.labels?.map((l: { name: string }) => l.name) ?? [],
-        mergeCommitSha: data.mergeCommit?.oid ?? null,
-        merged: data.state === "MERGED",
-        number: data.number,
-        title: data.title,
-        url: data.url,
-      };
+      return this.mapPrResponse(data);
     } catch {
       throw new Exit("No PR found for current branch", "Make sure you have an open PR or provide a URL with --url");
     }
@@ -161,19 +165,33 @@ export class GitHubProvider extends GitProvider {
     } catch {}
   }
 
-  private mapPrResponse(data: Record<string, unknown>): PullRequest {
-    const mergeCommit = data.mergeCommit as { oid?: string } | undefined;
+  private mapRestApiResponse(data: GitHubRestPrResponse): PullRequest {
     return {
-      author: (data.author as { login?: string })?.login ?? "unknown",
-      baseBranch: data.baseRefName as string,
-      body: (data.body as string) ?? "",
-      headBranch: data.headRefName as string,
-      labels: ((data.labels as { name: string }[]) ?? []).map((l) => l.name),
-      mergeCommitSha: mergeCommit?.oid ?? null,
+      author: data.user?.login ?? UNKNOWN_AUTHOR,
+      baseBranch: data.base?.ref ?? DEFAULT_BRANCH,
+      body: data.body ?? "",
+      headBranch: data.head?.ref ?? "",
+      labels: data.labels?.map((l) => l.name) ?? [],
+      mergeCommitSha: data.merge_commit_sha,
+      merged: data.merged,
+      number: data.number,
+      title: data.title,
+      url: data.html_url,
+    };
+  }
+
+  private mapPrResponse(data: GitHubCliPrResponse): PullRequest {
+    return {
+      author: data.author?.login ?? UNKNOWN_AUTHOR,
+      baseBranch: data.baseRefName ?? DEFAULT_BRANCH,
+      body: data.body ?? "",
+      headBranch: data.headRefName ?? "",
+      labels: data.labels?.map((l) => l.name) ?? [],
+      mergeCommitSha: data.mergeCommit?.oid ?? null,
       merged: data.state === "MERGED",
-      number: data.number as number,
-      title: data.title as string,
-      url: data.url as string,
+      number: data.number,
+      title: data.title,
+      url: data.url,
     };
   }
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_VERSION } from "../constants";
 import { VersionCalculator } from "../services/VersionCalculator";
 import { BUMP_ORDER, type BumpType } from "./BumpType";
 import type { Stone } from "./Stone";
@@ -40,7 +41,7 @@ export class Package {
   }
 
   static fromJson(json: PackageJson, file: string): Package {
-    return new Package({ file, name: json.name, version: json.version || "0.0.0" });
+    return new Package({ file, name: json.name, version: json.version || DEFAULT_VERSION });
   }
 
   static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {

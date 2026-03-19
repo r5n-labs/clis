@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
+import { DEFAULT_NPM_TAG } from "../constants";
 import type { CommitInfo, Package, Stone } from "../domain";
 import { createGitProvider, type GitProvider } from "../providers";
 import type { SisyphusConfig } from "../types";
@@ -263,7 +264,7 @@ export class ReleaseOrchestrator {
   }
 
   private async publishPackage(pkg: Package) {
-    const tag = this.config.get("tag") || "latest";
+    const tag = this.config.get("tag") || DEFAULT_NPM_TAG;
     const pkgDir = dirname(pkg.file);
 
     await this.run(() => Bun.$`bun run build`.cwd(pkgDir).quiet(), `Failed to build ${pkg.name}`);

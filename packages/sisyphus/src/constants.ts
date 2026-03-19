@@ -31,6 +31,14 @@ export const DEFAULT_RELEASED_DIR = "released";
 export const SHORT_HASH_LENGTH = 7;
 export const UNKNOWN_HASH = "unknown";
 
+export const UNKNOWN_AUTHOR = "unknown";
+export const DEFAULT_VERSION = "0.0.0";
+export const DEFAULT_NPM_TAG = "latest";
+export const DEFAULT_BRANCH = "main";
+
+export const STONE_ID_PAD_LENGTH = 4;
+export const SHORT_UUID_LENGTH = 8;
+
 export const DEFAULT_CONFIG_FILE = "config.json";
 export const DEFAULT_CHANGELOG_FILE = "CHANGELOG.md";
 

@@ -1,4 +1,5 @@
 import { Exit } from "@r5n/cli-core";
+import { DEFAULT_BRANCH, UNKNOWN_AUTHOR } from "../constants";
 import {
   type CreateLabelOptions,
   type CreatePrOptions,
@@ -9,7 +10,20 @@ import {
   type UpdatePrOptions,
 } from "./GitProvider";
 
-const DEFAULT_BRANCH = "main";
+type GitLabMrResponse = {
+  iid: number;
+  title: string;
+  description: string | null;
+  web_url: string;
+  state: string;
+  target_branch: string;
+  source_branch: string;
+  merge_commit_sha: string | null;
+  author: { username: string } | null;
+  labels: string[];
+};
+
+type GitLabChangesResponse = { changes: { new_path: string }[] };
 
 export class GitLabProvider extends GitProvider {
   readonly name = "gitlab" as const;
@@ -109,9 +123,8 @@ export class GitLabProvider extends GitProvider {
     try {
       const result =
         await Bun.$`glab api projects/${this.owner}%2F${this.repo}/merge_requests/${number}/changes`.quiet();
-      const data = JSON.parse(result.stdout.toString());
-      const changes = data.changes as { new_path: string }[];
-      return changes?.map((c) => c.new_path) ?? [];
+      const data: GitLabChangesResponse = JSON.parse(result.stdout.toString());
+      return data.changes?.map((c) => c.new_path) ?? [];
     } catch {
       return [];
     }
@@ -145,18 +158,18 @@ export class GitLabProvider extends GitProvider {
     throw new Exit("Failed to parse MR number from output", output);
   }
 
-  private mapMrResponse(data: Record<string, unknown>): PullRequest {
+  private mapMrResponse(data: GitLabMrResponse): PullRequest {
     return {
-      author: (data.author as { username?: string })?.username ?? "unknown",
-      baseBranch: (data.target_branch as string) ?? DEFAULT_BRANCH,
-      body: (data.description as string) ?? "",
-      headBranch: (data.source_branch as string) ?? "",
-      labels: (data.labels as string[]) ?? [],
-      mergeCommitSha: (data.merge_commit_sha as string) ?? null,
+      author: data.author?.username ?? UNKNOWN_AUTHOR,
+      baseBranch: data.target_branch ?? DEFAULT_BRANCH,
+      body: data.description ?? "",
+      headBranch: data.source_branch ?? "",
+      labels: data.labels ?? [],
+      mergeCommitSha: data.merge_commit_sha,
       merged: data.state === "merged",
-      number: data.iid as number,
-      title: data.title as string,
-      url: data.web_url as string,
+      number: data.iid,
+      title: data.title,
+      url: data.web_url,
     };
   }
 }

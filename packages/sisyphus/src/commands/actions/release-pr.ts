@@ -136,13 +136,19 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private buildPrBody(packages: Package[], stones: Stone[]): string {
-    const lines: string[] = [];
+    const sections = [
+      this.buildChangesSection(stones),
+      this.buildPackagesSection(packages),
+      this.buildStonesSection(stones),
+      this.buildFooter(),
+    ];
+    return sections.join("\n");
+  }
 
-    lines.push("## Changes");
-    lines.push("");
+  private buildChangesSection(stones: Stone[]): string {
+    const lines = ["## Changes", ""];
     for (const s of stones) {
-      lines.push(`### ${s.message}`);
-      lines.push("");
+      lines.push(`### ${s.message}`, "");
       if (s.commits && s.commits.length > 0) {
         for (const commit of s.commits) {
           lines.push(`- ${commit.message} (\`${commit.hash}\`)`);
@@ -152,26 +158,33 @@ export class ActionsReleasePrCommand extends BaseCommand {
       }
       lines.push("");
     }
+    return lines.join("\n");
+  }
 
-    lines.push("## Packages");
-    lines.push("");
+  private buildPackagesSection(packages: Package[]): string {
+    const lines = ["## Packages", ""];
     for (const pkg of packages) {
       lines.push(`- \`${pkg.name}\` ${pkg.version} → ${pkg.newVersion}`);
     }
     lines.push("");
+    return lines.join("\n");
+  }
 
-    lines.push("## Stones");
-    lines.push("");
+  private buildStonesSection(stones: Stone[]): string {
+    const lines = ["## Stones", ""];
     for (const s of stones) {
       lines.push(`- \`${s.id}\`: ${s.message}`);
     }
     lines.push("");
-
-    lines.push("---");
-    lines.push("*This PR was automatically created by [Sisyphus](https://github.com/r5n-labs/clis).*");
-    lines.push("*Merging this PR will trigger the release workflow.*");
-
     return lines.join("\n");
+  }
+
+  private buildFooter(): string {
+    return [
+      "---",
+      "*This PR was automatically created by [Sisyphus](https://github.com/r5n-labs/clis).*",
+      "*Merging this PR will trigger the release workflow.*",
+    ].join("\n");
   }
 
   private async findExistingReleasePr(): Promise<{ number: number; url: string } | null> {
@@ -218,41 +231,61 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]): Promise<string[]> {
-    const changelogConfig = ctx.config.get("changelog");
-    const generator = new ChangelogGenerator(changelogConfig);
-    const updater = new PackageUpdater();
-    const sisyphusDir = ctx.config.get("sisyphusDir");
-
     const changedFiles: string[] = [];
 
+    changedFiles.push(...(await this.updatePackages(packages)));
+    changedFiles.push(...(await this.generateChangelogs(ctx, stones, packages)));
+    changedFiles.push(...(await this.archiveStonesAndUpdateConfig(ctx, stones, packages)));
+
+    return changedFiles;
+  }
+
+  private async updatePackages(packages: Package[]): Promise<string[]> {
+    const updater = new PackageUpdater();
     await updater.updateAll(packages);
-    changedFiles.push(...packages.map((p) => p.file));
+    return packages.map((p) => p.file);
+  }
 
-    if (changelogConfig.generate) {
-      await generator.generate(stones, packages);
-      changedFiles.push(changelogConfig.filename, `**/${changelogConfig.filename}`);
-    }
+  private async generateChangelogs(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]): Promise<string[]> {
+    const changelogConfig = ctx.config.get("changelog");
+    if (!changelogConfig.generate) return [];
 
+    const generator = new ChangelogGenerator(changelogConfig);
+    await generator.generate(stones, packages);
+    return [changelogConfig.filename, `**/${changelogConfig.filename}`];
+  }
+
+  private async archiveStonesAndUpdateConfig(
+    ctx: ReleasePrCtx,
+    stones: Stone[],
+    packages: Package[],
+  ): Promise<string[]> {
     const manager = new StoneManager(ctx.config);
     const timestamp = await manager.archive(stones);
 
-    const packageVersions: Record<string, PackageRelease> = {};
-    for (const pkg of packages) {
-      if (pkg.newVersion) {
-        packageVersions[pkg.name] = { newVersion: pkg.newVersion, oldVersion: pkg.version };
-      }
-    }
-
+    const packageVersions = this.buildPackageVersions(packages);
     ctx.config.set("currentRelease", { packages: packageVersions, stoneIds: stones.map((s) => s.id), timestamp });
 
+    await this.updateLastStone(ctx, stones);
+
+    return [ctx.config.get("sisyphusDir")];
+  }
+
+  private buildPackageVersions(packages: Package[]): Record<string, PackageRelease> {
+    const versions: Record<string, PackageRelease> = {};
+    for (const pkg of packages) {
+      if (pkg.newVersion) {
+        versions[pkg.name] = { newVersion: pkg.newVersion, oldVersion: pkg.version };
+      }
+    }
+    return versions;
+  }
+
+  private async updateLastStone(ctx: ReleasePrCtx, stones: Stone[]) {
     const newestCommit = await this.findNewestCommitHash(stones);
     if (newestCommit) {
       ctx.config.set("lastStone", { commit: newestCommit, date: new Date().toISOString() });
     }
-
-    changedFiles.push(sisyphusDir);
-
-    return changedFiles;
   }
 
   private async createPr(title: string, body: string): Promise<{ number: number; url: string }> {
