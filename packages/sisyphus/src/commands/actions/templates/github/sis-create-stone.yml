@@ -24,8 +24,8 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "r5n-bot[bot]"
+          git config user.email "r5n-bot[bot]@users.noreply.github.com"
 
       - name: Create stone from PR
         id: stone

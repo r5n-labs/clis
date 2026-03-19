@@ -5,8 +5,8 @@ handle-merge:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged" && $CI_MERGE_REQUEST_LABELS !~ /sisyphus-release/
   script:
     - git fetch --unshallow || true
-    - git config user.name "gitlab-ci[bot]"
-    - git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+    - git config user.name "r5n-bot[bot]"
+    - git config user.email "r5n-bot[bot]@users.noreply.gitlab.com"
     - bun install
     - |
       OUTPUT=$(bunx @r5n/sisyphus pr --url $CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID --yes 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?

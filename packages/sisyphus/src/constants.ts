@@ -63,12 +63,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commit: { author: "r5n-bot", message: "chore(release): {message}" },
 
-  commits: {
-    skip: {
-      authors: ["github-actions[bot]", "r5n-bot"],
-      messagePatterns: ["^chore\\(release\\):", "^chore: add stone"],
-    },
-  },
+  commits: { skip: { authors: ["r5n-bot[bot]"], messagePatterns: ["^chore\\(release\\):", "^chore: add stone"] } },
 
   ignore: [],
 
@@ -88,7 +83,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
       fix: "patch",
     },
     skip: {
-      authors: ["github-actions[bot]"],
+      authors: ["r5n-bot[bot]"],
       labels: ["sisyphus-release", "skip-stone"],
       titlePatterns: ["^chore\\(release\\):"],
     },
