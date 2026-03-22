@@ -360,7 +360,7 @@ export class RollCommand extends BaseCommand {
   }
 
   private createFallbackStone(packages: Package[]): Stone {
-    const message = `Release ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`;
+    const message = `Release ${packages.map((p) => `${p.name}@${p.newVersion ?? p.version}`).join(", ")}`;
     return Stone.create({ message }, 0);
   }
 }
