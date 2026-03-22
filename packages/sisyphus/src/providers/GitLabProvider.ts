@@ -28,6 +28,10 @@ type GitLabChangesResponse = { changes: { new_path: string }[] };
 export class GitLabProvider extends GitProvider {
   readonly name = "gitlab" as const;
 
+  private get projectPath(): string {
+    return `${encodeURIComponent(this.owner)}%2F${encodeURIComponent(this.repo)}`;
+  }
+
   async ensureAvailable(): Promise<void> {
     try {
       await Bun.$`which glab`.quiet();
@@ -111,7 +115,7 @@ export class GitLabProvider extends GitProvider {
   async getPrCommits(number: number): Promise<string[]> {
     try {
       const result =
-        await Bun.$`glab api projects/${this.owner}%2F${this.repo}/merge_requests/${number}/commits`.quiet();
+        await Bun.$`glab api projects/${this.projectPath}/merge_requests/${number}/commits`.quiet();
       const commits = JSON.parse(result.stdout.toString());
       return commits.map((c: { id: string }) => c.id);
     } catch {
@@ -122,7 +126,7 @@ export class GitLabProvider extends GitProvider {
   async getPrFiles(number: number): Promise<string[]> {
     try {
       const result =
-        await Bun.$`glab api projects/${this.owner}%2F${this.repo}/merge_requests/${number}/changes`.quiet();
+        await Bun.$`glab api projects/${this.projectPath}/merge_requests/${number}/changes`.quiet();
       const data: GitLabChangesResponse = JSON.parse(result.stdout.toString());
       return data.changes?.map((c) => c.new_path) ?? [];
     } catch {

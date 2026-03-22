@@ -40,6 +40,10 @@ type GitHubCliPrResponse = {
 export class GitHubProvider extends GitProvider {
   readonly name = "github" as const;
 
+  private get apiPath(): string {
+    return `repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.repo)}`;
+  }
+
   async ensureAvailable(): Promise<void> {
     try {
       await Bun.$`which gh`.quiet();
@@ -83,14 +87,14 @@ export class GitHubProvider extends GitProvider {
 
   async createPr(options: CreatePrOptions): Promise<PullRequest> {
     const result =
-      await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls --method POST -f head=${options.head} -f base=${options.base} -f title=${options.title} -f body=${options.body}`;
+      await Bun.$`gh api ${this.apiPath}/pulls --method POST -f head=${options.head} -f base=${options.base} -f title=${options.title} -f body=${options.body}`;
 
     const data = JSON.parse(result.stdout.toString());
     const prNumber = data.number as number;
 
     if (options.labels && options.labels.length > 0) {
       const labelArgs = options.labels.flatMap((l) => ["-f", `labels[]=${l}`]);
-      await Bun.$`gh api repos/${this.owner}/${this.repo}/issues/${prNumber}/labels --method POST ${labelArgs}`;
+      await Bun.$`gh api ${this.apiPath}/issues/${prNumber}/labels --method POST ${labelArgs}`;
     }
 
     return this.getPr(prNumber);
@@ -106,7 +110,7 @@ export class GitHubProvider extends GitProvider {
 
   async getPr(number: number): Promise<PullRequest> {
     try {
-      const result = await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}`.quiet();
+      const result = await Bun.$`gh api ${this.apiPath}/pulls/${number}`.quiet();
       const data = JSON.parse(result.stdout.toString());
 
       return this.mapRestApiResponse(data);
@@ -130,7 +134,7 @@ export class GitHubProvider extends GitProvider {
   async getPrCommits(number: number): Promise<string[]> {
     try {
       const result =
-        await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}/commits --jq '.[].sha'`.quiet();
+        await Bun.$`gh api ${this.apiPath}/pulls/${number}/commits --jq '.[].sha'`.quiet();
       return result.stdout.toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];
@@ -140,7 +144,7 @@ export class GitHubProvider extends GitProvider {
   async getPrFiles(number: number): Promise<string[]> {
     try {
       const result =
-        await Bun.$`gh api repos/${this.owner}/${this.repo}/pulls/${number}/files --jq '.[].filename'`.quiet();
+        await Bun.$`gh api ${this.apiPath}/pulls/${number}/files --jq '.[].filename'`.quiet();
       return result.stdout.toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];
