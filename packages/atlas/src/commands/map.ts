@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { args } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { scan, type ScanResult } from "../services/CodebaseScanner";
+import { scan } from "../services/CodebaseScanner";
+import { analyzeImports, flattenFileTree } from "../services/ImportAnalyzer";
+import type { AtlasScanResult } from "../types";
 
 type OutputFormat = "json" | "yaml";
 
@@ -11,6 +13,7 @@ const mapArgs = args({
   depth: { alias: "d", description: "Max directory depth", type: "number" },
   json: { default: false, description: "Shorthand for --format json", type: "boolean" },
   stats: { default: false, description: "Include size statistics", type: "boolean" },
+  deps: { default: false, description: "Include dependency analysis", type: "boolean" },
 });
 
 type MapCtx = Ctx<typeof mapArgs>;
@@ -82,12 +85,19 @@ export class MapCommand extends BaseCommand {
 
     const root = resolve(process.cwd());
 
-    const result = await scan({
+    const scanResult = await scan({
       root,
       ignore,
       maxDepth,
       includeStats,
     });
+
+    const result: AtlasScanResult = scanResult;
+
+    if (ctx.args.deps) {
+      const files = flattenFileTree(scanResult.tree);
+      result.dependencies = await analyzeImports({ root, files, ignore });
+    }
 
     const formatted = this.formatOutput(result, format);
 
@@ -98,7 +108,7 @@ export class MapCommand extends BaseCommand {
     }
   }
 
-  private formatOutput(result: ScanResult, format: OutputFormat): string {
+  private formatOutput(result: AtlasScanResult, format: OutputFormat): string {
     if (format === "yaml") return toYaml(result).trimEnd();
     return JSON.stringify(result, null, 2);
   }

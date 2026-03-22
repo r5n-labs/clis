@@ -228,9 +228,9 @@ export class ExploreCommand extends BaseCommand {
 
   async execute(ctx: ExploreCtx): Promise<void> {
     const config = ctx.config;
-    const ignore = config.get("ignore") as string[];
-    const maxDepth = (ctx.args.depth as number | undefined) ?? (config.get("maxDepth") as number);
-    const rootPath = ctx.args.path ? resolve(ctx.args.path as string) : resolve(process.cwd());
+    const ignore = config.get("ignore");
+    const maxDepth = ctx.args.depth || config.get("maxDepth");
+    const rootPath = ctx.args.path ? resolve(ctx.args.path) : resolve(process.cwd());
 
     const s = spinner();
     s.start("Scanning codebase...");
