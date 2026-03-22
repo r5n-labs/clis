@@ -1,35 +1,73 @@
-import type { ScanResult } from "./services/CodebaseScanner";
+// ── Entry ────────────────────────────────────────────
+
+export type EntryType = "file" | "directory";
+
+export type TrackedEntry = {
+  id: string;
+  source: string;
+  tags: string[];
+  type: EntryType;
+  preset?: string;
+  encrypt: boolean;
+};
+
+// ── Backend ─────────────────────────────────────────
+
+export type BackendType = "git" | "gist" | "directory";
+
+export type GitBackend = { type: "git"; url: string; branch: string };
+export type GistBackend = { type: "gist"; gistId?: string; token?: string };
+export type DirectoryBackend = { type: "directory"; path: string };
+
+export type BackendConfig = GitBackend | GistBackend | DirectoryBackend;
+
+// ── Encryption ──────────────────────────────────────
+
+export type EncryptionConfig = {
+  enabled: boolean;
+  cipher: "aes-256-gcm";
+};
+
+// ── Config ──────────────────────────────────────────
+
+export type OsType = "macos" | "linux" | "windows";
 
 export type AtlasConfig = {
   $schema?: string;
-  ignore: string[];
-  maxDepth: number;
-  output: {
-    format: "json" | "yaml";
-    file?: string;
-  };
+  machine: string;
+  os: OsType;
+  entries: TrackedEntry[];
+  backend: BackendConfig;
+  compression: boolean;
+  encryption: EncryptionConfig;
+  activeTags: string[];
 };
 
-export type ImportInfo = {
-  source: string;
-  target: string;
-  type: "internal" | "external" | "package";
-  specifiers: string[];
-};
+// ── Preset ──────────────────────────────────────────
 
-export type PackageInfo = {
+export type PresetDef = {
   name: string;
-  path: string;
-  dependencies: string[];
-  devDependencies: string[];
+  paths: string[];
+  tags: string[];
+  detect: () => boolean;
 };
 
-export type DependencyGraph = {
-  imports: ImportInfo[];
-  packages: PackageInfo[];
-  fileToPackage: Record<string, string>;
+// ── Diff ────────────────────────────────────────────
+
+export type DiffStatus = "added" | "modified" | "deleted" | "unchanged";
+
+export type EntryDiff = {
+  entry: TrackedEntry;
+  status: DiffStatus;
 };
 
-export type AtlasScanResult = ScanResult & {
-  dependencies?: DependencyGraph;
+// ── Sync ────────────────────────────────────────────
+
+export type SyncDirection = "push" | "pull";
+
+export type SyncResult = {
+  entry: TrackedEntry;
+  direction: SyncDirection;
+  status: "success" | "skipped" | "error";
+  error?: string;
 };
