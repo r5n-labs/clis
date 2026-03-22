@@ -22,7 +22,7 @@ function isOutputFormat(value: string): value is OutputFormat {
   return value === "json" || value === "yaml";
 }
 
-function toYaml(value: unknown, indent: number = 0): string {
+export function toYaml(value: unknown, indent: number = 0): string {
   const prefix = "  ".repeat(indent);
 
   if (value === null || value === undefined) return `${prefix}null\n`;

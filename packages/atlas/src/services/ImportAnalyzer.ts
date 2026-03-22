@@ -42,7 +42,7 @@ function parseSpecifiers(raw: string | undefined): string[] {
     });
 }
 
-function extractImports(source: string): RawImport[] {
+export function extractImports(source: string): RawImport[] {
   const cleaned = stripBlockComments(source);
   const imports: RawImport[] = [];
 

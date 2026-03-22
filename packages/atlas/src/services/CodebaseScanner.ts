@@ -30,7 +30,7 @@ export type ScanResult = {
   extensions?: Record<string, number>;
 };
 
-type IgnorePattern = {
+export type IgnorePattern = {
   pattern: string;
   regex: RegExp;
   negated: boolean;
@@ -73,7 +73,7 @@ function escapeRegex(s: string): string {
   return s.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 }
 
-function globToRegex(glob: string, anchored: boolean): RegExp {
+export function globToRegex(glob: string, anchored: boolean): RegExp {
   let src = "";
   let i = 0;
 
@@ -111,7 +111,7 @@ function globToRegex(glob: string, anchored: boolean): RegExp {
 
 // ── .gitignore parsing ───────────────────────────────────────────────
 
-function parseGitignore(content: string, basePath: string): IgnorePattern[] {
+export function parseGitignore(content: string, basePath: string): IgnorePattern[] {
   const patterns: IgnorePattern[] = [];
 
   for (const rawLine of content.split("\n")) {
@@ -164,7 +164,7 @@ function configPatternsToIgnorePatterns(ignore: string[]): IgnorePattern[] {
 
 // ── Pattern matching ─────────────────────────────────────────────────
 
-function shouldIgnore(
+export function shouldIgnore(
   relativePath: string,
   patterns: IgnorePattern[],
   isDirectory: boolean,
@@ -318,7 +318,7 @@ async function scanDirectory(
 
 // ── Tree utilities ───────────────────────────────────────────────────
 
-function countNodes(node: FileNode): { files: number; directories: number } {
+export function countNodes(node: FileNode): { files: number; directories: number } {
   if (node.type === "file") return { files: 1, directories: 0 };
 
   let files = 0;
@@ -333,7 +333,7 @@ function countNodes(node: FileNode): { files: number; directories: number } {
   return { files, directories };
 }
 
-function collectExtensions(node: FileNode): Record<string, number> {
+export function collectExtensions(node: FileNode): Record<string, number> {
   const counts: Record<string, number> = {};
 
   if (node.type === "file" && node.extension) {

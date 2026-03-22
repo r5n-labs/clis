@@ -17,7 +17,7 @@ const ACTION_STATS = "__stats__";
 const SEARCH_BACK = "__search_back__";
 const PREVIEW_LINE_LIMIT = 50;
 
-function collectAllFiles(node: FileNode): FileNode[] {
+export function collectAllFiles(node: FileNode): FileNode[] {
   if (node.type === "file") return [node];
 
   const files: FileNode[] = [];
@@ -27,7 +27,7 @@ function collectAllFiles(node: FileNode): FileNode[] {
   return files;
 }
 
-function collectExtensionCounts(node: FileNode): Record<string, number> {
+export function collectExtensionCounts(node: FileNode): Record<string, number> {
   const counts: Record<string, number> = {};
 
   if (node.type === "file" && node.extension) {
@@ -45,7 +45,7 @@ function collectExtensionCounts(node: FileNode): Record<string, number> {
   return counts;
 }
 
-function countChildren(node: FileNode): { files: number; dirs: number } {
+export function countChildren(node: FileNode): { files: number; dirs: number } {
   let files = 0;
   let dirs = 0;
 
@@ -60,13 +60,13 @@ function countChildren(node: FileNode): { files: number; dirs: number } {
   return { files, dirs };
 }
 
-function formatSize(bytes: number): string {
+export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function buildOptions(
+export function buildOptions(
   node: FileNode,
   canGoBack: boolean,
 ): { options: { label: string; value: string; hint?: string }[]; childMap: Map<string, FileNode> } {
