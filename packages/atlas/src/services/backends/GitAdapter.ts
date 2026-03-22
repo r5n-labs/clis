@@ -29,10 +29,10 @@ export function createGitAdapter(config: GitBackend): BackendAdapter {
 
       try {
         await $`mkdir -p ${repoDir}`.quiet();
-        await $`git clone --branch ${branch} ${config.repo} ${repoDir}`.quiet();
+        await $`git clone --branch ${branch} ${config.url} ${repoDir}`.quiet();
       } catch (error) {
         throw new Error(
-          `Failed to clone repo "${config.repo}" (branch: ${branch}): ${error instanceof Error ? error.message : String(error)}`
+          `Failed to clone repo "${config.url}" (branch: ${branch}): ${error instanceof Error ? error.message : String(error)}`
         );
       }
     },
@@ -51,7 +51,7 @@ export function createGitAdapter(config: GitBackend): BackendAdapter {
         await $`git -C ${repoDir} push origin ${branch}`.quiet();
       } catch (error) {
         throw new Error(
-          `Failed to push to git backend "${config.repo}": ${error instanceof Error ? error.message : String(error)}`
+          `Failed to push to git backend "${config.url}": ${error instanceof Error ? error.message : String(error)}`
         );
       }
     },
@@ -65,7 +65,7 @@ export function createGitAdapter(config: GitBackend): BackendAdapter {
         await $`cp -a ${repoDir}/. ${resolved}/`.quiet();
       } catch (error) {
         throw new Error(
-          `Failed to pull from git backend "${config.repo}": ${error instanceof Error ? error.message : String(error)}`
+          `Failed to pull from git backend "${config.url}": ${error instanceof Error ? error.message : String(error)}`
         );
       }
     },

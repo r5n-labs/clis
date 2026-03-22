@@ -56,18 +56,22 @@ export type PresetDef = {
 
 export type DiffStatus = "added" | "modified" | "deleted" | "unchanged";
 
+export type FileDiff = {
+  path: string;
+  status: DiffStatus;
+};
+
 export type EntryDiff = {
   entry: TrackedEntry;
   status: DiffStatus;
+  files: FileDiff[];
 };
 
 // ── Sync ────────────────────────────────────────────
 
-export type SyncDirection = "push" | "pull";
-
 export type SyncResult = {
   entry: TrackedEntry;
-  direction: SyncDirection;
-  status: "success" | "skipped" | "error";
+  success: boolean;
+  filesChanged: number;
   error?: string;
 };

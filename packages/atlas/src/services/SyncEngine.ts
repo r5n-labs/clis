@@ -4,7 +4,7 @@ import type {
   FileDiff,
   SyncResult,
   TrackedEntry,
-} from "../types.ts";
+} from "../types";
 
 export type SyncDeps = {
   /** Compare a source file against its store snapshot, returning the diff status. */
