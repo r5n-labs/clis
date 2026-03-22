@@ -29,7 +29,7 @@ export class GitLabProvider extends GitProvider {
   readonly name = "gitlab" as const;
 
   private get projectPath(): string {
-    return `${encodeURIComponent(this.owner)}%2F${encodeURIComponent(this.repo)}`;
+    return encodeURIComponent(`${this.owner}/${this.repo}`);
   }
 
   async ensureAvailable(): Promise<void> {
