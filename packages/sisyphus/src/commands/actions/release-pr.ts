@@ -71,11 +71,19 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
+    await this.ensureCleanWorkingTree();
     await Bun.$`git fetch origin ${baseBranch}`;
-    await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
     return baseBranch;
+  }
+
+  private async ensureCleanWorkingTree() {
+    const result = await Bun.$`git status --porcelain`.quiet();
+    const output = result.stdout.toString().trim();
+    if (output) {
+      throw new Exit("Working tree has uncommitted changes", "Commit or stash your changes before running release-pr");
+    }
   }
 
   private async collectReleaseData(ctx: ReleasePrCtx): Promise<{ stones: Stone[]; packages: Package[] }> {
@@ -109,6 +117,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
       await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
     }
 
+    // Force push is safe: sisyphus/release is an ephemeral branch owned entirely by this tool and never shared
     await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
     s.stop("Release branch ready");
   }
@@ -222,12 +231,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const hashes = stones.flatMap((s) => s.commits ?? []).map((c) => c.hash);
     if (hashes.length === 0) return null;
 
-    const result = await Bun.$`git log -1 --format=%H ${hashes}`.quiet().nothrow();
+    const result = await Bun.$`git rev-list --date-order --max-count=1 ${hashes}`.quiet().nothrow();
+    if (!result || result.exitCode !== 0) return null;
     return result.stdout.toString().trim() || null;
-  }
-
-  private async stashChanges() {
-    await Bun.$`git stash --include-untracked`.nothrow();
   }
 
   private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]): Promise<string[]> {
