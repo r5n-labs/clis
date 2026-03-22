@@ -1,5 +1,4 @@
 {
-  "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
-  "extends": "../../tools/typescript/base.json",
-  "include": ["src/**/*"]
+  "extends": ["@r5n/tools/typescript/base.json"],
+  "include": ["@r5n/tools/typescript/typings.d.ts", "src", "build.ts"]
 }

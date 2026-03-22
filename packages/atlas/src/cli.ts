@@ -1,5 +1,6 @@
 import { AbstractCLI, ConfigManager } from "@r5n/cli-core";
 import { version } from "../package.json";
+import { MapCommand } from "./commands/map";
 import { CLI_BIN, CLI_NAME, DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE, DEFAULT_ATLAS_CONFIG } from "./constants";
 import type { AtlasConfig } from "./types";
 
@@ -17,7 +18,7 @@ class AtlasCLI extends AbstractCLI {
   }
 
   init() {
-    this.registerCommands([]);
+    this.registerCommands([new MapCommand()]);
   }
 }
 
