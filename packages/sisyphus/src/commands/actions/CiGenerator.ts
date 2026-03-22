@@ -18,7 +18,22 @@ export const WORKFLOW_CONFIGS: Record<WorkflowType, WorkflowConfig> = {
   release: { description: "When the release PR is merged, publish packages", name: "Publish release" },
 };
 
-const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "templates");
+function resolveTemplatesDir(): string {
+  const base = dirname(fileURLToPath(import.meta.url));
+
+  // In source (dev): file is at src/commands/actions/CiGenerator.ts → templates are adjacent
+  const localDir = join(base, "templates");
+  if (existsSync(localDir)) return localDir;
+
+  // In bundled build: file is at dist/cli.js → templates are copied to dist/templates
+  const distDir = join(base, "..", "templates");
+  if (existsSync(distDir)) return distDir;
+
+  // Fallback: will produce a clear ENOENT when trying to read
+  return localDir;
+}
+
+const TEMPLATES_DIR = resolveTemplatesDir();
 
 const TEMPLATE_FILENAMES: Record<WorkflowType, string> = {
   "create-stone": "sis-create-stone.yml",
