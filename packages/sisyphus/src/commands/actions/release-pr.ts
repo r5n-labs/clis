@@ -23,6 +23,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   args = releasePrArgs;
 
   private provider: GitProvider | null = null;
+  private manager: StoneManager | null = null;
 
   private async getProvider(): Promise<GitProvider> {
     if (!this.provider) {
@@ -30,6 +31,11 @@ export class ActionsReleasePrCommand extends BaseCommand {
       await this.provider.ensureAvailable();
     }
     return this.provider;
+  }
+
+  private getManager(ctx: ReleasePrCtx): StoneManager {
+    if (!this.manager) this.manager = new StoneManager(ctx.config);
+    return this.manager;
   }
 
   async execute(ctx: ReleasePrCtx) {
@@ -83,14 +89,14 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private async collectReleaseData(ctx: ReleasePrCtx): Promise<{ stones: Stone[]; packages: Package[] }> {
-    const manager = new StoneManager(ctx.config);
-    const generatedStones = await this.generateStonesFromCommits(ctx, manager, ctx.args.dryRun);
+    const manager = this.getManager(ctx);
+    const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
+    const generatedStones = await this.generateStonesFromCommits(ctx, manager, packages, ctx.args.dryRun);
     const pendingStones = await manager.list();
     const stones = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
 
     if (stones.length === 0) return { packages: [], stones: [] };
 
-    const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const mergedStone = Stone.mergeAll(stones);
     const updatedPackages = Package.applyStone(mergedStone, packages);
 
@@ -198,13 +204,17 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return pr ? { number: pr.number, url: pr.url } : null;
   }
 
-  private async generateStonesFromCommits(ctx: ReleasePrCtx, manager: StoneManager, dryRun: boolean): Promise<Stone[]> {
+  private async generateStonesFromCommits(
+    ctx: ReleasePrCtx,
+    manager: StoneManager,
+    packages: Map<string, Package>,
+    dryRun: boolean,
+  ): Promise<Stone[]> {
     const analyzer = new CommitAnalyzer(ctx.config);
     const commitGroups = await analyzer.analyze({ single: ctx.config.get("single") });
 
     if (commitGroups.length === 0) return [];
 
-    const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const stones: Stone[] = [];
 
     for (const [index, group] of commitGroups.entries()) {
@@ -262,7 +272,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     stones: Stone[],
     packages: Package[],
   ): Promise<string[]> {
-    const manager = new StoneManager(ctx.config);
+    const manager = this.getManager(ctx);
     const timestamp = await manager.archive(stones);
 
     const packageVersions = this.buildPackageVersions(packages);
