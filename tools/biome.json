@@ -56,7 +56,6 @@
       },
       "nursery": {
         "noFloatingPromises": "on",
-        "noImportCycles": "on",
         "useExplicitType": "off",
         "useSortedClasses": { "fix": "safe", "level": "warn", "options": {} }
       },
@@ -79,7 +78,7 @@
         "useSelfClosingElements": "error",
         "useSingleVarDeclarator": "error"
       },
-      "suspicious": { "noExplicitAny": "off", "noReactSpecificProps": "off" }
+      "suspicious": { "noExplicitAny": "off", "noReactSpecificProps": "off", "noImportCycles": "on" }
     }
   },
   "root": false
