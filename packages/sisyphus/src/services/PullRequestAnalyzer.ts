@@ -85,7 +85,9 @@ export class PullRequestAnalyzer {
     pr: PullRequestInfo,
     ctx: AnalysisContext,
   ): Promise<{ commits: CommitInfo[]; affectedPackages: Set<string> }> {
-    const files = ctx.url ? await this.fetchFilesFromApi(ctx.provider, ctx.url) : [];
+    const files = ctx.url
+      ? await this.fetchFilesFromApi(ctx.provider, ctx.url)
+      : await this.getFilesFromCommit(pr.mergeCommitSha);
     const affectedPackages = findAffectedPackages(files, ctx.packagePaths, ctx.isSinglePackage);
 
     const commit: CommitInfo = {
@@ -231,5 +233,15 @@ export class PullRequestAnalyzer {
     }
 
     return null;
+  }
+
+  private async getFilesFromCommit(sha: string | null): Promise<string[]> {
+    if (!sha) return [];
+    try {
+      const result = await Bun.$`git diff-tree --no-commit-id --name-only -r ${sha}`.quiet();
+      return result.stdout.toString().trim().split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 }
