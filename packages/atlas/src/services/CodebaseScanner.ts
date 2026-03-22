@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { join, extname, relative } from "node:path";
+import { extname, join, relative } from "node:path";
 
 export type ScanOptions = {
   root: string;
@@ -128,7 +128,6 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   const { files, directories } = countNodes(tree);
   const extensions = includeStats ? collectExtensions(tree) : undefined;
 
-  // Sort extensions by count descending
   const sortedExtensions = extensions
     ? Object.fromEntries(Object.entries(extensions).sort(([, a], [, b]) => b - a))
     : undefined;
@@ -137,7 +136,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     root,
     generatedAt: new Date().toISOString(),
     totalFiles: files,
-    totalDirectories: directories - 1, // exclude root directory itself
+    totalDirectories: directories - 1,
     tree,
     extensions: sortedExtensions,
   };
