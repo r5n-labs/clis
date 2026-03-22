@@ -120,26 +120,52 @@ export class Commit {
   }
 
   private static async fetchFromRange(range: string): Promise<Commit[]> {
-    const result = await Bun.$`git log ${range} --pretty=format:"%H%x1f%s%x1f%an" --no-merges`.quiet();
+    // Single git call: hash, subject, author, body, and file names via --name-only.
+    // %x00 as record separator between commits. Body can contain newlines, so we
+    // rely on the blank-line separator that --name-only inserts before the file list.
+    const format = "%x00%H%x1f%s%x1f%an%x1f%b";
+    const result = await Bun.$`git log ${range} --pretty=format:${format} --name-only --no-merges`.quiet();
     const output = result.stdout.toString().trim();
 
     if (!output) return [];
 
     const commits: Commit[] = [];
+    const records = output.split("\x00").filter(Boolean);
 
-    for (const line of output.split("\n")) {
-      const parts = line.split(FIELD_SEPARATOR);
-      if (parts.length < 3) continue;
-      const [hash, subject, author] = parts;
+    for (const record of records) {
+      const allLines = record.split("\n");
+      const headerLine = allLines[0] ?? "";
+      const headerParts = headerLine.split(FIELD_SEPARATOR);
+      if (headerParts.length < 3) continue;
+
+      const [hash, subject, author] = headerParts;
       if (!hash || !subject || !author) continue;
 
-      const commit = await Commit.hydrate(hash, subject, author);
+      // parts[3+] is the body (may contain field separators if body has them).
+      // Subsequent lines until the blank line git inserts are also body lines.
+      const bodyFirstLine = headerParts.slice(3).join(FIELD_SEPARATOR);
+      const bodyLines: string[] = bodyFirstLine ? [bodyFirstLine] : [];
+
+      let fileStartIndex = allLines.length;
+      for (let i = 1; i < allLines.length; i++) {
+        if (allLines[i] === "") {
+          fileStartIndex = i + 1;
+          break;
+        }
+        bodyLines.push(allLines[i]!);
+      }
+
+      const body = bodyLines.join("\n").trim() || undefined;
+      const files = allLines.slice(fileStartIndex).filter(Boolean);
+
+      const commit = Commit.parse(hash, subject, author).withFiles(files).withBody(body);
       commits.push(commit);
     }
 
     return commits;
   }
 
+  // Used by fromHash for single-commit lookups
   private static async hydrate(hash: string, subject: string, author: string): Promise<Commit> {
     const files = await Commit.getFiles(hash);
     const body = await Commit.getBody(hash);
