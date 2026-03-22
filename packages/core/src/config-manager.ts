@@ -23,6 +23,11 @@ export class ConfigManager<T extends object> {
     this.save();
   }
 
+  public delete<K extends keyof T>(key: K): void {
+    delete this.config[key];
+    this.save();
+  }
+
   public exists(): boolean {
     return fs.existsSync(this.configPath);
   }

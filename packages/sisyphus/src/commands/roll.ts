@@ -345,7 +345,7 @@ export class RollCommand extends BaseCommand {
         s.stop("Release created");
       }
 
-      ctx.config.set("currentRelease", undefined);
+      ctx.config.delete("currentRelease");
       ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
 
       note(
