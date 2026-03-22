@@ -158,14 +158,17 @@ export class StoneManager {
   }
 
   async getAllTrackedCommitHashes(): Promise<Set<string>> {
-    const allStones = await this.listAllStones();
+    const allStones = await this.listAllStones(10);
     const hashes = allStones.flatMap((stone) => stone.commits ?? []).map((commit) => commit.hash);
     return new Set(hashes);
   }
 
-  private async listAllStones(): Promise<Stone[]> {
+  private async listAllStones(maxReleasedBatches?: number): Promise<Stone[]> {
     const pending = await this.list();
-    const timestamps = await this.listReleasedTimestamps();
+    let timestamps = await this.listReleasedTimestamps();
+    if (maxReleasedBatches !== undefined) {
+      timestamps = timestamps.slice(-maxReleasedBatches);
+    }
     const released = await Promise.all(timestamps.map((t) => this.getReleasedStones(t)));
     return [...pending, ...released.flat()];
   }
@@ -198,4 +201,5 @@ export class StoneManager {
       this.config.set("stones", filtered);
     }
   }
+
 }
