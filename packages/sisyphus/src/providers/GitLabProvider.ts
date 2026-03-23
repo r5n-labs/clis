@@ -60,9 +60,7 @@ export class GitLabProvider extends GitProvider {
       if (options.head) params.set("source_branch", options.head);
       if (options.label) params.set("labels", options.label);
 
-      const mrs = await this.api<GitLabMrResponse[]>(
-        `/projects/${this.projectPath}/merge_requests?${params}`,
-      );
+      const mrs = await this.api<GitLabMrResponse[]>(`/projects/${this.projectPath}/merge_requests?${params}`);
 
       if (!mrs[0]) return null;
       return this.mapMrResponse(mrs[0]);
@@ -83,10 +81,10 @@ export class GitLabProvider extends GitProvider {
       body.labels = options.labels.join(",");
     }
 
-    const data = await this.api<GitLabMrResponse>(
-      `/projects/${this.projectPath}/merge_requests`,
-      { body: JSON.stringify(body), method: "POST" },
-    );
+    const data = await this.api<GitLabMrResponse>(`/projects/${this.projectPath}/merge_requests`, {
+      body: JSON.stringify(body),
+      method: "POST",
+    });
 
     return this.mapMrResponse(data);
   }
@@ -96,17 +94,15 @@ export class GitLabProvider extends GitProvider {
     if (options.title) body.title = options.title;
     if (options.body) body.description = options.body;
 
-    await this.api(
-      `/projects/${this.projectPath}/merge_requests/${number}`,
-      { body: JSON.stringify(body), method: "PUT" },
-    );
+    await this.api(`/projects/${this.projectPath}/merge_requests/${number}`, {
+      body: JSON.stringify(body),
+      method: "PUT",
+    });
   }
 
   async getPr(number: number): Promise<PullRequest> {
     try {
-      const data = await this.api<GitLabMrResponse>(
-        `/projects/${this.projectPath}/merge_requests/${number}`,
-      );
+      const data = await this.api<GitLabMrResponse>(`/projects/${this.projectPath}/merge_requests/${number}`);
       return this.mapMrResponse(data);
     } catch {
       throw new Exit(`Failed to fetch MR !${number}`, "Make sure the MR exists and you have access");
@@ -119,9 +115,7 @@ export class GitLabProvider extends GitProvider {
       const branch = result.stdout.toString().trim();
 
       const params = new URLSearchParams({ per_page: "1", source_branch: branch, state: "opened" });
-      const mrs = await this.api<GitLabMrResponse[]>(
-        `/projects/${this.projectPath}/merge_requests?${params}`,
-      );
+      const mrs = await this.api<GitLabMrResponse[]>(`/projects/${this.projectPath}/merge_requests?${params}`);
 
       if (!mrs[0]) throw new Error("No MR found");
       return this.mapMrResponse(mrs[0]);
@@ -158,29 +152,20 @@ export class GitLabProvider extends GitProvider {
       if (options?.description) body.description = options.description;
       if (options?.color) body.color = `#${options.color}`;
 
-      await this.api(`/projects/${this.projectPath}/labels`, {
-        body: JSON.stringify(body),
-        method: "POST",
-      });
+      await this.api(`/projects/${this.projectPath}/labels`, { body: JSON.stringify(body), method: "POST" });
     } catch {}
   }
 
   async createRelease(options: CreateReleaseOptions): Promise<void> {
     await this.api(`/projects/${this.projectPath}/releases`, {
-      body: JSON.stringify({
-        description: options.notes,
-        name: options.title,
-        tag_name: options.tag,
-      }),
+      body: JSON.stringify({ description: options.notes, name: options.title, tag_name: options.tag }),
       method: "POST",
     });
   }
 
   async deleteRelease(tag: string): Promise<void> {
     try {
-      await this.api(`/projects/${this.projectPath}/releases/${encodeURIComponent(tag)}`, {
-        method: "DELETE",
-      });
+      await this.api(`/projects/${this.projectPath}/releases/${encodeURIComponent(tag)}`, { method: "DELETE" });
     } catch {}
   }
 
@@ -204,11 +189,7 @@ export class GitLabProvider extends GitProvider {
   private async api<T>(path: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${this.apiUrl}${path}`, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...this.authHeader,
-        ...options?.headers,
-      },
+      headers: { "Content-Type": "application/json", ...this.authHeader, ...options?.headers },
     });
 
     if (!response.ok) {

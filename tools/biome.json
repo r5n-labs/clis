@@ -78,7 +78,7 @@
         "useSelfClosingElements": "error",
         "useSingleVarDeclarator": "error"
       },
-      "suspicious": { "noExplicitAny": "off", "noReactSpecificProps": "off", "noImportCycles": "on" }
+      "suspicious": { "noExplicitAny": "off", "noImportCycles": "on", "noReactSpecificProps": "off" }
     }
   },
   "root": false

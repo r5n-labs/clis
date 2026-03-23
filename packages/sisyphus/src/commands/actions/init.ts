@@ -4,7 +4,13 @@ import { dirname } from "node:path";
 import { args, color, confirm, Exit, log, multiselect, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { detectProvider } from "../../providers";
-import { createCiGenerator, GitHubCiGenerator, GitLabCiGenerator, WORKFLOW_CONFIGS, type WorkflowType } from "./CiGenerator";
+import {
+  createCiGenerator,
+  GitHubCiGenerator,
+  GitLabCiGenerator,
+  WORKFLOW_CONFIGS,
+  type WorkflowType,
+} from "./CiGenerator";
 
 const PROVIDER_LABELS = { bitbucket: "Bitbucket Pipelines", github: "GitHub Actions", gitlab: "GitLab CI" };
 
@@ -80,7 +86,7 @@ export class ActionsInitCommand extends BaseCommand {
 
     if (generator instanceof GitHubCiGenerator) {
       log.info(
-        `\n${color.yellow("Note:")} Enable ${color.bold("\"Allow GitHub Actions to create and approve pull requests\"")}`,
+        `\n${color.yellow("Note:")} Enable ${color.bold('"Allow GitHub Actions to create and approve pull requests"')}`,
       );
       log.info(color.dim("Settings → Actions → General → Workflow permissions"));
       log.info("");

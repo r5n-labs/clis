@@ -130,7 +130,7 @@ export class Commit {
     const commits: Commit[] = [];
 
     for (let i = 0; i < segments.length; i += 2) {
-      const fields = segments[i]!.split(FIELD_SEPARATOR);
+      const fields = segments[i]?.split(FIELD_SEPARATOR);
       if (fields.length < 3) continue;
 
       const [hash, subject, author] = fields;
