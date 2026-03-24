@@ -1,6 +1,8 @@
 handle-merge:
   stage: sisyphus
-  image: oven/bun:latest
+  image: oven/bun:alpine
+  before_script:
+    - apk add --no-cache git
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged" && $CI_MERGE_REQUEST_LABELS !~ /sisyphus-release/
   script:
