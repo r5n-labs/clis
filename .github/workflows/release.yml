@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-latest
+    runs-on: r5n-m2-ultra
     if: "!contains(github.event.head_commit.message, 'release(🎉):')"
 
     steps:
@@ -29,7 +29,7 @@ jobs:
 
       - uses: ./tools/github/setup
         with:
-          bun: true
+          bun: false
 
       - name: Build
         run: bun run build
@@ -67,4 +67,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
