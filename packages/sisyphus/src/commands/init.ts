@@ -8,9 +8,9 @@ const initArgs = args({
   commitAuthor: { description: "Commit author name", type: "string" },
   commitEmail: { description: "Commit author email", type: "string" },
   commitMessage: { description: "Commit message template", type: "string" },
+  createRelease: { description: "Create a release on git provider", type: "boolean" },
   default: { alias: "d", default: false, description: "Reset to default config", type: "boolean" },
   force: { alias: "f", default: false, description: "Overwrite existing config", type: "boolean" },
-  github: { description: "Create GitHub releases", type: "boolean" },
   npm: { description: "Publish to NPM on release", type: "boolean" },
   push: { description: "Push commits and tags to remote on release", type: "boolean" },
   rootChangelog: { description: "Generate combined changelog for monorepo", type: "boolean" },
@@ -59,7 +59,7 @@ export class InitCommand extends BaseCommand {
 
     const commit = defined({ author: v.commitAuthor, email: v.commitEmail, message: v.commitMessage });
     const changelog = defined({ generate: v.changelog, root: v.rootChangelog });
-    const release = defined({ github: v.github, npm: v.npm, push: v.push, tags: v.tags });
+    const release = defined({ createRelease: v.createRelease, npm: v.npm, push: v.push, tags: v.tags });
 
     return {
       ...defined({ single: v.single, tag: v.tag }),
@@ -114,12 +114,12 @@ export class InitCommand extends BaseCommand {
             ),
             message: "Configure commit for release? Default commit message is `release: <packageName@version>`",
           }),
-        github: () =>
+        createRelease: () =>
           confirm({
-            active: "Yes, create a GitHub release",
-            inactive: "Skip GitHub release",
-            initialValue: currentConfig.release?.github ?? false,
-            message: "Create a release on GitHub when releasing packages?",
+            active: "Yes, create a release",
+            inactive: "Skip release creation",
+            initialValue: currentConfig.release?.createRelease ?? false,
+            message: "Create a release on git provider when releasing packages?",
           }),
         npm: () =>
           confirm({
@@ -177,7 +177,7 @@ export class InitCommand extends BaseCommand {
       commitAuthor: values.commitAuthor,
       commitEmail: values.commitEmail,
       commitMessage: values.commitMessage,
-      github: values.github,
+      createRelease: values.createRelease,
       npm: values.npm,
       push: values.push,
       rootChangelog: values.rootChangelog,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SHORT_UUID_LENGTH, STONE_ID_PAD_LENGTH } from "../constants";
 import { BUMP_ORDER, BumpType, higherBump } from "./BumpType";
 import type { CommitInfo } from "./Commit";
 import { nonEmpty } from "./helpers";
@@ -19,6 +20,15 @@ export type StoneJson = StoneData & { id: string; commits?: readonly CommitInfo[
 
 export type MergeResult = { stone: Stone; conflicts: readonly string[] };
 
+type StoneOptions = {
+  id: string;
+  message: string;
+  packages: Map<BumpType, readonly string[]>;
+  tag?: string;
+  description?: string;
+  commits?: readonly CommitInfo[];
+};
+
 export class Stone {
   readonly id: string;
   readonly message: string;
@@ -28,20 +38,13 @@ export class Stone {
 
   private readonly _packages: ReadonlyMap<BumpType, readonly string[]>;
 
-  private constructor(
-    id: string,
-    message: string,
-    packages: Map<BumpType, readonly string[]>,
-    tag?: string,
-    description?: string,
-    commits?: readonly CommitInfo[],
-  ) {
-    this.id = id;
-    this.message = message;
-    this.tag = tag;
-    this.description = description;
-    this.commits = commits;
-    this._packages = packages;
+  private constructor(options: StoneOptions) {
+    this.id = options.id;
+    this.message = options.message;
+    this.tag = options.tag;
+    this.description = options.description;
+    this.commits = options.commits;
+    this._packages = options.packages;
   }
 
   static create(data: StoneData, existingCount = 0): Stone {
@@ -51,6 +54,15 @@ export class Stone {
 
   static fromJson(json: StoneJson): Stone {
     return Stone.fromData(json.id, json);
+  }
+
+  static mergeAll(stones: Stone[]): Stone {
+    const [first, ...rest] = stones;
+    if (!first) throw new Error("No stones to merge");
+    if (rest.length === 0) return first;
+
+    const messages = stones.map((s) => s.message).join("; ");
+    return Stone.merge(stones, messages).stone;
   }
 
   static merge(stones: Stone[], message: string): MergeResult {
@@ -73,14 +85,14 @@ export class Stone {
     const tags = [...new Set(stones.map((s) => s.tag).filter(Boolean))];
 
     const id = `merged-${Date.now()}`;
-    const stone = new Stone(
+    const stone = new Stone({
+      commits: commits.length > 0 ? commits : undefined,
+      description: descriptions || undefined,
       id,
       message,
       packages,
-      tags[0],
-      descriptions || undefined,
-      commits.length > 0 ? commits : undefined,
-    );
+      tag: tags[0],
+    });
 
     return { conflicts: [...new Set(conflicts)], stone };
   }
@@ -129,12 +141,19 @@ export class Stone {
     packages.set(BumpType.Dependency, data.dependency ?? []);
     packages.set(BumpType.Snapshot, data.snapshot ?? []);
 
-    return new Stone(id, data.message, packages, data.tag, data.description, data.commits);
+    return new Stone({
+      commits: data.commits,
+      description: data.description,
+      id,
+      message: data.message,
+      packages,
+      tag: data.tag,
+    });
   }
 
   private static generateId(existingCount: number): string {
-    const paddedNumber = String(existingCount + 1).padStart(4, "0");
-    const shortUuid = randomUUID().slice(0, 8);
+    const paddedNumber = String(existingCount + 1).padStart(STONE_ID_PAD_LENGTH, "0");
+    const shortUuid = randomUUID().slice(0, SHORT_UUID_LENGTH);
     return `${paddedNumber}-${shortUuid}`;
   }
 
@@ -170,30 +189,45 @@ export class Stone {
     return this.allPackages.length === 0;
   }
 
+  affectsPackage(packageName: string): boolean {
+    return this.allPackages.includes(packageName);
+  }
+
   getPackages(bump: BumpType): readonly string[] {
     return this._packages.get(bump) ?? [];
   }
 
   withMessage(message: string): Stone {
-    return new Stone(this.id, message, new Map(this._packages), this.tag, this.description, this.commits);
+    return new Stone({ ...this.toOptions(), message });
   }
 
   withTag(tag: string | undefined): Stone {
-    return new Stone(this.id, this.message, new Map(this._packages), tag, this.description, this.commits);
+    return new Stone({ ...this.toOptions(), tag });
   }
 
   withDescription(description: string | undefined): Stone {
-    return new Stone(this.id, this.message, new Map(this._packages), this.tag, description, this.commits);
+    return new Stone({ ...this.toOptions(), description });
   }
 
   withCommits(commits: readonly CommitInfo[] | undefined): Stone {
-    return new Stone(this.id, this.message, new Map(this._packages), this.tag, this.description, commits);
+    return new Stone({ ...this.toOptions(), commits });
   }
 
   withPackages(bump: BumpType, packages: readonly string[]): Stone {
     const newPackages = new Map(this._packages);
     newPackages.set(bump, packages);
-    return new Stone(this.id, this.message, newPackages, this.tag, this.description, this.commits);
+    return new Stone({ ...this.toOptions(), packages: newPackages });
+  }
+
+  private toOptions(): StoneOptions {
+    return {
+      commits: this.commits,
+      description: this.description,
+      id: this.id,
+      message: this.message,
+      packages: new Map(this._packages),
+      tag: this.tag,
+    };
   }
 
   toJson(): StoneJson {

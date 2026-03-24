@@ -1,9 +1,10 @@
-import { OTHER_COMMIT_TYPE } from "./domain";
 import type { SisyphusConfig } from "./types";
 
 export const CLI_BIN = "sis";
 
 export const BULLET_POINT = "🪨";
+
+export const OTHER_COMMIT_TYPE = "other";
 
 export const COMMIT_TYPE_ORDER: Record<string, number> = {
   build: 23,
@@ -25,6 +26,18 @@ export const COMMIT_TYPE_ORDER_FALLBACK = 50;
 
 export const DEFAULT_CONFIG_DIR = ".sisyphus";
 export const DEFAULT_STONES_DIR = "stones";
+export const DEFAULT_RELEASED_DIR = "released";
+
+export const SHORT_HASH_LENGTH = 7;
+export const UNKNOWN_HASH = "unknown";
+
+export const UNKNOWN_AUTHOR = "unknown";
+export const DEFAULT_VERSION = "0.0.0";
+export const DEFAULT_NPM_TAG = "latest";
+export const DEFAULT_BRANCH = "main";
+
+export const STONE_ID_PAD_LENGTH = 4;
+export const SHORT_UUID_LENGTH = 8;
 
 export const DEFAULT_CONFIG_FILE = "config.json";
 export const DEFAULT_CHANGELOG_FILE = "CHANGELOG.md";
@@ -36,7 +49,9 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     append: true,
     filename: DEFAULT_CHANGELOG_FILE,
     generate: true,
+    packageHeader: "{emoji} {version} ({date})",
     root: false,
+    rootHeader: "{date} - {packages}",
     sections: {
       breaking: "Breaking changes",
       build: "Build",
@@ -56,6 +71,8 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commit: { author: "r5n-bot", message: "chore(release): {message}" },
 
+  commits: { skip: { authors: ["r5n-bot[bot]"], messagePatterns: ["^chore\\(release\\):", "^chore: add stone"] } },
+
   ignore: [],
 
   lastStone: { commit: "", date: "" },
@@ -73,9 +90,14 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
       feature: "minor",
       fix: "patch",
     },
+    skip: {
+      authors: ["r5n-bot[bot]"],
+      labels: ["sisyphus-release", "skip-stone"],
+      titlePatterns: ["^chore\\(release\\):"],
+    },
   },
 
-  release: { github: false, npm: false, push: false, tags: false },
+  release: { createRelease: false, npm: false, push: false, tags: false },
 
   scripts: { post: {}, pre: {} },
 

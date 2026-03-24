@@ -121,12 +121,10 @@ export class ChangelogGenerator {
   }
 
   private formatEntry(stones: Stone[], pkg: Package, bumpedDependencies: Package[]): string {
-    const version = pkg.newVersion ?? pkg.version;
-    const date = this.getDate();
-    const emoji = this.getEmoji(pkg);
+    const header = this.formatPackageHeader(pkg);
     const hasDependencyChanges = bumpedDependencies.length > 0;
 
-    const lines = [`## ${emoji} ${version} (${date})`];
+    const lines = [`## ${header}`];
 
     for (const stone of stones) {
       lines.push("", `### ${BULLET_POINT} ${stone.message}`);
@@ -144,9 +142,9 @@ export class ChangelogGenerator {
   }
 
   private formatRootEntry(stones: Stone[], packages: Package[]): string {
-    const date = this.getDate();
+    const header = this.formatRootHeader(packages);
 
-    const lines = [`## ${date}`];
+    const lines = [`## ${header}`];
 
     lines.push("", "**Packages**");
     for (const pkg of packages) {
@@ -162,6 +160,21 @@ export class ChangelogGenerator {
     }
 
     return lines.join("\n");
+  }
+
+  private formatPackageHeader(pkg: Package): string {
+    const version = pkg.newVersion ?? pkg.version;
+    const date = this.getDate();
+    const emoji = this.getEmoji(pkg);
+
+    return this.config.packageHeader.replace("{emoji}", emoji).replace("{version}", version).replace("{date}", date);
+  }
+
+  private formatRootHeader(packages: Package[]): string {
+    const date = this.getDate();
+    const packageList = packages.map((p) => `${p.name}@${p.newVersion ?? p.version}`).join(", ");
+
+    return this.config.rootHeader.replace("{date}", date).replace("{packages}", packageList);
   }
 
   private formatRootStoneContent(stone: Stone): string {

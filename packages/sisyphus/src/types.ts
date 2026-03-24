@@ -2,7 +2,11 @@ export type LastStone = { commit: string; date: string };
 
 export type CommitConfig = { author: string; email?: string; message: string };
 
-export type ReleaseConfig = { github: boolean; npm: boolean; push: boolean; tags: boolean };
+export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolean; tags: boolean };
+
+export type PackageRelease = { oldVersion: string; newVersion: string };
+
+export type CurrentRelease = { packages: Record<string, PackageRelease>; stoneIds: string[]; timestamp: string };
 
 export type ChangelogSections = {
   breaking: string;
@@ -24,7 +28,9 @@ export type ChangelogConfig = {
   append: boolean;
   filename: string;
   generate: boolean;
+  packageHeader: string;
   root: boolean;
+  rootHeader: string;
   sections: ChangelogSections;
   template?: string;
 };
@@ -33,12 +39,20 @@ export type ScriptsConfig = { pre: Record<string, string>; post: Record<string, 
 
 export type PrLabelMapping = Record<string, "major" | "minor" | "patch">;
 
-export type PrConfig = { labelMapping: PrLabelMapping };
+export type PrSkipConfig = { labels: string[]; authors: string[]; titlePatterns: string[] };
+
+export type PrConfig = { labelMapping: PrLabelMapping; skip: PrSkipConfig };
+
+export type CommitsSkipConfig = { authors: string[]; messagePatterns: string[] };
+
+export type CommitsConfig = { skip: CommitsSkipConfig };
 
 export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
+  commits: CommitsConfig;
+  currentRelease?: CurrentRelease;
   sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;

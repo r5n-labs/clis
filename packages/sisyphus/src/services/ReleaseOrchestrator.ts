@@ -1,6 +1,8 @@
 import { dirname, join } from "node:path";
-import { type ConfigManager, Exit } from "@r5n/cli-core";
+import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
+import { DEFAULT_NPM_TAG } from "../constants";
 import type { CommitInfo, Package, Stone } from "../domain";
+import { createGitProvider, type GitProvider } from "../providers";
 import type { SisyphusConfig } from "../types";
 import { ChangelogGenerator } from "./ChangelogGenerator";
 import { GitRemoteParser } from "./GitRemoteParser";
@@ -8,8 +10,8 @@ import { PackageUpdater } from "./PackageUpdater";
 
 export type ReleaseOptions = {
   changelog: boolean;
+  createRelease: boolean;
   dryRun: boolean;
-  github: boolean;
   npm: boolean;
   push: boolean;
   tags: boolean;
@@ -19,6 +21,7 @@ export class ReleaseOrchestrator {
   private packageUpdater = new PackageUpdater();
   private changelogGenerator: ChangelogGenerator;
   private remoteParser = new GitRemoteParser();
+  private provider: GitProvider | null = null;
   private commitUrlFn: ((hash: string) => string) | null = null;
   private options: ReleaseOptions;
   private createdTags: string[] = [];
@@ -32,6 +35,13 @@ export class ReleaseOrchestrator {
   ) {
     this.options = options;
     this.changelogGenerator = new ChangelogGenerator(this.config.get("changelog"));
+  }
+
+  private async getProvider(): Promise<GitProvider> {
+    if (!this.provider) {
+      this.provider = await createGitProvider();
+    }
+    return this.provider;
   }
 
   private async initCommitLinks() {
@@ -73,9 +83,18 @@ export class ReleaseOrchestrator {
     const allFiles = [...files, ...changelogFiles, sisyphusDir];
 
     const message = this.formatCommitMessage(stone, packages);
+    const authorArg = this.getCommitAuthorArg();
+
     await this.run(() => Bun.$`git add -A -- ${allFiles}`.quiet(), "Failed to stage files");
-    await this.run(() => Bun.$`git commit -m ${message}`.quiet(), "Failed to create commit");
+    await this.run(() => Bun.$`git commit ${authorArg} -m ${message}`.quiet(), "Failed to create commit");
     this.commitCreated = true;
+  }
+
+  private getCommitAuthorArg(): string[] {
+    const { author, email } = this.config.get("commit");
+    if (!author) return [];
+    const authorString = email ? `${author} <${email}>` : author;
+    return ["--author", authorString];
   }
 
   private getChangelogFiles(packages: Package[]): string[] {
@@ -93,10 +112,8 @@ export class ReleaseOrchestrator {
     if (this.options.dryRun) return;
 
     for (const pkg of packages) {
-      const newVersion = pkg.newVersion;
-      if (!newVersion) continue;
-
-      const tagName = `${pkg.name}@${newVersion}`;
+      const version = pkg.newVersion ?? pkg.version;
+      const tagName = `${pkg.name}@${version}`;
       await this.run(() => Bun.$`git tag ${tagName}`.quiet(), `Failed to create tag ${tagName}`);
       this.createdTags.push(tagName);
     }
@@ -116,58 +133,79 @@ export class ReleaseOrchestrator {
     await this.run(() => Bun.$`git push`.quiet(), "Failed to push commits");
 
     if (this.createdTags.length > 0) {
-      await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
+      await this.pushTags();
     }
 
     this.pushedToRemote = true;
   }
 
-  async createGithubRelease(stone: Stone, packages: Package[]) {
+  async pushTags() {
+    if (this.options.dryRun) return;
+    if (this.createdTags.length === 0) return;
+
+    await this.run(() => Bun.$`git push --tags`.quiet(), "Failed to push tags");
+  }
+
+  async createGitRelease(stones: Stone[], packages: Package[]) {
     if (this.options.dryRun) return;
 
     await this.initCommitLinks();
+    const provider = await this.getProvider();
 
     for (const pkg of packages) {
-      if (!pkg.newVersion) continue;
-
-      const tagName = `${pkg.name}@${pkg.newVersion}`;
-      const title = `${pkg.name} v${pkg.newVersion}`;
-      const notes = this.formatReleaseNotes(stone, pkg);
+      const version = pkg.newVersion ?? pkg.version;
+      const tagName = `${pkg.name}@${version}`;
+      const title = `${pkg.name} v${version}`;
+      const relevantStones = this.filterStonesForPackage(stones, pkg.name);
+      const notes = this.formatReleaseNotes(relevantStones, pkg);
 
       await this.run(
-        () => Bun.$`gh release create ${tagName} --title ${title} --notes ${notes}`.quiet(),
-        `Failed to create GitHub release for ${tagName}`,
+        () => provider.createRelease({ notes, tag: tagName, title }),
+        `Failed to create release for ${tagName}`,
       );
       this.createdReleases.push(tagName);
     }
   }
 
-  private formatReleaseNotes(stone: Stone, pkg: Package): string {
-    const lines: string[] = [];
+  private filterStonesForPackage(stones: Stone[], packageName: string): Stone[] {
+    return stones.filter((s) => s.affectsPackage(packageName));
+  }
 
-    lines.push(`## ${stone.message}`);
+  private formatReleaseNotes(stones: Stone[], pkg: Package): string {
+    const lines: string[] = [];
+    const version = pkg.newVersion ?? pkg.version;
+
+    lines.push(`\`${pkg.name}\` ${pkg.version} → ${version}`);
+
+    if (stones.length === 0) return lines.join("\n");
+
+    lines.push("");
+    lines.push("<details>");
+    lines.push(`<summary>Stones (${stones.length})</summary>`);
     lines.push("");
 
-    if (stone.description) {
-      lines.push(stone.description);
+    for (const stone of stones) {
+      lines.push(`### ${stone.message}`);
       lines.push("");
-    }
-
-    lines.push(`**Package:** \`${pkg.name}\``);
-    lines.push(`**Version:** ${pkg.version} → ${pkg.newVersion}`);
-
-    const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
-    if (commits.length > 0) {
-      lines.push("");
-      lines.push("<details>");
-      lines.push(`<summary>Commits (${commits.length})</summary>`);
-      lines.push("");
-      for (const commit of commits) {
-        lines.push(this.formatCommitLine(commit));
+      if (stone.description) {
+        lines.push(stone.description);
+        lines.push("");
       }
-      lines.push("");
-      lines.push("</details>");
+      const commits = this.filterCommitsForPackage(stone.commits, pkg.name);
+      if (commits.length > 0) {
+        lines.push("<details>");
+        lines.push(`<summary>Commits (${commits.length})</summary>`);
+        lines.push("");
+        for (const commit of commits) {
+          lines.push(this.formatCommitLine(commit));
+        }
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+      }
     }
+
+    lines.push("</details>");
 
     return lines.join("\n");
   }
@@ -185,10 +223,11 @@ export class ReleaseOrchestrator {
   }
 
   async rollback() {
-    for (const release of this.createdReleases) {
-      try {
-        await Bun.$`gh release delete ${release} --yes`.quiet();
-      } catch {}
+    if (this.createdReleases.length > 0) {
+      const provider = await this.getProvider();
+      for (const release of this.createdReleases) {
+        await provider.deleteRelease(release);
+      }
     }
     this.createdReleases = [];
 
@@ -196,21 +235,27 @@ export class ReleaseOrchestrator {
       for (const tag of this.createdTags) {
         try {
           await Bun.$`git push origin --delete ${tag}`.quiet();
-        } catch {}
+        } catch (error) {
+          log.warn(color.dim(`Failed to delete remote tag "${tag}": ${error}`));
+        }
       }
     }
 
     for (const tag of this.createdTags) {
       try {
         await Bun.$`git tag -d ${tag}`.quiet();
-      } catch {}
+      } catch (error) {
+        log.warn(color.dim(`Failed to delete local tag "${tag}": ${error}`));
+      }
     }
     this.createdTags = [];
 
     if (this.commitCreated) {
       try {
         await Bun.$`git reset HEAD~1`.quiet();
-      } catch {}
+      } catch (error) {
+        log.warn(color.dim(`Failed to reset commit: ${error}`));
+      }
       this.commitCreated = false;
     }
 
@@ -219,10 +264,7 @@ export class ReleaseOrchestrator {
   }
 
   private async publishPackage(pkg: Package) {
-    const newVersion = pkg.newVersion;
-    if (!newVersion) return;
-
-    const tag = this.config.get("tag") || "latest";
+    const tag = this.config.get("tag") || DEFAULT_NPM_TAG;
     const pkgDir = dirname(pkg.file);
 
     await this.run(() => Bun.$`bun run build`.cwd(pkgDir).quiet(), `Failed to build ${pkg.name}`);
@@ -234,7 +276,7 @@ export class ReleaseOrchestrator {
 
   private formatCommitMessage(stone: Stone, packages: Package[]): string {
     const template = this.config.get("commit").message;
-    const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion}`).join("\n");
+    const packageList = packages.map((pkg) => `- ${pkg.name}@${pkg.newVersion ?? pkg.version}`).join("\n");
 
     const subject = template
       .replace("{message}", () => stone.message)

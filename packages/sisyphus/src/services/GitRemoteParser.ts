@@ -47,11 +47,11 @@ export class GitRemoteParser {
 
     for (const [pattern, provider] of patterns) {
       const match = url.match(pattern);
-      if (match) {
-        const [, owner, repo] = match;
-        if (owner && repo) {
-          return this.createRemoteInfo(provider, owner, repo);
-        }
+      if (!match) continue;
+
+      const [, owner, repo] = match;
+      if (owner && repo) {
+        return this.createRemoteInfo(provider, owner, repo);
       }
     }
 

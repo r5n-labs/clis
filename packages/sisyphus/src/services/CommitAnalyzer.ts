@@ -1,8 +1,9 @@
-import type { ConfigManager } from "@r5n/cli-core";
-import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK } from "../constants";
-import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE } from "../domain";
-import type { SisyphusConfig } from "../types";
-import { buildPackagePathMap, findAffectedPackages } from "../utils";
+import { type ConfigManager, color, log } from "@r5n/cli-core";
+import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK, SISYPHUS_DEFAULT_CONFIG } from "../constants";
+import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE, type Package, type StoneData } from "../domain";
+import type { CommitsSkipConfig, SisyphusConfig } from "../types";
+import { buildPackagePathMap, findAffectedPackages, findDependencyPackages } from "../utils";
+import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
 const COMMIT_TYPE_TO_BUMP: Record<string, BumpType> = {
@@ -24,13 +25,41 @@ export type CommitGroup = { message: string; bump: BumpType; packages: Set<strin
 export type AnalyzeOptions = { filter?: string; single?: boolean };
 
 export class CommitAnalyzer {
-  constructor(private config: ConfigManager<SisyphusConfig>) {}
+  private stoneManager: StoneManager;
+
+  constructor(private config: ConfigManager<SisyphusConfig>) {
+    this.stoneManager = new StoneManager(config);
+  }
 
   async analyze(options: AnalyzeOptions = {}): Promise<CommitGroup[]> {
-    const commits = await this.getCommitsSinceLastRelease();
+    let commits = await this.getCommitsSinceLastRelease();
+    if (commits.length === 0) return [];
+
+    const trackedHashes = await this.stoneManager.getAllTrackedCommitHashes();
+    if (trackedHashes.size > 0) {
+      commits = commits.filter((c) => !trackedHashes.has(c.shortHash));
+      if (commits.length === 0) return [];
+    }
+
+    const skipConfig = this.config.get("commits")?.skip ?? SISYPHUS_DEFAULT_CONFIG.commits.skip;
+    commits = commits.filter((c) => !this.shouldSkipCommit(c, skipConfig));
     if (commits.length === 0) return [];
 
     return this.groupByPackage(commits, options);
+  }
+
+  private shouldSkipCommit(commit: Commit, skip: CommitsSkipConfig): boolean {
+    if (skip.authors.includes(commit.author)) return true;
+
+    for (const pattern of skip.messagePatterns) {
+      try {
+        if (new RegExp(pattern, "i").test(commit.subject)) return true;
+      } catch {
+        log.warn(color.yellow(`Invalid regex pattern in commits.skip.messagePatterns: "${pattern}"`));
+      }
+    }
+
+    return false;
   }
 
   get commitCount(): Promise<number> {
@@ -82,5 +111,19 @@ export class CommitAnalyzer {
     const sections = this.config.get("changelog").sections;
     if (commit.breaking) return sections.breaking;
     return sections[commit.type as keyof typeof sections] ?? `${commit.type} updates`;
+  }
+
+  static buildStoneData(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
+    const pkgNames = Array.from(group.packages);
+    const commits = group.commits.length > 0 ? group.commits : undefined;
+    const deps = findDependencyPackages(pkgNames, packages);
+
+    return {
+      [group.bump]: pkgNames,
+      commits,
+      dependency: deps.length > 0 ? deps : undefined,
+      message: group.message,
+      tag,
+    };
   }
 }

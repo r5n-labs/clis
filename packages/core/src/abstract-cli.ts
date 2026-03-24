@@ -128,19 +128,22 @@ export abstract class AbstractCLI {
   private handleError(error: unknown) {
     if (this.metadata.onError?.(error)) return;
 
-    if (error instanceof Cancel) return;
+    if (error instanceof Cancel) {
+      process.exit(0);
+    }
 
     if (error instanceof Exit) {
       log.warn(color.yellow(error.message));
       if (error.hint) log.info(color.dim(error.hint));
-      return;
+      process.exit(0);
     }
 
     if (error instanceof Error) {
       log.error(color.red(error.message));
-      return;
+      process.exit(1);
     }
 
     console.error(color.red("Error:"), error);
+    process.exit(1);
   }
 }

@@ -32,6 +32,12 @@ export class PrCommand extends BaseCommand {
 
     this.displayPrSummary(result.pr);
 
+    const skipReason = this.shouldSkipPr(ctx, result.pr);
+    if (skipReason) {
+      log.info(color.dim(`Skipping: ${skipReason}`));
+      return;
+    }
+
     if (result.packages.size === 0) {
       throw new Exit("No packages affected by this PR", "The PR only modifies root files or files outside packages");
     }
@@ -87,6 +93,32 @@ export class PrCommand extends BaseCommand {
     if (pr.labels.length > 0) {
       log.info(`${color.dim("Labels:")} ${pr.labels.map((l) => color.cyan(l)).join(", ")}`);
     }
+  }
+
+  private shouldSkipPr(ctx: PrCtx, pr: PullRequestInfo): string | null {
+    const skip = ctx.config.get("pr").skip;
+
+    for (const label of pr.labels) {
+      if (skip.labels.some((l) => l.toLowerCase() === label.toLowerCase())) {
+        return `label "${label}" is in skip list`;
+      }
+    }
+
+    if (skip.authors.some((a) => a.toLowerCase() === pr.author.toLowerCase())) {
+      return `author "${pr.author}" is in skip list`;
+    }
+
+    for (const pattern of skip.titlePatterns) {
+      try {
+        if (new RegExp(pattern, "i").test(pr.title)) {
+          return `title matches skip pattern "${pattern}"`;
+        }
+      } catch {
+        log.warn(color.yellow(`Invalid regex pattern in pr.skip.titlePatterns: "${pattern}"`));
+      }
+    }
+
+    return null;
   }
 
   private async determineBumpType(ctx: PrCtx, suggested: BumpType | null, labels: string[]): Promise<BumpType> {
