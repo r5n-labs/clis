@@ -4,14 +4,23 @@ handle-merge:
   before_script:
     - apk add --no-cache git
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged" && $CI_MERGE_REQUEST_LABELS !~ /sisyphus-release/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_TITLE =~ /^Merge branch/ && $CI_COMMIT_TITLE !~ /sisyphus\/release/
   script:
+    - |
+      MR_IID=$(echo "$CI_COMMIT_DESCRIPTION" | grep -o '![0-9]*' | grep -o '[0-9]*' | head -1)
+      if [ -z "$MR_IID" ]; then
+        echo "No MR IID found in commit description, skipping"
+        exit 0
+      fi
+      echo "Detected MR !$MR_IID"
     - git fetch --unshallow || true
     - git config user.name "r5n-bot[bot]"
     - git config user.email "r5n-bot[bot]@users.noreply.gitlab.com"
     - bun install
     - |
-      OUTPUT=$(bunx @r5n/sisyphus pr --url $CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID --yes 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+      GIT_TOKEN="${GITLAB_TOKEN:-$CI_JOB_TOKEN}"
+      GIT_USER=$([ -n "$GITLAB_TOKEN" ] && echo "oauth2" || echo "gitlab-ci-token")
+      OUTPUT=$(bunx @r5n/sisyphus pr --url $CI_PROJECT_URL/-/merge_requests/$MR_IID --yes 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
       echo "$OUTPUT"
       if echo "$OUTPUT" | grep -q "Skipping:"; then
         echo "Stone creation skipped"
@@ -21,8 +30,6 @@ handle-merge:
         exit $EXIT_CODE
       fi
       git add .sisyphus/stones/
-      git diff --cached --quiet || git commit -m 'chore: add stone from MR !'"$CI_MERGE_REQUEST_IID"
-      git push https://oauth2:$GITLAB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git HEAD:$CI_DEFAULT_BRANCH
+      git diff --cached --quiet || git commit -m 'chore: add stone from MR !'"$MR_IID"
+      git push "https://${GIT_USER}:${GIT_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:$CI_DEFAULT_BRANCH
       bunx @r5n/sisyphus actions release-pr
-  variables:
-    GITLAB_TOKEN: $GITLAB_TOKEN

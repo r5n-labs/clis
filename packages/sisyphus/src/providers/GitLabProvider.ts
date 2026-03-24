@@ -185,8 +185,8 @@ export class GitLabProvider extends GitProvider {
   }
 
   private async resolveAuth(): Promise<Record<string, string>> {
-    const envToken = process.env.GITLAB_TOKEN ?? process.env.CI_JOB_TOKEN;
-    if (envToken) return { "PRIVATE-TOKEN": envToken };
+    if (process.env.GITLAB_TOKEN) return { "PRIVATE-TOKEN": process.env.GITLAB_TOKEN };
+    if (process.env.CI_JOB_TOKEN) return { "JOB-TOKEN": process.env.CI_JOB_TOKEN };
 
     try {
       const result = await Bun.$`glab auth status --show-token`.quiet();

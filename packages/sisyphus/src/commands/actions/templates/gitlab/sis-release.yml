@@ -6,11 +6,8 @@ release:
   rules:
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged" && $CI_MERGE_REQUEST_LABELS =~ /sisyphus-release/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_TITLE =~ /^Merge branch.*sisyphus\/release/
   script:
     - git fetch --unshallow || true
     - bun install
     - bunx @r5n/sisyphus roll --publish-only --yes
-  variables:
-    GITLAB_TOKEN: $GITLAB_TOKEN
-    NPM_TOKEN: $NPM_TOKEN
