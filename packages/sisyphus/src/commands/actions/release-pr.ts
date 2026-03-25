@@ -102,7 +102,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     s.start("Applying release changes...");
 
     const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
-    await Bun.$`git add ${changedFiles}`;
+    for (const file of changedFiles) {
+      await Bun.$`git add ${file}`.nothrow();
+    }
 
     const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
     if (hasChanges.exitCode !== 0) {
