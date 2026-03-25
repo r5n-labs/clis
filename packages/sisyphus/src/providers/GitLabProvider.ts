@@ -56,7 +56,7 @@ export class GitLabProvider extends GitProvider {
 
   async findPr(options: FindPrOptions): Promise<PullRequest | null> {
     try {
-      const params = new URLSearchParams({ per_page: "1" });
+      const params = new URLSearchParams({ per_page: "1", state: "opened" });
       if (options.head) params.set("source_branch", options.head);
       if (options.label) params.set("labels", options.label);
 
