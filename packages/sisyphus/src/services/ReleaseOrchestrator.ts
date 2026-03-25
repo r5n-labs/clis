@@ -312,7 +312,7 @@ export class ReleaseOrchestrator {
       await fn();
     } catch (error) {
       const stderr = this.getStderr(error);
-      throw new Exit(context, stderr);
+      throw new Error(stderr ? `${context}: ${stderr}` : context);
     }
   }
 

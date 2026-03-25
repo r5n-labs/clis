@@ -212,7 +212,8 @@ export class GitLabProvider extends GitProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`GitLab API error: ${response.status} ${response.statusText}`);
+      const body = await response.text().catch(() => "");
+      throw new Error(`GitLab API error: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`);
     }
 
     return response.json() as Promise<T>;
