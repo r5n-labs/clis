@@ -31,6 +31,12 @@ export async function createGitProvider() {
     throw new Exit("Could not detect git provider", "Make sure you have a git remote configured (origin)");
   }
 
+  const provider = createProvider(info);
+  await provider.ensureAvailable();
+  return provider;
+}
+
+function createProvider(info: RemoteInfo) {
   switch (info.provider) {
     case "github":
       return new GitHubProvider(info);

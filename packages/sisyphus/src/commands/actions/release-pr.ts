@@ -27,7 +27,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
   private async getProvider(): Promise<GitProvider> {
     if (!this.provider) {
       this.provider = await createGitProvider();
-      await this.provider.ensureAvailable();
     }
     return this.provider;
   }

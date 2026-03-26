@@ -41,7 +41,6 @@ export class PullRequestAnalyzer {
 
   async analyze(url?: string): Promise<PrAnalysisResult> {
     const provider = await this.getProvider();
-    await provider.ensureAvailable();
 
     const pr = url ? await this.fetchFromUrl(provider, url) : await this.fetchFromCurrentBranch(provider);
 
