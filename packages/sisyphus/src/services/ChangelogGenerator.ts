@@ -167,14 +167,19 @@ export class ChangelogGenerator {
     const date = this.getDate();
     const emoji = this.getEmoji(pkg);
 
-    return this.config.packageHeader.replace("{emoji}", emoji).replace("{version}", version).replace("{date}", date);
+    return this.config.packageHeader
+      .replace("{emoji}", () => emoji)
+      .replace("{version}", () => version)
+      .replace("{date}", () => date);
   }
 
   private formatRootHeader(packages: Package[]): string {
     const date = this.getDate();
     const packageList = packages.map((p) => `${p.name}@${p.newVersion ?? p.version}`).join(", ");
 
-    return this.config.rootHeader.replace("{date}", date).replace("{packages}", packageList);
+    return this.config.rootHeader
+      .replace("{date}", () => date)
+      .replace("{packages}", () => packageList);
   }
 
   private formatRootStoneContent(stone: Stone): string {
