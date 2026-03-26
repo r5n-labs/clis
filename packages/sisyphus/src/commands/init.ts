@@ -33,6 +33,7 @@ export class InitCommand extends BaseCommand {
 
     if (useDefault) {
       ctx.config.save(SISYPHUS_DEFAULT_CONFIG);
+      await this.setLastStoneToHead(ctx);
       this.displaySuccessNote(ctx.cli.version);
       return;
     }
@@ -49,6 +50,7 @@ export class InitCommand extends BaseCommand {
     const mergedConfig = deepMerge<SisyphusConfig>({ ...currentConfig }, newConfig);
 
     ctx.config.save(mergedConfig);
+    await this.setLastStoneToHead(ctx);
     this.displaySuccessNote(ctx.cli.version);
   }
 
@@ -185,6 +187,16 @@ export class InitCommand extends BaseCommand {
       tag: values.tag,
       tags: values.tags,
     } as InitFormValues;
+  }
+
+  private async setLastStoneToHead(ctx: InitCtx) {
+    try {
+      const result = await Bun.$`git rev-parse HEAD`.quiet();
+      const commit = result.stdout.toString().trim();
+      if (commit) {
+        ctx.config.set("lastStone", { commit, date: new Date().toISOString() });
+      }
+    } catch {}
   }
 
   private displaySuccessNote(version?: string) {

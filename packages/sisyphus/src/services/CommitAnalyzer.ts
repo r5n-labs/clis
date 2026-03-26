@@ -69,6 +69,7 @@ export class CommitAnalyzer {
   private async getCommitsSinceLastRelease(): Promise<Commit[]> {
     const lastStone = this.config.get("lastStone");
     const lastCommit = lastStone?.commit || undefined;
+    if (!lastCommit) return [];
     return Commit.since(lastCommit);
   }
 
