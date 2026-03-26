@@ -143,7 +143,8 @@ export class PullRequestAnalyzer {
 
   private async getCommitParentCount(sha: string): Promise<number> {
     try {
-      const result = await Bun.$`git rev-parse ${sha}^@ 2>/dev/null`.quiet();
+      const result = await Bun.$`git rev-parse ${sha}^@`.quiet().nothrow();
+      if (result.exitCode !== 0) return 1;
       const parents = result.stdout.toString().trim().split("\n").filter(Boolean);
       return parents.length;
     } catch {
