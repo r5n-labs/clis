@@ -120,21 +120,26 @@ export class Commit {
   }
 
   private static async fetchFromRange(range: string): Promise<Commit[]> {
-    const result = await Bun.$`git log ${range} --pretty=format:"%H%x1f%s%x1f%an" --no-merges`.quiet();
+    const format = "%x00%H%x1f%s%x1f%an%x1f%b%x00";
+    const result = await Bun.$`git log ${range} --pretty=format:${format} --name-only --no-merges`.quiet();
     const output = result.stdout.toString().trim();
 
     if (!output) return [];
 
+    const segments = output.split("\x00").filter(Boolean);
     const commits: Commit[] = [];
 
-    for (const line of output.split("\n")) {
-      const parts = line.split(FIELD_SEPARATOR);
-      if (parts.length < 3) continue;
-      const [hash, subject, author] = parts;
+    for (let i = 0; i < segments.length; i += 2) {
+      const fields = segments[i]!.split(FIELD_SEPARATOR);
+      if (fields.length < 3) continue;
+
+      const [hash, subject, author] = fields;
       if (!hash || !subject || !author) continue;
 
-      const commit = await Commit.hydrate(hash, subject, author);
-      commits.push(commit);
+      const body = fields.slice(3).join(FIELD_SEPARATOR).trim() || undefined;
+      const files = (segments[i + 1] ?? "").split("\n").filter(Boolean);
+
+      commits.push(Commit.parse(hash, subject, author).withFiles(files).withBody(body));
     }
 
     return commits;
