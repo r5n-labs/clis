@@ -311,8 +311,8 @@ export class ReleaseOrchestrator {
     try {
       await fn();
     } catch (error) {
-      const stderr = this.getStderr(error);
-      throw new Error(stderr ? `${context}: ${stderr}` : context);
+      const detail = this.getStderr(error) ?? (error instanceof Error ? error.message : undefined);
+      throw new Error(detail ? `${context}: ${detail}` : context);
     }
   }
 
