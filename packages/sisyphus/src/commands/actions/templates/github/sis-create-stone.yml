@@ -1,13 +1,19 @@
 name: Sisyphus - Handle PR Merge
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [closed]
     branches: [main]
 
+concurrency:
+  group: sisyphus-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   handle-merge:
-    if: github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'sisyphus-release')
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'sisyphus-release')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,6 +57,32 @@ jobs:
 
       - name: Create or update release PR
         if: steps.stone.outputs.skipped == 'false'
+        run: bunx @r5n/sisyphus actions release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  handle-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Configure git
+        run: |
+          git config user.name "r5n-bot[bot]"
+          git config user.email "r5n-bot[bot]@users.noreply.github.com"
+
+      - name: Update release PR
         run: bunx @r5n/sisyphus actions release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
