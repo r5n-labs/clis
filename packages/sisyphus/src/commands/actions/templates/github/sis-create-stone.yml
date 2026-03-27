@@ -62,7 +62,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   handle-push:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.event.head_commit.committer.username != 'web-flow'
     runs-on: ubuntu-latest
     permissions:
       contents: write
