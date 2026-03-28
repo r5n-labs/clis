@@ -27,7 +27,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
   private async getProvider(): Promise<GitProvider> {
     if (!this.provider) {
       this.provider = await createGitProvider();
-      await this.provider.ensureAvailable();
     }
     return this.provider;
   }
@@ -40,7 +39,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
 
       if (stones.length === 0) {
         log.info(color.dim("No pending stones found, skipping release PR"));
-        await Bun.$`git checkout ${baseBranch}`;
         return;
       }
 
@@ -54,16 +52,13 @@ export class ActionsReleasePrCommand extends BaseCommand {
         log.info(color.yellow("\n[dry-run] Would create/update release PR"));
         log.info(color.dim("\nPR Body preview:"));
         log.info(prBody);
-        await Bun.$`git checkout ${baseBranch}`;
         return;
       }
 
       await this.commitAndPushChanges(ctx, stones, packages);
       await this.createOrUpdatePr(prTitle, prBody);
-      await Bun.$`git checkout ${baseBranch}`;
-    } catch (error) {
-      await this.restoreMainBranch();
-      throw error;
+    } finally {
+      await this.restoreMainBranch(baseBranch);
     }
   }
 
@@ -102,7 +97,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     s.start("Applying release changes...");
 
     const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
-    await Bun.$`git add ${changedFiles}`;
+    for (const file of changedFiles) {
+      await Bun.$`git add ${file}`.nothrow();
+    }
 
     const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
     if (hasChanges.exitCode !== 0) {
@@ -313,9 +310,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await provider.updatePr(prNumber, { body, title });
   }
 
-  private async restoreMainBranch() {
-    const provider = await this.getProvider();
-    const baseBranch = await provider.getDefaultBranch();
+  private async restoreMainBranch(baseBranch: string) {
     try {
       await Bun.$`git checkout ${baseBranch}`.quiet();
     } catch (error) {

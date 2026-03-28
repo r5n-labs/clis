@@ -31,6 +31,12 @@ export async function createGitProvider() {
     throw new Exit("Could not detect git provider", "Make sure you have a git remote configured (origin)");
   }
 
+  const provider = createProvider(info);
+  await provider.ensureAvailable();
+  return provider;
+}
+
+function createProvider(info: RemoteInfo) {
   switch (info.provider) {
     case "github":
       return new GitHubProvider(info);
@@ -57,7 +63,7 @@ export async function detectProvider(): Promise<Provider> {
   return info.provider;
 }
 
-async function getRemoteUrl(): Promise<string | null> {
+export async function getRemoteUrl(): Promise<string | null> {
   try {
     const result = await Bun.$`git remote get-url origin`.quiet();
     return result.stdout.toString().trim() || null;
@@ -66,7 +72,7 @@ async function getRemoteUrl(): Promise<string | null> {
   }
 }
 
-function parseRemoteUrl(url: string): RemoteInfo | null {
+export function parseRemoteUrl(url: string): RemoteInfo | null {
   const patterns: [RegExp, Provider][] = [
     [GITHUB_PATTERN, "github"],
     [GITLAB_PATTERN, "gitlab"],

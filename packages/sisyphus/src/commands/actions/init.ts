@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { args, color, confirm, Exit, log, multiselect, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { detectProvider } from "../../providers";
-import { createCiGenerator, GitLabCiGenerator, WORKFLOW_CONFIGS, type WorkflowType } from "./CiGenerator";
+import { createCiGenerator, GitHubCiGenerator, GitLabCiGenerator, WORKFLOW_CONFIGS, type WorkflowType } from "./CiGenerator";
 
 const PROVIDER_LABELS = { bitbucket: "Bitbucket Pipelines", github: "GitHub Actions", gitlab: "GitLab CI" };
 
@@ -70,6 +70,19 @@ export class ActionsInitCommand extends BaseCommand {
     if (generator instanceof GitLabCiGenerator) {
       log.info(`\nAdd this to your ${color.bold(".gitlab-ci.yml")}:\n`);
       log.info(color.cyan(generator.getIncludeInstruction()));
+      log.info("");
+      log.info(
+        `${color.yellow("Note:")} Add a ${color.bold("GITLAB_TOKEN")} CI/CD variable (Personal Access Token with ${color.bold("api")} + ${color.bold("write_repository")} scopes)`,
+      );
+      log.info(color.dim("Required for creating release PRs. Settings → CI/CD → Variables"));
+      log.info("");
+    }
+
+    if (generator instanceof GitHubCiGenerator) {
+      log.info(
+        `\n${color.yellow("Note:")} Enable ${color.bold("\"Allow GitHub Actions to create and approve pull requests\"")}`,
+      );
+      log.info(color.dim("Settings → Actions → General → Workflow permissions"));
       log.info("");
     }
 

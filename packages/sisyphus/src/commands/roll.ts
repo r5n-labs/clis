@@ -345,7 +345,6 @@ export class RollCommand extends BaseCommand {
         s.stop("Release created");
       }
 
-      ctx.config.set("currentRelease", undefined);
       ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
 
       note(
@@ -360,7 +359,7 @@ export class RollCommand extends BaseCommand {
   }
 
   private createFallbackStone(packages: Package[]): Stone {
-    const message = `Release ${packages.map((p) => `${p.name}@${p.version}`).join(", ")}`;
+    const message = `Release ${packages.map((p) => `${p.name}@${p.newVersion ?? p.version}`).join(", ")}`;
     return Stone.create({ message }, 0);
   }
 }
