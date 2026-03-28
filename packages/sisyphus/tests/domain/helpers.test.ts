@@ -33,74 +33,54 @@ describe("ChangesetParser.toStoneData", () => {
   });
 
   test("converts major packages correctly", () => {
-    const cs = makeChangeset({ "@app/core": "major", "@app/ui": "major" }, "Breaking change");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/core": "major", "@app/ui": "major" }, "Breaking change"));
 
-    expect(result.major).toEqual(["@app/core", "@app/ui"]);
-    expect(result.minor).toBeUndefined();
-    expect(result.patch).toBeUndefined();
+    expect(result).toMatchObject({ major: ["@app/core", "@app/ui"], minor: undefined, patch: undefined });
   });
 
   test("converts minor packages correctly", () => {
-    const cs = makeChangeset({ "@app/utils": "minor" }, "New feature");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/utils": "minor" }, "New feature"));
 
-    expect(result.minor).toEqual(["@app/utils"]);
-    expect(result.major).toBeUndefined();
-    expect(result.patch).toBeUndefined();
+    expect(result).toMatchObject({ major: undefined, minor: ["@app/utils"], patch: undefined });
   });
 
   test("converts patch packages correctly", () => {
-    const cs = makeChangeset({ "@app/core": "patch", "@app/lib": "patch" }, "Bug fix");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/core": "patch", "@app/lib": "patch" }, "Bug fix"));
 
-    expect(result.patch).toEqual(["@app/core", "@app/lib"]);
-    expect(result.major).toBeUndefined();
-    expect(result.minor).toBeUndefined();
+    expect(result).toMatchObject({ major: undefined, minor: undefined, patch: ["@app/core", "@app/lib"] });
   });
 
   test("unknown bump types are silently dropped", () => {
-    // BUG: unknown bump types like "prepatch" are silently ignored
-    // because the switch statement has no default case
-    const cs = makeChangeset({ "@app/core": "prepatch" }, "Pre-release");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/core": "prepatch" }, "Pre-release"));
 
-    expect(result.major).toBeUndefined();
-    expect(result.minor).toBeUndefined();
-    expect(result.patch).toBeUndefined();
-    expect(result.message).toBe("Pre-release");
+    expect(result).toMatchObject({ major: undefined, message: "Pre-release", minor: undefined, patch: undefined });
   });
 
   test("first line of summary used as message", () => {
-    const cs = makeChangeset({ "@app/core": "minor" }, "First line message\nSecond line detail\nThird line");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(
+      makeChangeset({ "@app/core": "minor" }, "First line message\nSecond line detail\nThird line"),
+    );
 
-    expect(result.message).toBe("First line message");
-    expect(result.description).toBe("Second line detail\nThird line");
+    expect(result).toMatchObject({ description: "Second line detail\nThird line", message: "First line message" });
   });
 
   test("fallback message for empty summary", () => {
-    const cs = makeChangeset({ "@app/core": "patch" }, "");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/core": "patch" }, ""));
 
-    expect(result.message).toBe("Migrated from changeset");
-    expect(result.description).toBeUndefined();
+    expect(result).toMatchObject({ description: undefined, message: "Migrated from changeset" });
   });
 
   test("mixed bump types are categorized correctly", () => {
-    const cs = makeChangeset({ "@app/core": "major", "@app/lib": "patch", "@app/utils": "minor" }, "Mixed changes");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(
+      makeChangeset({ "@app/core": "major", "@app/lib": "patch", "@app/utils": "minor" }, "Mixed changes"),
+    );
 
-    expect(result.major).toEqual(["@app/core"]);
-    expect(result.minor).toEqual(["@app/utils"]);
-    expect(result.patch).toEqual(["@app/lib"]);
+    expect(result).toMatchObject({ major: ["@app/core"], minor: ["@app/utils"], patch: ["@app/lib"] });
   });
 
   test("description is undefined when summary is single line", () => {
-    const cs = makeChangeset({ "@app/core": "patch" }, "Only one line");
-    const result = parser.toStoneData(cs);
+    const result = parser.toStoneData(makeChangeset({ "@app/core": "patch" }, "Only one line"));
 
-    expect(result.message).toBe("Only one line");
-    expect(result.description).toBeUndefined();
+    expect(result).toMatchObject({ description: undefined, message: "Only one line" });
   });
 });

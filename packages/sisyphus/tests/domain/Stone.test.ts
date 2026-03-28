@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { BumpType } from "../../src/domain/BumpType";
 import type { CommitInfo } from "../../src/domain/Commit";
-import type { StoneData, StoneJson } from "../../src/domain/Stone";
+import type { StoneData } from "../../src/domain/Stone";
 import { Stone } from "../../src/domain/Stone";
 
 const makeCommit = (hash: string, message: string): CommitInfo => ({
@@ -36,50 +36,53 @@ describe("Stone.create()", () => {
   test("stores packages correctly by bump type", () => {
     const stone = Stone.create(baseData);
 
-    expect(stone.major).toEqual(["@app/core"]);
-    expect(stone.minor).toEqual(["@app/utils"]);
-    expect(stone.patch).toEqual(["@app/cli"]);
-    expect(stone.dependency).toEqual(["@app/deps"]);
-    expect(stone.snapshot).toEqual(["@app/snapshot"]);
-    expect(stone.message).toBe("release v1.0.0");
-    expect(stone.tag).toBe("v1.0.0");
-    expect(stone.description).toBe("Initial release");
+    expect(stone).toMatchObject({
+      dependency: ["@app/deps"],
+      description: "Initial release",
+      major: ["@app/core"],
+      message: "release v1.0.0",
+      minor: ["@app/utils"],
+      patch: ["@app/cli"],
+      snapshot: ["@app/snapshot"],
+      tag: "v1.0.0",
+    });
   });
 });
 
 describe("Stone.fromJson() / toJson()", () => {
   test("roundtrip preserves all data", () => {
     const original = Stone.create(baseData, 5);
-    const json = original.toJson();
-    const restored = Stone.fromJson(json);
+    const restored = Stone.fromJson(original.toJson());
 
-    expect(restored.id).toBe(original.id);
-    expect(restored.message).toBe(original.message);
-    expect(restored.tag).toBe(original.tag);
-    expect(restored.description).toBe(original.description);
-    expect(restored.major).toEqual(original.major);
-    expect(restored.minor).toEqual(original.minor);
-    expect(restored.patch).toEqual(original.patch);
-    expect(restored.dependency).toEqual(original.dependency);
-    expect(restored.snapshot).toEqual(original.snapshot);
-    expect(restored.commits).toEqual(original.commits);
+    expect(restored).toMatchObject({
+      commits: original.commits,
+      dependency: original.dependency,
+      description: original.description,
+      id: original.id,
+      major: original.major,
+      message: original.message,
+      minor: original.minor,
+      patch: original.patch,
+      snapshot: original.snapshot,
+      tag: original.tag,
+    });
   });
 
   test("handles missing optional fields (no snapshot, no commits)", () => {
-    const minimalJson: StoneJson = { id: "0001-deadbeef", message: "minimal stone" };
+    const stone = Stone.fromJson({ id: "0001-deadbeef", message: "minimal stone" });
 
-    const stone = Stone.fromJson(minimalJson);
-
-    expect(stone.id).toBe("0001-deadbeef");
-    expect(stone.message).toBe("minimal stone");
-    expect(stone.tag).toBeUndefined();
-    expect(stone.description).toBeUndefined();
-    expect(stone.commits).toBeUndefined();
-    expect(stone.major).toEqual([]);
-    expect(stone.minor).toEqual([]);
-    expect(stone.patch).toEqual([]);
-    expect(stone.dependency).toEqual([]);
-    expect(stone.snapshot).toEqual([]);
+    expect(stone).toMatchObject({
+      commits: undefined,
+      dependency: [],
+      description: undefined,
+      id: "0001-deadbeef",
+      major: [],
+      message: "minimal stone",
+      minor: [],
+      patch: [],
+      snapshot: [],
+      tag: undefined,
+    });
   });
 });
 
@@ -91,11 +94,13 @@ describe("Stone.merge()", () => {
     const { stone, conflicts } = Stone.merge([stoneA, stoneB], "merged");
 
     expect(conflicts).toEqual([]);
-    expect(stone.major).toEqual(["@app/core"]);
-    expect(stone.minor).toEqual(["@app/utils"]);
-    expect(stone.patch).toEqual(["@app/cli"]);
-    expect(stone.dependency).toEqual(["@app/deps"]);
-    expect(stone.message).toBe("merged");
+    expect(stone).toMatchObject({
+      dependency: ["@app/deps"],
+      major: ["@app/core"],
+      message: "merged",
+      minor: ["@app/utils"],
+      patch: ["@app/cli"],
+    });
   });
 
   test("detects conflicts when same package at different bump levels", () => {
@@ -119,14 +124,11 @@ describe("Stone.merge()", () => {
   });
 
   test("BUG: drops Snapshot packages entirely during merge", () => {
-    // collectBumps only iterates Major, Minor, Patch, Dependency — not Snapshot.
-    // This means any packages in the snapshot bump type are silently lost.
     const stoneA = Stone.create({ message: "stone A", snapshot: ["@app/snapshot-pkg"] });
     const stoneB = Stone.create({ message: "stone B", patch: ["@app/cli"] });
 
     const { stone } = Stone.merge([stoneA, stoneB], "merged");
 
-    // Snapshot packages are NOT carried over — this is a bug
     expect(stone.snapshot).toEqual([]);
     expect(stone.allPackages).not.toContain("@app/snapshot-pkg");
   });
@@ -149,23 +151,17 @@ describe("Stone.merge()", () => {
 
     const { stone } = Stone.merge([stoneA, stoneB], "merged");
 
-    // NOTE: merge uses flatMap without dedup — commit2 appears twice.
-    // This documents actual behavior: commits are NOT deduplicated.
     const hashes = stone.commits?.map((c) => c.hash) ?? [];
     expect(hashes).toEqual(["aaa1111", "bbb2222", "bbb2222"]);
   });
 
   test("silently picks first tag when tags conflict", () => {
-    // When multiple stones have different tags, merge creates a Set
-    // then picks tags[0] — the first unique tag encountered.
-    // There is no conflict reported for tag mismatches.
     const stoneA = Stone.create({ message: "A", tag: "v1.0.0" });
     const stoneB = Stone.create({ message: "B", tag: "v2.0.0" });
 
     const { stone, conflicts } = Stone.merge([stoneA, stoneB], "merged");
 
     expect(stone.tag).toBe("v1.0.0");
-    // No conflict is reported for tag mismatch
     expect(conflicts).toEqual([]);
   });
 });
@@ -184,14 +180,9 @@ describe("stone.isEmpty", () => {
 
 describe("stone.allPackages", () => {
   test("returns all packages across bump types", () => {
-    const stone = Stone.create(baseData);
-    const all = stone.allPackages;
+    const all = Stone.create(baseData).allPackages;
 
-    expect(all).toContain("@app/core");
-    expect(all).toContain("@app/utils");
-    expect(all).toContain("@app/cli");
-    expect(all).toContain("@app/deps");
-    expect(all).toContain("@app/snapshot");
+    expect(all).toEqual(expect.arrayContaining(["@app/core", "@app/utils", "@app/cli", "@app/deps", "@app/snapshot"]));
     expect(all).toHaveLength(5);
   });
 });
@@ -216,56 +207,49 @@ describe("stone.affectsPackage() via getPackages", () => {
 });
 
 describe("immutable update methods", () => {
-  test("withMessage() returns new stone with updated message", () => {
+  test("withMessage() returns new stone with updated message, original unchanged", () => {
     const original = Stone.create(baseData);
     const updated = original.withMessage("new message");
 
-    expect(updated.message).toBe("new message");
+    expect(updated).toMatchObject({
+      id: original.id,
+      major: original.major,
+      message: "new message",
+      tag: original.tag,
+    });
     expect(original.message).toBe("release v1.0.0");
-    expect(updated.id).toBe(original.id);
-    expect(updated.tag).toBe(original.tag);
-    expect(updated.major).toEqual(original.major);
   });
 
-  test("withTag() returns new stone with updated tag", () => {
+  test("withTag() returns new stone with updated tag, original unchanged", () => {
     const original = Stone.create(baseData);
     const updated = original.withTag("v2.0.0");
 
-    expect(updated.tag).toBe("v2.0.0");
+    expect(updated).toMatchObject({ id: original.id, tag: "v2.0.0" });
     expect(original.tag).toBe("v1.0.0");
-    expect(updated.id).toBe(original.id);
   });
 
   test("withTag(undefined) clears the tag", () => {
-    const original = Stone.create(baseData);
-    const updated = original.withTag(undefined);
-
-    expect(updated.tag).toBeUndefined();
+    expect(Stone.create(baseData).withTag(undefined).tag).toBeUndefined();
   });
 
-  test("withDescription() returns new stone with updated description", () => {
+  test("withDescription() returns new stone with updated description, original unchanged", () => {
     const original = Stone.create(baseData);
     const updated = original.withDescription("Updated description");
 
-    expect(updated.description).toBe("Updated description");
+    expect(updated).toMatchObject({ description: "Updated description", id: original.id });
     expect(original.description).toBe("Initial release");
-    expect(updated.id).toBe(original.id);
   });
 
   test("withDescription(undefined) clears the description", () => {
-    const original = Stone.create(baseData);
-    const updated = original.withDescription(undefined);
-
-    expect(updated.description).toBeUndefined();
+    expect(Stone.create(baseData).withDescription(undefined).description).toBeUndefined();
   });
 });
 
 describe("toJson()", () => {
   test("omits empty arrays via nonEmpty helper", () => {
-    const stone = Stone.create({ major: ["@app/core"], message: "only major" });
-    const json = stone.toJson();
+    const json = Stone.create({ major: ["@app/core"], message: "only major" }).toJson();
 
-    expect(json.major).toEqual(["@app/core"]);
+    expect(json).toMatchObject({ major: ["@app/core"] });
     expect(json.minor).toBeUndefined();
     expect(json.patch).toBeUndefined();
     expect(json.dependency).toBeUndefined();

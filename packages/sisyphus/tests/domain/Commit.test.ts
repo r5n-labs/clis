@@ -1,54 +1,48 @@
 import { describe, expect, test } from "bun:test";
+import { OTHER_COMMIT_TYPE } from "../../src/constants";
 import type { CommitInfo } from "../../src/domain/Commit";
-import { Commit, OTHER_COMMIT_TYPE } from "../../src/domain/Commit";
+import { Commit } from "../../src/domain/Commit";
 
 const HASH = "abc1234567890def";
+const AUTHOR = "test-author";
 
 describe("Commit.parse", () => {
   test("parses standard feat commit", () => {
-    const commit = Commit.parse(HASH, "feat: add feature");
+    const commit = Commit.parse(HASH, "feat: add feature", AUTHOR);
 
-    expect(commit.type).toBe("feat");
-    expect(commit.message).toBe("add feature");
-    expect(commit.breaking).toBe(false);
-    expect(commit.scope).toBeUndefined();
-    expect(commit.subject).toBe("feat: add feature");
-    expect(commit.hash).toBe(HASH);
-    expect(commit.files).toEqual([]);
+    expect(commit).toMatchObject({
+      breaking: false,
+      files: [],
+      hash: HASH,
+      message: "add feature",
+      scope: undefined,
+      subject: "feat: add feature",
+      type: "feat",
+    });
   });
 
   test("parses standard fix commit", () => {
-    const commit = Commit.parse(HASH, "fix: resolve bug");
+    const commit = Commit.parse(HASH, "fix: resolve bug", AUTHOR);
 
-    expect(commit.type).toBe("fix");
-    expect(commit.message).toBe("resolve bug");
-    expect(commit.breaking).toBe(false);
+    expect(commit).toMatchObject({ breaking: false, message: "resolve bug", type: "fix" });
   });
 
   test("parses commit with scope", () => {
-    const commit = Commit.parse(HASH, "feat(api): add endpoint");
+    const commit = Commit.parse(HASH, "feat(api): add endpoint", AUTHOR);
 
-    expect(commit.type).toBe("feat");
-    expect(commit.scope).toBe("api");
-    expect(commit.message).toBe("add endpoint");
-    expect(commit.breaking).toBe(false);
+    expect(commit).toMatchObject({ breaking: false, message: "add endpoint", scope: "api", type: "feat" });
   });
 
   test("parses breaking change with !", () => {
-    const commit = Commit.parse(HASH, "feat!: breaking change");
+    const commit = Commit.parse(HASH, "feat!: breaking change", AUTHOR);
 
-    expect(commit.type).toBe("feat");
-    expect(commit.breaking).toBe(true);
-    expect(commit.message).toBe("breaking change");
+    expect(commit).toMatchObject({ breaking: true, message: "breaking change", type: "feat" });
   });
 
   test("parses breaking change with scope and !", () => {
-    const commit = Commit.parse(HASH, "feat(api)!: break it");
+    const commit = Commit.parse(HASH, "feat(api)!: break it", AUTHOR);
 
-    expect(commit.type).toBe("feat");
-    expect(commit.scope).toBe("api");
-    expect(commit.breaking).toBe(true);
-    expect(commit.message).toBe("break it");
+    expect(commit).toMatchObject({ breaking: true, message: "break it", scope: "api", type: "feat" });
   });
 
   describe("all known commit types", () => {
@@ -56,114 +50,88 @@ describe("Commit.parse", () => {
 
     for (const type of knownTypes) {
       test(`recognizes "${type}" as conventional type`, () => {
-        const commit = Commit.parse(HASH, `${type}: some message`);
+        const commit = Commit.parse(HASH, `${type}: some message`, AUTHOR);
 
-        expect(commit.type).toBe(type);
-        expect(commit.message).toBe("some message");
-        expect(commit.isConventional).toBe(true);
+        expect(commit).toMatchObject({ isConventional: true, message: "some message", type });
       });
     }
   });
 
   test("unknown type falls back to OTHER_COMMIT_TYPE", () => {
-    const commit = Commit.parse(HASH, "unknown: something");
+    const commit = Commit.parse(HASH, "unknown: something", AUTHOR);
 
-    expect(commit.type).toBe(OTHER_COMMIT_TYPE);
-    expect(commit.type).toBe("other");
-    expect(commit.message).toBe("unknown: something");
+    expect(commit).toMatchObject({ message: "unknown: something", type: OTHER_COMMIT_TYPE });
   });
 
   test("non-conventional commit falls back to OTHER_COMMIT_TYPE", () => {
-    const commit = Commit.parse(HASH, "just a message");
+    const commit = Commit.parse(HASH, "just a message", AUTHOR);
 
-    expect(commit.type).toBe(OTHER_COMMIT_TYPE);
-    expect(commit.message).toBe("just a message");
-    expect(commit.subject).toBe("just a message");
+    expect(commit).toMatchObject({ message: "just a message", subject: "just a message", type: OTHER_COMMIT_TYPE });
   });
 
   test("commit with colon but no known type falls back to OTHER_COMMIT_TYPE", () => {
-    const commit = Commit.parse(HASH, "WIP: work in progress");
+    const commit = Commit.parse(HASH, "WIP: work in progress", AUTHOR);
 
-    expect(commit.type).toBe(OTHER_COMMIT_TYPE);
-    expect(commit.message).toBe("WIP: work in progress");
+    expect(commit).toMatchObject({ message: "WIP: work in progress", type: OTHER_COMMIT_TYPE });
   });
 
   test("empty subject edge case", () => {
-    const commit = Commit.parse(HASH, "");
+    const commit = Commit.parse(HASH, "", AUTHOR);
 
-    expect(commit.type).toBe(OTHER_COMMIT_TYPE);
-    expect(commit.message).toBe("");
-    expect(commit.subject).toBe("");
-    expect(commit.breaking).toBe(false);
+    expect(commit).toMatchObject({ breaking: false, message: "", subject: "", type: OTHER_COMMIT_TYPE });
   });
 });
 
 describe("Commit getters", () => {
   test("shortHash returns first 7 characters", () => {
-    const commit = Commit.parse(HASH, "feat: something");
-
-    expect(commit.shortHash).toBe("abc1234");
-    expect(commit.shortHash).toHaveLength(7);
+    expect(Commit.parse(HASH, "feat: something", AUTHOR).shortHash).toBe("abc1234");
   });
 
   test("shortHash works with exactly 7 char hash", () => {
-    const commit = Commit.parse("abc1234", "feat: something");
-
-    expect(commit.shortHash).toBe("abc1234");
+    expect(Commit.parse("abc1234", "feat: something", AUTHOR).shortHash).toBe("abc1234");
   });
 
   test("isConventional returns true for known types", () => {
-    const commit = Commit.parse(HASH, "feat: something");
-
-    expect(commit.isConventional).toBe(true);
+    expect(Commit.parse(HASH, "feat: something", AUTHOR).isConventional).toBe(true);
   });
 
   test("isConventional returns false for other type", () => {
-    const commit = Commit.parse(HASH, "random message");
-
-    expect(commit.isConventional).toBe(false);
+    expect(Commit.parse(HASH, "random message", AUTHOR).isConventional).toBe(false);
   });
 });
 
 describe("Commit.withFiles", () => {
-  test("returns new Commit with files set", () => {
-    const original = Commit.parse(HASH, "feat: something");
+  test("returns new Commit with files set, original unchanged", () => {
+    const original = Commit.parse(HASH, "feat: something", AUTHOR);
     const files = ["src/index.ts", "src/utils.ts"];
     const withFiles = original.withFiles(files);
 
-    expect(withFiles.files).toEqual(files);
-    expect(withFiles.type).toBe("feat");
-    expect(withFiles.message).toBe("something");
-    expect(withFiles.hash).toBe(HASH);
-    // Original is unchanged
+    expect(withFiles).toMatchObject({ files, hash: HASH, message: "something", type: "feat" });
     expect(original.files).toEqual([]);
   });
 });
 
 describe("Commit.withBody", () => {
-  test("returns new Commit with body set", () => {
-    const original = Commit.parse(HASH, "feat: something");
+  test("returns new Commit with body set, original unchanged", () => {
+    const original = Commit.parse(HASH, "feat: something", AUTHOR);
     const withBody = original.withBody("detailed description");
 
-    expect(withBody.body).toBe("detailed description");
-    expect(withBody.type).toBe("feat");
-    expect(withBody.message).toBe("something");
-    // Original is unchanged
+    expect(withBody).toMatchObject({ body: "detailed description", message: "something", type: "feat" });
     expect(original.body).toBeUndefined();
   });
 
-  test("returns new Commit with undefined body", () => {
-    const original = Commit.parse(HASH, "feat: something").withBody("some body");
-    const withoutBody = original.withBody(undefined);
+  test("withBody(undefined) clears the body", () => {
+    const original = Commit.parse(HASH, "feat: something", AUTHOR).withBody("some body");
 
-    expect(withoutBody.body).toBeUndefined();
+    expect(original.withBody(undefined).body).toBeUndefined();
   });
 });
 
 describe("Commit.toInfo", () => {
   test("returns CommitInfo with correct fields", () => {
-    const commit = Commit.parse(HASH, "feat(api): add endpoint").withBody("some body").withFiles(["src/api.ts"]);
-
+    const commit = Commit.parse(HASH, "feat(api): add endpoint", AUTHOR)
+      .withBody("some body")
+      .withFiles(["src/api.ts"]);
     const info: CommitInfo = commit.toInfo(["@org/api"]);
 
     expect(info).toEqual({
@@ -178,15 +146,16 @@ describe("Commit.toInfo", () => {
   });
 
   test("returns CommitInfo for non-conventional commit", () => {
-    const commit = Commit.parse(HASH, "just a message");
+    const info = Commit.parse(HASH, "just a message", AUTHOR).toInfo([]);
 
-    const info = commit.toInfo([]);
-
-    expect(info.type).toBe("other");
-    expect(info.message).toBe("just a message");
-    expect(info.hash).toBe("abc1234");
-    expect(info.packages).toEqual([]);
-    expect(info.scope).toBeUndefined();
-    expect(info.body).toBeUndefined();
+    expect(info).toEqual({
+      body: undefined,
+      hash: "abc1234",
+      message: "just a message",
+      packages: [],
+      scope: undefined,
+      subject: "just a message",
+      type: "other",
+    });
   });
 });

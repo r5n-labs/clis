@@ -73,7 +73,6 @@ describe("BUMP_ORDER", () => {
       BumpType.Dependency,
       BumpType.Snapshot,
     ]);
-    expect(BUMP_ORDER).toHaveLength(5);
   });
 });
 
@@ -88,11 +87,9 @@ describe("BUMP_PRIORITY", () => {
 });
 
 describe("BUMP_EMOJI", () => {
-  test("all types have an emoji", () => {
+  test("all types have a non-empty emoji string", () => {
     for (const type of Object.values(BumpType)) {
-      expect(BUMP_EMOJI[type]).toBeDefined();
-      expect(typeof BUMP_EMOJI[type]).toBe("string");
-      expect(BUMP_EMOJI[type].length).toBeGreaterThan(0);
+      expect(BUMP_EMOJI[type]).toMatch(/.+/);
     }
   });
 });

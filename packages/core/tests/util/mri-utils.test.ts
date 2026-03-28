@@ -6,16 +6,14 @@ import { buildMriOptions, convertNumbers, mapPositionals, validatePositionals } 
 describe("buildMriOptions", () => {
   test("boolean args go to boolean array", () => {
     const defs: Record<string, ArgDefinition> = { debug: { type: "boolean" }, verbose: { type: "boolean" } };
-    const opts = buildMriOptions(defs);
-    expect(opts.boolean).toEqual(["debug", "verbose"]);
-    expect(opts.string).toEqual([]);
+
+    expect(buildMriOptions(defs)).toMatchObject({ boolean: ["debug", "verbose"], string: [] });
   });
 
   test("string and number args go to string array", () => {
     const defs: Record<string, ArgDefinition> = { count: { type: "number" }, name: { type: "string" } };
-    const opts = buildMriOptions(defs);
-    expect(opts.string).toEqual(["count", "name"]);
-    expect(opts.boolean).toEqual([]);
+
+    expect(buildMriOptions(defs)).toMatchObject({ boolean: [], string: ["count", "name"] });
   });
 
   test("aliases registered correctly", () => {
@@ -23,16 +21,14 @@ describe("buildMriOptions", () => {
       output: { alias: "o", type: "string" },
       verbose: { alias: "v", type: "boolean" },
     };
-    const opts = buildMriOptions(defs);
-    expect(opts.alias.v).toBe("verbose");
-    expect(opts.alias.o).toBe("output");
+
+    expect(buildMriOptions(defs).alias).toMatchObject({ o: "output", v: "verbose" });
   });
 
   test("camelCase auto-generates kebab-case alias", () => {
     const defs: Record<string, ArgDefinition> = { dryRun: { type: "boolean" }, outputDir: { type: "string" } };
-    const opts = buildMriOptions(defs);
-    expect(opts.alias["dry-run"]).toBe("dryRun");
-    expect(opts.alias["output-dir"]).toBe("outputDir");
+
+    expect(buildMriOptions(defs).alias).toMatchObject({ "dry-run": "dryRun", "output-dir": "outputDir" });
   });
 
   test("defaults populated", () => {
@@ -60,9 +56,8 @@ describe("convertNumbers", () => {
 
   test("skips boolean and string types", () => {
     const defs: Record<string, ArgDefinition> = { name: { type: "string" }, verbose: { type: "boolean" } };
-    const result = convertNumbers({ name: "hello", verbose: true }, defs);
-    expect(result.verbose).toBe(true);
-    expect(result.name).toBe("hello");
+
+    expect(convertNumbers({ name: "hello", verbose: true }, defs)).toMatchObject({ name: "hello", verbose: true });
   });
 
   test("skips undefined values", () => {
@@ -81,30 +76,27 @@ describe("mapPositionals", () => {
 
   test("maps multiple positionals by index", () => {
     const defs: Record<string, PositionalDefinition> = { dest: { required: true }, source: { required: true } };
-    const result = mapPositionals(["a.txt", "b.txt"], defs);
-    expect(result.dest).toBe("a.txt");
-    expect(result.source).toBe("b.txt");
+
+    expect(mapPositionals(["a.txt", "b.txt"], defs)).toMatchObject({ dest: "a.txt", source: "b.txt" });
   });
 
   test("variadic positional captures rest as array", () => {
     const defs: Record<string, PositionalDefinition> = { first: { required: true }, rest: { variadic: true } };
-    const result = mapPositionals(["a", "b", "c", "d"], defs);
-    expect(result.first).toBe("a");
-    expect(result.rest).toEqual(["b", "c", "d"]);
+
+    expect(mapPositionals(["a", "b", "c", "d"], defs)).toMatchObject({ first: "a", rest: ["b", "c", "d"] });
   });
 
   test("missing positional returns undefined", () => {
     const defs: Record<string, PositionalDefinition> = { extra: {}, name: { required: true } };
-    const result = mapPositionals(["foo"], defs);
-    expect(result.extra).toBe("foo");
-    expect(result.name).toBeUndefined();
+
+    expect(mapPositionals(["foo"], defs)).toMatchObject({ extra: "foo", name: undefined });
   });
 
   test("extra positionals silently dropped", () => {
     const defs: Record<string, PositionalDefinition> = { name: { required: true } };
     const result = mapPositionals(["foo", "bar", "baz"], defs);
-    expect(result.name).toBe("foo");
-    expect(Object.keys(result)).toEqual(["name"]);
+
+    expect(result).toEqual({ name: "foo" });
   });
 });
 

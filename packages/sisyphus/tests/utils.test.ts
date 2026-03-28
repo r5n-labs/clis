@@ -45,61 +45,40 @@ describe("findAffectedPackages", () => {
   const pathMap = buildPackagePathMap(packages);
 
   test("file in package dir matches that package", () => {
-    const result = findAffectedPackages(["packages/ui/index.ts"], pathMap);
-
-    expect(result.has("@scope/ui")).toBe(true);
+    expect(findAffectedPackages(["packages/ui/index.ts"], pathMap)).toContain("@scope/ui");
   });
 
   test("file in nested subdir of package matches", () => {
-    const result = findAffectedPackages(["packages/core/src/deep/nested/file.ts"], pathMap);
-
-    expect(result.has("@scope/core")).toBe(true);
+    expect(findAffectedPackages(["packages/core/src/deep/nested/file.ts"], pathMap)).toContain("@scope/core");
   });
 
   test("file at root matches root package when includeRoot=true", () => {
-    const result = findAffectedPackages(["README.md"], pathMap, true);
-
-    expect(result.has("root")).toBe(true);
+    expect(findAffectedPackages(["README.md"], pathMap, true)).toContain("root");
   });
 
   test("file at root does NOT match when includeRoot=false", () => {
-    const result = findAffectedPackages(["README.md"], pathMap, false);
-
-    expect(result.has("root")).toBe(false);
+    expect(findAffectedPackages(["README.md"], pathMap, false)).not.toContain("root");
   });
 
-  /**
-   * BUG: Root package is included for EVERY file regardless of path.
-   *
-   * When dir === ".", the condition `isRoot ? includeRoot : matchesPath`
-   * evaluates to `true` whenever includeRoot is true, regardless of whether
-   * the file actually belongs to the root package. This means every file
-   * (even ones clearly inside a sub-package) will also mark the root as
-   * affected when includeRoot=true.
-   */
   test("BUG: root package is included for every file when includeRoot=true", () => {
     const result = findAffectedPackages(["packages/ui/index.ts"], pathMap, true);
 
-    // The file is inside packages/ui, so only @scope/ui should match.
-    // However, due to the bug, root is also included.
-    expect(result.has("@scope/ui")).toBe(true);
-    expect(result.has("root")).toBe(true); // bug: root should NOT be here
+    expect(result).toContain("@scope/ui");
+    expect(result).toContain("root");
   });
 
   test("file matching no package is ignored", () => {
     const pathMapNoRoot = new Map<string, string>([["packages/ui", "@scope/ui"]]);
 
-    const result = findAffectedPackages(["some/other/path/file.ts"], pathMapNoRoot);
-
-    expect(result.size).toBe(0);
+    expect(findAffectedPackages(["some/other/path/file.ts"], pathMapNoRoot).size).toBe(0);
   });
 
   test("multiple files affecting different packages", () => {
     const result = findAffectedPackages(["packages/ui/button.ts", "packages/core/utils.ts"], pathMap, false);
 
-    expect(result.has("@scope/ui")).toBe(true);
-    expect(result.has("@scope/core")).toBe(true);
-    expect(result.has("root")).toBe(false);
+    expect(result).toContain("@scope/ui");
+    expect(result).toContain("@scope/core");
+    expect(result).not.toContain("root");
   });
 });
 
@@ -111,8 +90,7 @@ describe("findDependencyPackages", () => {
 
     const result = findDependencyPackages(["@scope/utils"], packages);
 
-    expect(result).toContain("@scope/ui");
-    expect(result).toContain("@scope/core");
+    expect(result).toEqual(expect.arrayContaining(["@scope/ui", "@scope/core"]));
     expect(result).toHaveLength(2);
   });
 

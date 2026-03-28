@@ -7,10 +7,6 @@ import { Stone } from "../../src/domain/Stone";
 const makePackage = (overrides?: Partial<PackageJson>, file = "packages/core/package.json"): Package =>
   Package.fromJson({ name: "@app/core", version: "1.2.3", ...overrides }, file);
 
-/**
- * Applies bumps from a stone to matching packages — the pattern used
- * throughout sisyphus to connect stones with packages.
- */
 function applyStone(packages: Package[], stone: Stone): Package[] {
   const result: Package[] = [];
 
@@ -33,14 +29,15 @@ function applyStone(packages: Package[], stone: Stone): Package[] {
 
 describe("Package.fromJson()", () => {
   test("creates package with name, version, and file", () => {
-    const json: PackageJson = { name: "@app/core", version: "1.2.3" };
-    const pkg = Package.fromJson(json, "packages/core/package.json");
+    const pkg = Package.fromJson({ name: "@app/core", version: "1.2.3" }, "packages/core/package.json");
 
-    expect(pkg.name).toBe("@app/core");
-    expect(pkg.version).toBe("1.2.3");
-    expect(pkg.file).toBe("packages/core/package.json");
-    expect(pkg.bump).toBeUndefined();
-    expect(pkg.dependencyOf).toEqual([]);
+    expect(pkg).toMatchObject({
+      bump: undefined,
+      dependencyOf: [],
+      file: "packages/core/package.json",
+      name: "@app/core",
+      version: "1.2.3",
+    });
   });
 
   test("uses '0.0.0' for missing version", () => {
@@ -67,15 +64,16 @@ describe("Package.fromJson()", () => {
 });
 
 describe("package.withBump()", () => {
-  test("returns new Package with bump set", () => {
+  test("returns new Package with bump set, original unchanged", () => {
     const original = makePackage();
     const bumped = original.withBump(BumpType.Minor);
 
-    expect(bumped.bump).toBe(BumpType.Minor);
-    expect(bumped.name).toBe(original.name);
-    expect(bumped.version).toBe(original.version);
-    expect(bumped.file).toBe(original.file);
-    // original is unchanged (immutable)
+    expect(bumped).toMatchObject({
+      bump: BumpType.Minor,
+      file: original.file,
+      name: original.name,
+      version: original.version,
+    });
     expect(original.bump).toBeUndefined();
   });
 
@@ -107,12 +105,9 @@ describe("package.withDependencyOf()", () => {
   });
 
   test("preserves other fields", () => {
-    const pkg = makePackage().withBump(BumpType.Patch);
-    const updated = pkg.withDependencyOf(["@app/cli"]);
+    const updated = makePackage().withBump(BumpType.Patch).withDependencyOf(["@app/cli"]);
 
-    expect(updated.bump).toBe(BumpType.Patch);
-    expect(updated.name).toBe("@app/core");
-    expect(updated.version).toBe("1.2.3");
+    expect(updated).toMatchObject({ bump: BumpType.Patch, name: "@app/core", version: "1.2.3" });
   });
 });
 
@@ -186,15 +181,11 @@ describe("applyStone pattern — applying bumps from stone to matching packages"
 
     const result = applyStone(packages, stone);
 
-    expect(result[0]?.bump).toBe(BumpType.Major);
-    expect(result[0]?.newVersion).toBe("2.0.0");
-    expect(result[1]?.bump).toBe(BumpType.Minor);
-    expect(result[1]?.newVersion).toBe("2.1.0");
+    expect(result[0]).toMatchObject({ bump: BumpType.Major, newVersion: "2.0.0" });
+    expect(result[1]).toMatchObject({ bump: BumpType.Minor, newVersion: "2.1.0" });
   });
 
   test("respects BUMP_ORDER priority — major applied before minor for same package", () => {
-    // If a package appears in both major and minor in a stone,
-    // BUMP_ORDER iteration means major is checked first.
     const stone = Stone.create({
       major: ["@app/core"],
       message: "release",
@@ -204,9 +195,7 @@ describe("applyStone pattern — applying bumps from stone to matching packages"
     const packages = [makePackage({ name: "@app/core", version: "1.0.0" })];
     const result = applyStone(packages, stone);
 
-    // Major comes first in BUMP_ORDER, so major bump wins
-    expect(result[0]?.bump).toBe(BumpType.Major);
-    expect(result[0]?.newVersion).toBe("2.0.0");
+    expect(result[0]).toMatchObject({ bump: BumpType.Major, newVersion: "2.0.0" });
   });
 
   test("ignores packages not in the stone", () => {
@@ -219,10 +208,7 @@ describe("applyStone pattern — applying bumps from stone to matching packages"
 
     const result = applyStone(packages, stone);
 
-    expect(result[0]?.bump).toBe(BumpType.Patch);
-    expect(result[0]?.newVersion).toBe("1.0.1");
-    // Unrelated package is unchanged
-    expect(result[1]?.bump).toBeUndefined();
-    expect(result[1]?.newVersion).toBeUndefined();
+    expect(result[0]).toMatchObject({ bump: BumpType.Patch, newVersion: "1.0.1" });
+    expect(result[1]).toMatchObject({ bump: undefined, newVersion: undefined });
   });
 });

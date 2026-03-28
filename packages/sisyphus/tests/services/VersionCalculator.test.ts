@@ -47,17 +47,11 @@ describe("VersionCalculator", () => {
     });
 
     test("malformed version input produces partial NaN in output (known bug)", () => {
-      const result = VersionCalculator.bump("invalid", BumpType.Patch);
-      // "invalid".split(".") => ["invalid"], minor/patch default to "0"
-      // Only major parses as NaN; minor and patch get default values
-      expect(result).toBe("NaN.0.1");
+      expect(VersionCalculator.bump("invalid", BumpType.Patch)).toBe("NaN.0.1");
     });
 
     test("empty string version produces partial NaN in output", () => {
-      const result = VersionCalculator.bump("", BumpType.Patch);
-      // "".split("-") => [""], then "".split(".") => [""]
-      // parseInt("") => NaN for major, minor/patch default to "0"
-      expect(result).toBe("NaN.0.1");
+      expect(VersionCalculator.bump("", BumpType.Patch)).toBe("NaN.0.1");
     });
 
     test("default case returns unchanged version for unknown bump type", () => {
