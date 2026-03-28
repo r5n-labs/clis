@@ -133,8 +133,7 @@ export class GitHubProvider extends GitProvider {
 
   async getPrCommits(number: number): Promise<string[]> {
     try {
-      const result =
-        await Bun.$`gh api ${this.apiPath}/pulls/${number}/commits --jq '.[].sha'`.quiet();
+      const result = await Bun.$`gh api ${this.apiPath}/pulls/${number}/commits --jq '.[].sha'`.quiet();
       return result.stdout.toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];
@@ -143,8 +142,7 @@ export class GitHubProvider extends GitProvider {
 
   async getPrFiles(number: number): Promise<string[]> {
     try {
-      const result =
-        await Bun.$`gh api ${this.apiPath}/pulls/${number}/files --jq '.[].filename'`.quiet();
+      const result = await Bun.$`gh api ${this.apiPath}/pulls/${number}/files --jq '.[].filename'`.quiet();
       return result.stdout.toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];

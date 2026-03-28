@@ -1,4 +1,4 @@
-import { getRemoteUrl, parseRemoteUrl, type Provider, type RemoteInfo } from "../providers";
+import { getRemoteUrl, type Provider, parseRemoteUrl, type RemoteInfo } from "../providers";
 
 const COMMIT_PATH: Record<Provider, string> = { bitbucket: "commits", github: "commit", gitlab: "-/commit" };
 const PROVIDER_DOMAIN: Record<Provider, string> = {
@@ -31,10 +31,7 @@ export class GitRemoteParser {
     const commitPath = COMMIT_PATH[info.provider];
     const baseUrl = `https://${domain}/${info.owner}/${info.repo}`;
 
-    this.cached = {
-      ...info,
-      commitUrl: (hash: string) => `${baseUrl}/${commitPath}/${hash}`,
-    };
+    this.cached = { ...info, commitUrl: (hash: string) => `${baseUrl}/${commitPath}/${hash}` };
     return this.cached;
   }
 }
