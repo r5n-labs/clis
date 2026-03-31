@@ -82,13 +82,14 @@ export class InitCommand extends BaseCommand {
           text({
             message: "GitHub repository or organization URL",
             placeholder: "https://github.com/owner/repo",
-            validate: (v) => {
+            validate: (v): string | undefined => {
               if (!v) return "URL is required";
               try {
                 new URL(v);
               } catch {
                 return "Must be a valid URL";
               }
+              return undefined;
             },
           }),
         name: () =>
@@ -102,9 +103,11 @@ export class InitCommand extends BaseCommand {
             initialValue: "1",
             message: "Number of runners",
             placeholder: "1",
-            validate: (v) => {
+            validate: (v): string | undefined => {
+              if (!v) return "Must be a positive number";
               const n = Number.parseInt(v, 10);
               if (Number.isNaN(n) || n < 1) return "Must be a positive number";
+              return undefined;
             },
           }),
         labels: () =>

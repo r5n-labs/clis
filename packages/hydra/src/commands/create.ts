@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { Exit, args, color, log, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
@@ -58,14 +59,14 @@ export class CreateCommand extends BaseCommand {
       created++;
 
       s.start(`Registering ${id}...`);
-      const [runner] = await provider.create([id]);
+      await provider.create([id]);
       s.stop(`${color.green("+")} ${id}`);
 
       entries.push({
         createdAt: new Date().toISOString(),
-        directory: runner.directory,
-        id: runner.id,
-        name: runner.name,
+        directory: join(profile.directory, id),
+        id,
+        name: id,
         profile: profileName,
         provider: profile.provider,
         url: profile.url,
