@@ -1,6 +1,6 @@
 import { AbstractCLI, ConfigManager } from "@r5n/cli-core";
 import { version } from "../package.json";
-import { CreateCommand, InitCommand } from "./commands";
+import { CreateCommand, InitCommand, RemoveCommand } from "./commands";
 import { CLI_BIN, DEFAULT_CONFIG, HYDRA_CONFIG_FILE } from "./constants";
 import type { HydraConfig } from "./types";
 
@@ -18,7 +18,7 @@ class HydraCLI extends AbstractCLI {
   }
 
   init() {
-    this.registerCommands([new InitCommand(), new CreateCommand()]);
+    this.registerCommands([new InitCommand(), new CreateCommand(), new RemoveCommand()]);
   }
 }
 
