@@ -4,6 +4,7 @@ import { Exit, args, color, log, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
+import { resolveRunnerIds } from "../utils";
 
 const removePositionals = positionals({
   ids: { description: "Runner IDs to remove, or 'all'", variadic: true },
@@ -34,7 +35,7 @@ export class RemoveCommand extends BaseCommand {
       throw new Exit(`No runners found for profile "${profileName}"`, "Use --profile to specify a different profile");
     }
 
-    const ids = this.resolveIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+    const ids = resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
     const provider = createProvider(profile);
     const s = spinner();
 
@@ -51,21 +52,4 @@ export class RemoveCommand extends BaseCommand {
     log.info(`${color.green("Removed")} ${ids.length} runner(s).`);
   }
 
-  private resolveIds(input: string[], available: string[]): string[] {
-    if (input.length === 0) {
-      throw new Exit("Specify runner IDs or 'all'", "Usage: hydra remove <id...> or hydra remove all");
-    }
-
-    if (input.length === 1 && input[0] === "all") {
-      return available;
-    }
-
-    for (const id of input) {
-      if (!available.includes(id)) {
-        throw new Exit(`Runner "${id}" not found`);
-      }
-    }
-
-    return input;
-  }
 }
