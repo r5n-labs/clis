@@ -57,12 +57,13 @@ export class CreateCommand extends BaseCommand {
     let nextIndex = 1;
 
     for (let created = 0; created < toCreate; ) {
-      const name = `${profile.name}-${nextIndex++}`;
-      if (existingIds.has(name)) continue;
+      const id = `${profile.name}-${nextIndex++}`;
+      if (existingIds.has(id)) continue;
       created++;
-      s.start(`Registering ${name}...`);
-      const runner = await provider.create(name);
-      s.stop(`${color.green("+")} ${name}`);
+
+      s.start(`Registering ${id}...`);
+      const [runner] = await provider.create([id]);
+      s.stop(`${color.green("+")} ${id}`);
 
       entries.push({
         createdAt: new Date().toISOString(),

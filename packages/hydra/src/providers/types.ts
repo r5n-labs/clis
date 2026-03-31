@@ -15,7 +15,7 @@ export type DownloadResult = {
 
 export interface RunnerProvider {
   download(): Promise<DownloadResult>;
-  create(name: string): Promise<RunnerInfo>;
+  create(ids: string[]): Promise<RunnerInfo[]>;
   remove(ids: string[]): Promise<void>;
   start(ids: string[]): Promise<void>;
   stop(ids: string[]): Promise<void>;

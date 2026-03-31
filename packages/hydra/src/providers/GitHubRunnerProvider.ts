@@ -39,14 +39,18 @@ export class GitHubRunnerProvider implements RunnerProvider {
     return { path: versionDir, version };
   }
 
-  async create(name: string): Promise<RunnerInfo> {
+  async create(ids: string[]): Promise<RunnerInfo[]> {
     const shared = await this.ensureDownloaded();
-    const runnerDir = join(this.profile.directory, name);
+    const runners: RunnerInfo[] = [];
 
-    await this.setupRunnerDir(shared, runnerDir);
-    await this.registerRunner(runnerDir, name);
+    for (const id of ids) {
+      const runnerDir = join(this.profile.directory, id);
+      await this.setupRunnerDir(shared, runnerDir);
+      await this.registerRunner(runnerDir, id);
+      runners.push({ directory: runnerDir, id, name: id, status: "registered" });
+    }
 
-    return { directory: runnerDir, id: name, name, status: "registered" };
+    return runners;
   }
 
   async remove(ids: string[]): Promise<void> {
