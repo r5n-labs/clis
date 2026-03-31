@@ -1,0 +1,32 @@
+export type Provider = "github" | "gitlab";
+
+export type Os = "osx" | "linux" | "windows";
+
+export type Profile = {
+  directory: string;
+  labels?: string;
+  name: string;
+  numberOfMachines: number;
+  os: Os;
+  overwrite: boolean;
+  provider: Provider;
+  run: boolean;
+  runnerGroup?: string;
+  url: string;
+};
+
+export type RunnerEntry = {
+  id: string;
+  name: string;
+  profile: string;
+  provider: Provider;
+  url: string;
+  directory: string;
+  createdAt: string;
+};
+
+export type HydraConfig = {
+  defaultProfile?: string;
+  profiles: Record<string, Profile>;
+  runners?: RunnerEntry[];
+};

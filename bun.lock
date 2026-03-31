@@ -42,6 +42,9 @@
       "bin": {
         "hydra": "./dist/cli.js",
       },
+      "dependencies": {
+        "@r5n/cli-core": "workspace:*",
+      },
       "devDependencies": {
         "@clack/prompts": "1.1.0",
         "@r5n/tools": "workspace:*",
