@@ -45,9 +45,21 @@ export class CreateCommand extends BaseCommand {
     s.stop(`Runner v${version} ready`);
 
     const entries: RunnerEntry[] = ctx.config.get("runners") ?? [];
+    const existing = entries.filter((e) => e.profile === profileName);
+    const toCreate = count - existing.length;
 
-    for (let i = 1; i <= count; i++) {
-      const name = `${profile.name}-${i}`;
+    if (toCreate <= 0) {
+      log.warn(`Already have ${existing.length} runner(s) for profile "${profileName}". Nothing to create.`);
+      return;
+    }
+
+    const existingIds = new Set(entries.map((e) => e.id));
+    let nextIndex = 1;
+
+    for (let created = 0; created < toCreate; ) {
+      const name = `${profile.name}-${nextIndex++}`;
+      if (existingIds.has(name)) continue;
+      created++;
       s.start(`Registering ${name}...`);
       const runner = await provider.create(name);
       s.stop(`${color.green("+")} ${name}`);
@@ -65,6 +77,6 @@ export class CreateCommand extends BaseCommand {
 
     ctx.config.set("runners", entries);
 
-    log.info(`\n${color.green("Created")} ${count} runner(s). Run ${color.green("hydra start")} to start them.`);
+    log.info(`${color.green("Created")} ${toCreate} runner(s). Total: ${entries.length}. Run ${color.green("hydra start")} to start them.`);
   }
 }
