@@ -22,10 +22,6 @@ export class CreateCommand extends BaseCommand {
 
   async execute(ctx: CreateCtx) {
     const profileName = ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE;
-    if (!profileName) {
-      throw new Exit("No profile specified", "Run hydra init first or use --profile");
-    }
-
     const profiles = ctx.config.get("profiles");
     const profile = profiles[profileName];
     if (!profile) {

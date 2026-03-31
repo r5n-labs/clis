@@ -51,5 +51,4 @@ export class RemoveCommand extends BaseCommand {
 
     log.info(`${color.green("Removed")} ${ids.length} runner(s).`);
   }
-
 }
