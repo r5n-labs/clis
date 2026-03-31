@@ -66,11 +66,15 @@ export class GitHubRunnerProvider implements RunnerProvider {
   async start(ids: string[]): Promise<void> {
     for (const id of ids) {
       const runnerDir = join(this.profile.directory, id);
+      const existingPid = await this.readPidFile(runnerDir);
+      if (existingPid && this.isProcessRunning(existingPid)) continue;
+
       const proc = Bun.spawn(["bash", "./run.sh"], {
         cwd: resolve(runnerDir),
-        stderr: "ignore",
-        stdout: "ignore",
+        stderr: "pipe",
+        stdout: "pipe",
       });
+      proc.unref();
       await this.writePidFile(runnerDir, proc.pid);
     }
   }
@@ -81,9 +85,8 @@ export class GitHubRunnerProvider implements RunnerProvider {
       const pid = await this.readPidFile(runnerDir);
       if (!pid) continue;
 
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {}
+      const absDir = resolve(runnerDir);
+      await Bun.$`pkill -f ${absDir}`.quiet().nothrow();
 
       await this.removePidFile(runnerDir);
     }
