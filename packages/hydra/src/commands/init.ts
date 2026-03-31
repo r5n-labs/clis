@@ -13,6 +13,7 @@ const initArgs = args({
   force: { alias: "f", default: false, description: "Overwrite existing config", type: "boolean" },
   labels: { alias: "l", description: "Comma-separated runner labels", type: "string" },
   name: { alias: "n", description: "Base name for runners", type: "string" },
+  profile: { alias: "p", description: "Profile name", type: "string" },
   runners: { alias: "c", description: "Number of runners to create", type: "number" },
 });
 
@@ -26,38 +27,42 @@ export class InitCommand extends BaseCommand {
   prompts = true;
 
   async execute(ctx: InitCtx) {
-    if (ctx.config.exists() && !ctx.args.force) {
-      if (ctx.interactive) {
-        const overwrite = await confirm({
-          initialValue: false,
-          message: "Hydra is already initialized. Overwrite config?",
-        });
-        if (!overwrite) return;
-      } else {
-        throw new Exit("Config already exists. Use --force to overwrite.");
+    const profileName = ctx.args.profile ?? DEFAULT_PROFILE;
+    const isNewInit = !ctx.config.exists();
+
+    const profileExists = !isNewInit && ctx.config.get("profiles")[profileName];
+    if (profileExists && !ctx.args.force) {
+      if (!ctx.interactive) {
+        throw new Exit(`Profile "${profileName}" already exists. Use --force to overwrite.`);
       }
+      const overwrite = await confirm({ initialValue: false, message: `Profile "${profileName}" already exists. Overwrite?` });
+      if (!overwrite) return;
     }
 
     await this.ensureDirectories();
 
     const profile = ctx.interactive ? await this.runInitForm() : this.buildProfileFromArgs(ctx);
+    const profiles = isNewInit ? {} : { ...ctx.config.get("profiles") };
+    profiles[profileName] = profile;
 
-    ctx.config.set("profiles", { [DEFAULT_PROFILE]: profile });
-    ctx.config.set("defaultProfile", DEFAULT_PROFILE);
+    ctx.config.set("profiles", profiles);
+    if (isNewInit) {
+      ctx.config.set("defaultProfile", profileName);
+    }
 
     note(
       [
-        `${color.dim("Profile:")} ${DEFAULT_PROFILE}`,
+        `${color.dim("Profile:")} ${profileName}`,
         `${color.dim("URL:")} ${profile.url}`,
         `${color.dim("Runners:")} ${profile.numberOfMachines}`,
         `${color.dim("Name:")} ${profile.name}`,
         profile.labels ? `${color.dim("Labels:")} ${profile.labels}` : "",
         "",
-        `Run ${color.green(`${CLI_BIN} --help`)} to see available commands.`,
+        `Run ${color.green(`${CLI_BIN} create`)}${profileName !== DEFAULT_PROFILE ? color.green(` --profile ${profileName}`) : ""} to provision runners.`,
       ]
         .filter(Boolean)
         .join("\n"),
-      color.green("Hydra initialized"),
+      color.green(isNewInit ? "Hydra initialized" : `Profile "${profileName}" added`),
     );
   }
 
