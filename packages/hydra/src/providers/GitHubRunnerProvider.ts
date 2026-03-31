@@ -39,21 +39,14 @@ export class GitHubRunnerProvider implements RunnerProvider {
     return { path: versionDir, version };
   }
 
-  async create(count: number): Promise<RunnerInfo[]> {
+  async create(name: string): Promise<RunnerInfo> {
     const shared = await this.ensureDownloaded();
-    const runners: RunnerInfo[] = [];
+    const runnerDir = join(this.profile.directory, name);
 
-    for (let i = 1; i <= count; i++) {
-      const name = `${this.profile.name}-${i}`;
-      const runnerDir = join(this.profile.directory, name);
+    await this.setupRunnerDir(shared, runnerDir);
+    await this.registerRunner(runnerDir, name);
 
-      await this.setupRunnerDir(shared, runnerDir);
-      await this.registerRunner(runnerDir, name);
-
-      runners.push({ directory: runnerDir, id: name, name, status: "registered" });
-    }
-
-    return runners;
+    return { directory: runnerDir, id: name, name, status: "registered" };
   }
 
   async remove(ids: string[]): Promise<void> {
@@ -161,7 +154,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
     if (this.profile.labels) configArgs.push("--labels", this.profile.labels);
     if (this.profile.runnerGroup) configArgs.push("--runnergroup", this.profile.runnerGroup);
 
-    await Bun.$`bash ./config.sh ${configArgs}`.cwd(runnerDir);
+    await Bun.$`bash ./config.sh ${configArgs}`.cwd(runnerDir).quiet();
   }
 
   private async fetchRegistrationToken(): Promise<string> {

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { Cancel, Exit, args, color, confirm, group, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { CLI_BIN, RUNNERS_DIR, SHARED_DIR } from "../constants";
+import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
 
 const initPositionals = positionals({
@@ -42,12 +42,12 @@ export class InitCommand extends BaseCommand {
 
     const profile = ctx.interactive ? await this.runInitForm() : this.buildProfileFromArgs(ctx);
 
-    ctx.config.set("profiles", { default: profile });
-    ctx.config.set("defaultProfile", "default");
+    ctx.config.set("profiles", { [DEFAULT_PROFILE]: profile });
+    ctx.config.set("defaultProfile", DEFAULT_PROFILE);
 
     note(
       [
-        `${color.dim("Profile:")} default`,
+        `${color.dim("Profile:")} ${DEFAULT_PROFILE}`,
         `${color.dim("URL:")} ${profile.url}`,
         `${color.dim("Runners:")} ${profile.numberOfMachines}`,
         `${color.dim("Name:")} ${profile.name}`,
