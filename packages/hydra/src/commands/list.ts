@@ -1,13 +1,10 @@
-import { Exit, args, color, log } from "@r5n/cli-core";
+import { Exit, color, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
+import type { RunnerInfo } from "../providers";
+import type { Profile } from "../types";
 
-const listArgs = args({
-  profile: { alias: "p", description: "Profile name to use", type: "string" },
-});
-
-type ListCtx = Ctx<typeof listArgs>;
+type ListCtx = Ctx;
 
 const STATUS_COLORS: Record<string, (text: string) => string> = {
   registered: color.yellow,
@@ -19,20 +16,47 @@ const STATUS_COLORS: Record<string, (text: string) => string> = {
 export class ListCommand extends BaseCommand {
   name = "list";
   description = "List runners and their status";
-  args = listArgs;
 
   async execute(ctx: ListCtx) {
-    const profileName = ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE;
-    const profile = ctx.config.get("profiles")[profileName];
-    if (!profile) {
-      throw new Exit(`Profile "${profileName}" not found`);
+    const profiles = ctx.config.get("profiles");
+    const profileNames = Object.keys(profiles);
+
+    if (profileNames.length === 0) {
+      throw new Exit("No profiles configured", "Run hydra init to set up a profile");
     }
 
-    const provider = createProvider(profile);
-    const runners = await provider.list();
+    const entries = ctx.config.get("runners") ?? [];
+    const firstProfile = profiles[profileNames[0] as string] as Profile;
+    const s = spinner();
 
+    s.start("Fetching runner status...");
+    const provider = createProvider(firstProfile);
+    const allStatuses = await provider.list();
+    s.stop("Runner status fetched");
+
+    const statusMap = new Map(allStatuses.map((r) => [r.id, r]));
+    let totalRunners = 0;
+    let totalRunning = 0;
+
+    for (const name of profileNames) {
+      const profile = profiles[name] as Profile;
+      log.info(`${color.bold(name)} ${color.dim(profile.url)}`);
+      const profileRunnerIds = entries.filter((e) => e.profile === name).map((e) => e.id);
+      const runners = profileRunnerIds
+        .map((id) => statusMap.get(id))
+        .filter((r): r is RunnerInfo => r !== undefined);
+
+      this.printRunners(runners);
+      totalRunners += runners.length;
+      totalRunning += runners.filter((r) => r.status === "running").length;
+    }
+
+    log.info(color.dim(`  ${totalRunners} runner(s) total, ${totalRunning} running`));
+  }
+
+  private printRunners(runners: RunnerInfo[]) {
     if (runners.length === 0) {
-      log.info(color.dim("No runners found."));
+      log.info(color.dim("  No runners."));
       return;
     }
 
@@ -41,8 +65,5 @@ export class ListCommand extends BaseCommand {
       const pid = runner.pid ? color.dim(` (pid: ${runner.pid})`) : "";
       log.info(`  ${statusColor("●")} ${runner.name} ${statusColor(runner.status)}${pid}`);
     }
-
-    const running = runners.filter((r) => r.status === "running").length;
-    log.info(color.dim(`  ${runners.length} runner(s), ${running} running`));
   }
 }

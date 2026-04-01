@@ -1,9 +1,10 @@
 import { join } from "node:path";
-import { Exit, args, color, log, positionals, spinner } from "@r5n/cli-core";
+import { Exit, args, color, log, positionals, spinner, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
 import type { RunnerEntry } from "../types";
+import { selectProfile } from "../utils";
 
 const createPositionals = positionals({
   count: { description: "Number of runners to create (overrides profile)" },
@@ -22,14 +23,20 @@ export class CreateCommand extends BaseCommand {
   args = createArgs;
 
   async execute(ctx: CreateCtx) {
-    const profileName = ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE;
+    const profileName = ctx.interactive
+      ? await selectProfile(ctx.config)
+      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+
     const profiles = ctx.config.get("profiles");
     const profile = profiles[profileName];
     if (!profile) {
       throw new Exit(`Profile "${profileName}" not found`);
     }
 
-    const count = ctx.positionals.count ? Number.parseInt(ctx.positionals.count, 10) : profile.numberOfMachines;
+    const count = ctx.interactive
+      ? await this.promptCount(profile.numberOfMachines)
+      : (ctx.positionals.count ? Number.parseInt(ctx.positionals.count, 10) : profile.numberOfMachines);
+
     if (!count || count < 1) {
       throw new Exit("Runner count must be at least 1");
     }
@@ -76,5 +83,18 @@ export class CreateCommand extends BaseCommand {
     ctx.config.set("runners", entries);
 
     log.info(`${color.green("Created")} ${toCreate} runner(s). Total: ${entries.length}. Run ${color.green("hydra start")} to start them.`);
+  }
+
+  private async promptCount(defaultCount: number): Promise<number> {
+    const value = await text({
+      initialValue: String(defaultCount),
+      message: "Number of runners to create",
+      validate: (v): string | undefined => {
+        const n = Number.parseInt(v ?? "", 10);
+        if (Number.isNaN(n) || n < 1) return "Must be a positive number";
+        return undefined;
+      },
+    });
+    return Number.parseInt(value, 10);
   }
 }

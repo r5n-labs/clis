@@ -27,7 +27,10 @@ export class InitCommand extends BaseCommand {
   prompts = true;
 
   async execute(ctx: InitCtx) {
-    const profileName = ctx.args.profile ?? DEFAULT_PROFILE;
+    const profileName = ctx.interactive
+      ? await this.promptProfileName(ctx)
+      : (ctx.args.profile ?? DEFAULT_PROFILE);
+
     const isNewInit = !ctx.config.exists();
 
     const profileExists = !isNewInit && ctx.config.get("profiles")[profileName];
@@ -64,6 +67,13 @@ export class InitCommand extends BaseCommand {
         .join("\n"),
       color.green(isNewInit ? "Hydra initialized" : `Profile "${profileName}" added`),
     );
+  }
+
+  private async promptProfileName(ctx: InitCtx): Promise<string> {
+    return text({
+      initialValue: ctx.args.profile ?? DEFAULT_PROFILE,
+      message: "Profile name",
+    });
   }
 
   private async ensureDirectories() {

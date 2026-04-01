@@ -1,10 +1,10 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Exit, args, color, log, positionals, spinner } from "@r5n/cli-core";
+import { Exit, args, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
-import { resolveRunnerIds } from "../utils";
+import { resolveRunnerIds, selectProfile } from "../utils";
 
 const removePositionals = positionals({
   ids: { description: "Runner IDs to remove, or 'all'", variadic: true },
@@ -23,7 +23,10 @@ export class RemoveCommand extends BaseCommand {
   args = removeArgs;
 
   async execute(ctx: RemoveCtx) {
-    const profileName = ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE;
+    const profileName = ctx.interactive
+      ? await selectProfile(ctx.config)
+      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+
     const profile = ctx.config.get("profiles")[profileName];
     if (!profile) {
       throw new Exit(`Profile "${profileName}" not found`);
@@ -32,10 +35,13 @@ export class RemoveCommand extends BaseCommand {
     const entries = ctx.config.get("runners") ?? [];
     const profileEntries = entries.filter((e) => e.profile === profileName);
     if (profileEntries.length === 0) {
-      throw new Exit(`No runners found for profile "${profileName}"`, "Use --profile to specify a different profile");
+      throw new Exit(`No runners found for profile "${profileName}"`, "Run hydra create to provision runners");
     }
 
-    const ids = resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+    const ids = ctx.interactive
+      ? await this.promptRunnerSelection(profileEntries.map((e) => e.id))
+      : resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+
     const provider = createProvider(profile);
     const s = spinner();
 
@@ -50,5 +56,13 @@ export class RemoveCommand extends BaseCommand {
     ctx.config.set("runners", remaining);
 
     log.info(`${color.green("Removed")} ${ids.length} runner(s).`);
+  }
+
+  private async promptRunnerSelection(ids: string[]): Promise<string[]> {
+    return multiselect({
+      message: "Select runners to remove",
+      options: ids.map((id) => ({ label: id, value: id })),
+      required: true,
+    });
   }
 }

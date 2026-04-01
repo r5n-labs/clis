@@ -1,8 +1,8 @@
-import { Exit, args, color, log, positionals, spinner } from "@r5n/cli-core";
+import { Exit, args, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
-import { resolveRunnerIds } from "../utils";
+import { resolveRunnerIds, selectProfile } from "../utils";
 
 const stopPositionals = positionals({
   ids: { description: "Runner IDs to stop, or 'all'", variadic: true },
@@ -21,7 +21,10 @@ export class StopCommand extends BaseCommand {
   args = stopArgs;
 
   async execute(ctx: StopCtx) {
-    const profileName = ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE;
+    const profileName = ctx.interactive
+      ? await selectProfile(ctx.config)
+      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+
     const profile = ctx.config.get("profiles")[profileName];
     if (!profile) {
       throw new Exit(`Profile "${profileName}" not found`);
@@ -29,12 +32,24 @@ export class StopCommand extends BaseCommand {
 
     const entries = ctx.config.get("runners") ?? [];
     const profileEntries = entries.filter((e) => e.profile === profileName);
-    const ids = resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+
+    if (profileEntries.length === 0) {
+      throw new Exit(`No runners found for profile "${profileName}"`, "Run hydra create to provision runners");
+    }
 
     const provider = createProvider(profile);
     const s = spinner();
+
+    s.start("Fetching runner status...");
     const statuses = await provider.list();
+    s.stop("Runner status fetched");
+
     const runningIds = new Set(statuses.filter((r) => r.status === "running").map((r) => r.id));
+    const activeIds = profileEntries.map((e) => e.id).filter((id) => runningIds.has(id));
+
+    const ids = ctx.interactive
+      ? await this.promptRunnerSelection(activeIds)
+      : resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
 
     let stopped = 0;
     for (const id of ids) {
@@ -51,5 +66,17 @@ export class StopCommand extends BaseCommand {
     }
 
     log.info(`${color.green("Stopped")} ${stopped} runner(s).`);
+  }
+
+  private async promptRunnerSelection(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      throw new Exit("No runners are currently running");
+    }
+
+    return multiselect({
+      message: "Select runners to stop",
+      options: ids.map((id) => ({ label: id, value: id })),
+      required: true,
+    });
   }
 }
