@@ -1,29 +1,25 @@
-import { Exit, args, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { Exit, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
 import { resolveRunnerIds, selectProfile } from "../utils";
 
 const startPositionals = positionals({
-  ids: { description: "Runner IDs to start, or 'all'", variadic: true },
+  profile: { description: "Profile name" },
+  ids: { description: "Runner IDs (omit to target all)", variadic: true },
 });
 
-const startArgs = args({
-  profile: { alias: "p", description: "Profile name to use", type: "string" },
-});
-
-type StartCtx = Ctx<typeof startArgs, typeof startPositionals>;
+type StartCtx = Ctx<Record<string, never>, typeof startPositionals>;
 
 export class StartCommand extends BaseCommand {
   name = "start";
   description = "Start runners";
   positionals = startPositionals;
-  args = startArgs;
 
   async execute(ctx: StartCtx) {
     const profileName = ctx.interactive
       ? await selectProfile(ctx.config)
-      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+      : (ctx.positionals.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
 
     const profile = ctx.config.get("profiles")[profileName];
     if (!profile) {
@@ -49,7 +45,7 @@ export class StartCommand extends BaseCommand {
 
     const ids = ctx.interactive
       ? await this.promptRunnerSelection(stoppedIds)
-      : resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+      : resolveRunnerIds(ctx.positionals.ids ?? [], profileEntries.map((e) => e.id));
 
     let started = 0;
     for (const id of ids) {

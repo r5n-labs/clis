@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { Exit, args, color, log, positionals, spinner, text } from "@r5n/cli-core";
+import { Exit, color, log, positionals, spinner, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
@@ -7,25 +7,21 @@ import type { RunnerEntry } from "../types";
 import { selectProfile } from "../utils";
 
 const createPositionals = positionals({
+  profile: { description: "Profile name" },
   count: { description: "Number of runners to create (overrides profile)" },
 });
 
-const createArgs = args({
-  profile: { alias: "p", description: "Profile name to use", type: "string" },
-});
-
-type CreateCtx = Ctx<typeof createArgs, typeof createPositionals>;
+type CreateCtx = Ctx<Record<string, never>, typeof createPositionals>;
 
 export class CreateCommand extends BaseCommand {
   name = "create";
   description = "Create and register runners";
   positionals = createPositionals;
-  args = createArgs;
 
   async execute(ctx: CreateCtx) {
     const profileName = ctx.interactive
       ? await selectProfile(ctx.config)
-      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+      : (ctx.positionals.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
 
     const profiles = ctx.config.get("profiles");
     const profile = profiles[profileName];

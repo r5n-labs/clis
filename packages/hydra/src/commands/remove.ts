@@ -1,31 +1,27 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Exit, args, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { Exit, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
 import { resolveRunnerIds, selectProfile } from "../utils";
 
 const removePositionals = positionals({
-  ids: { description: "Runner IDs to remove, or 'all'", variadic: true },
+  profile: { description: "Profile name" },
+  ids: { description: "Runner IDs (omit to target all)", variadic: true },
 });
 
-const removeArgs = args({
-  profile: { alias: "p", description: "Profile name to use", type: "string" },
-});
-
-type RemoveCtx = Ctx<typeof removeArgs, typeof removePositionals>;
+type RemoveCtx = Ctx<Record<string, never>, typeof removePositionals>;
 
 export class RemoveCommand extends BaseCommand {
   name = "remove";
   description = "Deregister and remove runners";
   positionals = removePositionals;
-  args = removeArgs;
 
   async execute(ctx: RemoveCtx) {
     const profileName = ctx.interactive
       ? await selectProfile(ctx.config)
-      : (ctx.args.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
+      : (ctx.positionals.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
 
     const profile = ctx.config.get("profiles")[profileName];
     if (!profile) {
@@ -40,7 +36,7 @@ export class RemoveCommand extends BaseCommand {
 
     const ids = ctx.interactive
       ? await this.promptRunnerSelection(profileEntries.map((e) => e.id))
-      : resolveRunnerIds(ctx.positionals.ids, profileEntries.map((e) => e.id));
+      : resolveRunnerIds(ctx.positionals.ids ?? [], profileEntries.map((e) => e.id));
 
     const provider = createProvider(profile);
     const s = spinner();
