@@ -1,4 +1,4 @@
-import { Exit, color, log, spinner } from "@r5n/cli-core";
+import { Exit, color, log } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { RunnerInfo } from "../providers";
@@ -26,44 +26,45 @@ export class ListCommand extends BaseCommand {
     }
 
     const entries = ctx.config.get("runners") ?? [];
-    const firstProfile = profiles[profileNames[0] as string] as Profile;
-    const s = spinner();
-
-    s.start("Fetching runner status...");
-    const provider = createProvider(firstProfile);
-    const allStatuses = await provider.list();
-    s.stop("Runner status fetched");
-
-    const statusMap = new Map(allStatuses.map((r) => [r.id, r]));
     let totalRunners = 0;
     let totalRunning = 0;
 
+    const lines: string[] = [];
+
     for (const name of profileNames) {
       const profile = profiles[name] as Profile;
-      log.info(`${color.bold(name)} ${color.dim(profile.url)}`);
-      const profileRunnerIds = entries.filter((e) => e.profile === name).map((e) => e.id);
-      const runners = profileRunnerIds
-        .map((id) => statusMap.get(id))
-        .filter((r): r is RunnerInfo => r !== undefined);
+      const provider = createProvider(profile);
+      const statuses = await provider.list();
 
-      this.printRunners(runners);
+      if (lines.length > 0) lines.push("");
+
+      lines.push(`${color.bold(name)} ${color.dim(profile.url)}`);
+
+      const profileRunnerIds = new Set(entries.filter((e) => e.profile === name).map((e) => e.id));
+      const runners = statuses
+        .filter((r) => profileRunnerIds.has(r.id))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      this.formatRunners(runners, lines);
       totalRunners += runners.length;
       totalRunning += runners.filter((r) => r.status === "running").length;
     }
 
-    log.info(color.dim(`  ${totalRunners} runner(s) total, ${totalRunning} running`));
+    lines.push("");
+    lines.push(color.dim(`${totalRunners} runner(s) total, ${totalRunning} running`));
+    log.info(lines.join("\n"));
   }
 
-  private printRunners(runners: RunnerInfo[]) {
+  private formatRunners(runners: RunnerInfo[], lines: string[]) {
     if (runners.length === 0) {
-      log.info(color.dim("  No runners."));
+      lines.push(color.dim("  No runners."));
       return;
     }
 
     for (const runner of runners) {
       const statusColor = STATUS_COLORS[runner.status] ?? color.dim;
       const pid = runner.pid ? color.dim(` (pid: ${runner.pid})`) : "";
-      log.info(`  ${statusColor("●")} ${runner.name} ${statusColor(runner.status)}${pid}`);
+      lines.push(`  ${statusColor("●")} ${runner.name} ${statusColor(runner.status)}${pid}`);
     }
   }
 }
