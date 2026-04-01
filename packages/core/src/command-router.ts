@@ -1,9 +1,10 @@
 import { Cancel } from "./cancel";
 import type { AbstractCommand, ArgValue, CommandContext } from "./command";
 import type { ConfigManager } from "./config-manager";
+import { Exit } from "./exit";
 import { log, select } from "./prompts";
 import type { CliMetadata } from "./types";
-import { handleUnknownItem, mapPositionals, parseCommandArgs, validatePositionals } from "./util";
+import { color, handleUnknownItem, mapPositionals, parseCommandArgs, validatePositionals } from "./util";
 
 const EXIT_MENU_VALUE = "__exit__";
 
@@ -144,6 +145,11 @@ export class CommandRouter<TConfig extends object = object> {
       await subRouter.route([], true);
     } catch (error) {
       if (error instanceof Cancel) return;
+      if (error instanceof Exit) {
+        log.warn(color.yellow(error.message));
+        if (error.hint) log.info(color.dim(error.hint));
+        return;
+      }
       throw error;
     }
   }
