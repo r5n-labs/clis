@@ -61,7 +61,7 @@ export class InitCommand extends BaseCommand {
         `${color.dim("Name:")} ${profile.name}`,
         profile.labels ? `${color.dim("Labels:")} ${profile.labels}` : "",
         "",
-        `Run ${color.green(`${CLI_BIN} create`)}${profileName !== DEFAULT_PROFILE ? color.green(` --profile ${profileName}`) : ""} to provision runners.`,
+        `Run ${color.green(`${CLI_BIN} create${profileName !== DEFAULT_PROFILE ? ` ${profileName}` : ""}`)} to provision runners.`,
       ]
         .filter(Boolean)
         .join("\n"),

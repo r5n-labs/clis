@@ -78,7 +78,8 @@ export class CreateCommand extends BaseCommand {
 
     ctx.config.set("runners", entries);
 
-    log.info(`${color.green("Created")} ${toCreate} runner(s). Total: ${entries.length}. Run ${color.green("hydra start")} to start them.`);
+    const profileSuffix = profileName !== DEFAULT_PROFILE ? ` ${profileName}` : "";
+    log.info(`${color.green("Created")} ${toCreate} runner(s) for "${profileName}". Run ${color.green(`hydra start${profileSuffix}`)} to start them.`);
   }
 
   private async promptCount(defaultCount: number): Promise<number> {
