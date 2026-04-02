@@ -13,9 +13,9 @@ const STATUS_COLORS: Record<string, (text: string) => string> = {
   unknown: color.dim,
 };
 
-export class ListCommand extends BaseCommand {
-  name = "list";
-  description = "List runners and their status";
+export class StatusCommand extends BaseCommand {
+  name = "status";
+  description = "Show runner status across all profiles";
 
   async execute(ctx: ListCtx) {
     const profiles = ctx.config.get("profiles");
