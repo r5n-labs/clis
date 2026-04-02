@@ -9,6 +9,4 @@ export const RUNNERS_DIR = `${HYDRA_DIR}/runners`;
 
 export const DEFAULT_PROFILE = "default";
 
-export const DEFAULT_CONFIG: HydraConfig = {
-  profiles: {},
-};
+export const DEFAULT_CONFIG: HydraConfig = { profiles: {} };

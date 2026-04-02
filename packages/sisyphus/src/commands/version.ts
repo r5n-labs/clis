@@ -5,7 +5,6 @@ import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from ".
 import { CommitAnalyzer, StoneManager, WorkspaceScanner } from "../services";
 import { findDependencyPackages } from "../utils";
 
-// biome-ignore assist/source/useSortedKeys: message must come first
 const versionPositionals = positionals({
   message: { description: "Stone message (commit message)" },
   description: { description: "Stone description (optional details)" },

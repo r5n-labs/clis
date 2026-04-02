@@ -1,4 +1,4 @@
-import { Exit, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { color, Exit, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
@@ -39,7 +39,10 @@ export class StartCommand extends BaseCommand {
 
     const ids = ctx.interactive
       ? await this.promptRunnerSelection(stoppedIds)
-      : resolveRunnerIds(ctx.positionals.ids ?? [], profileEntries.map((e) => e.id));
+      : resolveRunnerIds(
+          ctx.positionals.ids ?? [],
+          profileEntries.map((e) => e.id),
+        );
 
     let started = 0;
     for (const id of ids) {

@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Exit, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { color, Exit, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
@@ -30,7 +30,10 @@ export class RemoveCommand extends BaseCommand {
 
     const ids = ctx.interactive
       ? await this.promptRunnerSelection(profileEntries.map((e) => e.id))
-      : resolveRunnerIds(ctx.positionals.ids ?? [], profileEntries.map((e) => e.id));
+      : resolveRunnerIds(
+          ctx.positionals.ids ?? [],
+          profileEntries.map((e) => e.id),
+        );
 
     const provider = createProvider(profile);
     const s = spinner();
