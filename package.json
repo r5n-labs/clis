@@ -24,6 +24,8 @@
     "release:version": "bun sis version",
     "sis": "bun --bun packages/sisyphus/src/cli.ts",
     "sis:dbg": "bun --inspect-brk packages/sisyphus/src/cli.ts",
+    "hydra": "bun --bun packages/hydra/src/cli.ts",
+    "hydra:dbg": "bun --inspect-brk packages/hydra/src/cli.ts",
     "test": "bun test",
     "type-check": "bun --elide-lines=0 --filter '*' type-check",
     "type-check:ci": "bun --filter '*' type-check",
