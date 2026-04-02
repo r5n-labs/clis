@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { Exit, color, confirm, log, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { createProvider } from "../../providers";
-import { selectProfile } from "../../utils";
+import type { Profile } from "../../types";
+import { resolveProfile, selectProfile } from "../../utils";
 
 const removePositionals = positionals({
   name: { description: "Profile name to remove" },
@@ -25,13 +26,7 @@ export class ProfileRemoveCommand extends BaseCommand {
       throw new Exit("Profile name is required", "Usage: hydra profile remove <name>");
     }
 
-    const profiles = ctx.config.get("profiles");
-    if (Object.keys(profiles).length === 0) {
-      throw new Exit("No profiles configured", "Run hydra init to set up a profile");
-    }
-    if (!profiles[profileName]) {
-      throw new Exit(`Profile "${profileName}" not found`);
-    }
+    const { profile } = resolveProfile(ctx.config, profileName);
 
     const entries = ctx.config.get("runners") ?? [];
     const profileRunners = entries.filter((e) => e.profile === profileName);
@@ -43,10 +38,12 @@ export class ProfileRemoveCommand extends BaseCommand {
       });
       if (!proceed) return;
 
-      await this.removeRunners(ctx, profileName, profileRunners.map((e) => e.id));
+      await this.removeRunners(profile, profileRunners.map((e) => e.id));
+      const remainingEntries = entries.filter((e) => e.profile !== profileName);
+      ctx.config.set("runners", remainingEntries);
     }
 
-    const { [profileName]: _, ...remaining } = profiles;
+    const { [profileName]: _, ...remaining } = ctx.config.get("profiles");
     ctx.config.set("profiles", remaining);
 
     const defaultProfile = ctx.config.get("defaultProfile");
@@ -58,10 +55,7 @@ export class ProfileRemoveCommand extends BaseCommand {
     log.info(`${color.green("Removed")} profile "${profileName}".`);
   }
 
-  private async removeRunners(ctx: RemoveCtx, profileName: string, ids: string[]) {
-    const profile = ctx.config.get("profiles")[profileName];
-    if (!profile) return;
-
+  private async removeRunners(profile: Profile, ids: string[]) {
     const provider = createProvider(profile);
     const s = spinner();
 
@@ -72,9 +66,5 @@ export class ProfileRemoveCommand extends BaseCommand {
       await rm(join(profile.directory, id), { force: true, recursive: true });
       s.stop(`${color.red("-")} ${id}`);
     }
-
-    const entries = ctx.config.get("runners") ?? [];
-    const remaining = entries.filter((e) => e.profile !== profileName);
-    ctx.config.set("runners", remaining);
   }
 }

@@ -1,4 +1,5 @@
 import { BaseCommand } from "../../base-command";
+import { ProfileDefaultCommand } from "./default";
 import { ProfileListCommand } from "./list";
 import { ProfileRemoveCommand } from "./remove";
 
@@ -7,6 +8,6 @@ export class ProfileCommand extends BaseCommand {
   description = "Manage profiles";
 
   init() {
-    this.registerSubcommands([new ProfileListCommand(), new ProfileRemoveCommand()]);
+    this.registerSubcommands([new ProfileListCommand(), new ProfileRemoveCommand(), new ProfileDefaultCommand()]);
   }
 }
