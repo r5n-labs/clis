@@ -2,9 +2,8 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Exit, color, log, multiselect, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
-import { resolveRunnerIds, selectProfile } from "../utils";
+import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
 
 const removePositionals = positionals({
   profile: { description: "Profile name" },
@@ -19,14 +18,9 @@ export class RemoveCommand extends BaseCommand {
   positionals = removePositionals;
 
   async execute(ctx: RemoveCtx) {
-    const profileName = ctx.interactive
-      ? await selectProfile(ctx.config)
-      : (ctx.positionals.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
-
-    const profile = ctx.config.get("profiles")[profileName];
-    if (!profile) {
-      throw new Exit(`Profile "${profileName}" not found`);
-    }
+    const { name: profileName, profile } = ctx.interactive
+      ? resolveProfile(ctx.config, await selectProfile(ctx.config))
+      : resolveProfile(ctx.config, ctx.positionals.profile);
 
     const entries = ctx.config.get("runners") ?? [];
     const profileEntries = entries.filter((e) => e.profile === profileName);

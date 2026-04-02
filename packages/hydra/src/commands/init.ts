@@ -49,7 +49,7 @@ export class InitCommand extends BaseCommand {
     profiles[profileName] = profile;
 
     ctx.config.set("profiles", profiles);
-    if (isNewInit) {
+    if (!ctx.config.get("defaultProfile")) {
       ctx.config.set("defaultProfile", profileName);
     }
 
@@ -61,7 +61,7 @@ export class InitCommand extends BaseCommand {
         `${color.dim("Name:")} ${profile.name}`,
         profile.labels ? `${color.dim("Labels:")} ${profile.labels}` : "",
         "",
-        `Run ${color.green(`${CLI_BIN} create${profileName !== DEFAULT_PROFILE ? ` ${profileName}` : ""}`)} to provision runners.`,
+        `Run ${color.green(`${CLI_BIN} create${profileName !== ctx.config.get("defaultProfile") ? ` ${profileName}` : ""}`)} to provision runners.`,
       ]
         .filter(Boolean)
         .join("\n"),

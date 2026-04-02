@@ -1,10 +1,9 @@
 import { join } from "node:path";
 import { Exit, color, log, positionals, spinner, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { DEFAULT_PROFILE } from "../constants";
 import { createProvider } from "../providers";
 import type { RunnerEntry } from "../types";
-import { selectProfile } from "../utils";
+import { resolveProfile, selectProfile } from "../utils";
 
 const createPositionals = positionals({
   profile: { description: "Profile name" },
@@ -19,15 +18,9 @@ export class CreateCommand extends BaseCommand {
   positionals = createPositionals;
 
   async execute(ctx: CreateCtx) {
-    const profileName = ctx.interactive
-      ? await selectProfile(ctx.config)
-      : (ctx.positionals.profile ?? ctx.config.get("defaultProfile") ?? DEFAULT_PROFILE);
-
-    const profiles = ctx.config.get("profiles");
-    const profile = profiles[profileName];
-    if (!profile) {
-      throw new Exit(`Profile "${profileName}" not found`);
-    }
+    const { name: profileName, profile } = ctx.interactive
+      ? resolveProfile(ctx.config, await selectProfile(ctx.config))
+      : resolveProfile(ctx.config, ctx.positionals.profile);
 
     const count = ctx.interactive
       ? await this.promptCount(profile.numberOfMachines)
@@ -78,7 +71,8 @@ export class CreateCommand extends BaseCommand {
 
     ctx.config.set("runners", entries);
 
-    const profileSuffix = profileName !== DEFAULT_PROFILE ? ` ${profileName}` : "";
+    const isDefault = profileName === ctx.config.get("defaultProfile");
+    const profileSuffix = isDefault ? "" : ` ${profileName}`;
     log.info(`${color.green("Created")} ${toCreate} runner(s) for "${profileName}". Run ${color.green(`hydra start${profileSuffix}`)} to start them.`);
   }
 

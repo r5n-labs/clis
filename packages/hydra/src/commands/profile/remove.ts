@@ -26,6 +26,9 @@ export class ProfileRemoveCommand extends BaseCommand {
     }
 
     const profiles = ctx.config.get("profiles");
+    if (Object.keys(profiles).length === 0) {
+      throw new Exit("No profiles configured", "Run hydra init to set up a profile");
+    }
     if (!profiles[profileName]) {
       throw new Exit(`Profile "${profileName}" not found`);
     }
