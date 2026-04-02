@@ -43,7 +43,7 @@ export class StatusCommand extends BaseCommand {
       const profileRunnerIds = new Set(entries.filter((e) => e.profile === name).map((e) => e.id));
       const runners = statuses
         .filter((r) => profileRunnerIds.has(r.id))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
       this.formatRunners(runners, lines);
       totalRunners += runners.length;
