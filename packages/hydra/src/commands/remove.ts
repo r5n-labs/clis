@@ -42,7 +42,8 @@ export class RemoveCommand extends BaseCommand {
     const s = spinner();
 
     for (const id of ids) {
-      s.start(`Removing ${id}...`);
+      s.start(`Stopping and removing ${id}...`);
+      await provider.stop([id]);
       await provider.remove([id]);
       await rm(join(profile.directory, id), { force: true, recursive: true });
       s.stop(`${color.red("-")} ${id}`);
