@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, link, mkdir, readdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, link, mkdir, readdir, readFile, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
@@ -102,6 +102,21 @@ export class GitHubRunnerProvider implements RunnerProvider {
     }
 
     return runners;
+  }
+
+  async currentVersion(id: string): Promise<string | null> {
+    const runnerDir = join(this.profile.directory, id);
+    return this.detectVersion(runnerDir);
+  }
+
+  async update(ids: string[]): Promise<void> {
+    const sharedPath = await this.ensureDownloaded();
+
+    for (const id of ids) {
+      const runnerDir = join(this.profile.directory, id);
+      await this.removeRunnerBinaries(runnerDir);
+      await this.setupRunnerDir(sharedPath, runnerDir);
+    }
   }
 
   private async getRunnerStatus(runnerDir: string, id: string): Promise<RunnerInfo> {
@@ -236,6 +251,31 @@ export class GitHubRunnerProvider implements RunnerProvider {
         await this.hardLinkDir(srcPath, destPath);
       } else {
         await link(srcPath, destPath);
+      }
+    }
+  }
+
+  private async detectVersion(runnerDir: string): Promise<string | null> {
+    try {
+      const target = await readlink(join(runnerDir, "externals"));
+      const match = target.match(/github\/([^/]+)/);
+      return match?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async removeRunnerBinaries(runnerDir: string) {
+    for (const dir of HARDLINK_DIRS) {
+      await rm(join(runnerDir, dir), { force: true, recursive: true });
+    }
+    for (const dir of SYMLINK_DIRS) {
+      await rm(join(runnerDir, dir), { force: true });
+    }
+    for (const pattern of ["*.sh", "*.sh.template"]) {
+      const files = await Array.fromAsync(new Bun.Glob(pattern).scan(runnerDir));
+      for (const file of files) {
+        await rm(join(runnerDir, file), { force: true });
       }
     }
   }

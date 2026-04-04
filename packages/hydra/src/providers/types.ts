@@ -11,4 +11,6 @@ export interface RunnerProvider {
   start(ids: string[]): Promise<void>;
   stop(ids: string[]): Promise<void>;
   list(): Promise<RunnerInfo[]>;
+  currentVersion(id: string): Promise<string | null>;
+  update(ids: string[]): Promise<void>;
 }
