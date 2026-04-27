@@ -1,14 +1,12 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Exit, color, confirm, log, positionals, spinner } from "@r5n/cli-core";
+import { color, confirm, Exit, log, positionals, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { createProvider } from "../../providers";
 import type { Profile } from "../../types";
 import { resolveProfile, selectProfile } from "../../utils";
 
-const removePositionals = positionals({
-  name: { description: "Profile name to remove" },
-});
+const removePositionals = positionals({ name: { description: "Profile name to remove" } });
 
 type RemoveCtx = Ctx<Record<string, never>, typeof removePositionals>;
 
@@ -18,9 +16,7 @@ export class ProfileRemoveCommand extends BaseCommand {
   positionals = removePositionals;
 
   async execute(ctx: RemoveCtx) {
-    const profileName = ctx.interactive
-      ? await selectProfile(ctx.config)
-      : ctx.positionals.name;
+    const profileName = ctx.interactive ? await selectProfile(ctx.config) : ctx.positionals.name;
 
     if (!profileName) {
       throw new Exit("Profile name is required", "Usage: hydra profile remove <name>");
@@ -38,7 +34,10 @@ export class ProfileRemoveCommand extends BaseCommand {
       });
       if (!proceed) return;
 
-      await this.removeRunners(profile, profileRunners.map((e) => e.id));
+      await this.removeRunners(
+        profile,
+        profileRunners.map((e) => e.id),
+      );
       const remainingEntries = entries.filter((e) => e.profile !== profileName);
       ctx.config.set("runners", remainingEntries);
     }

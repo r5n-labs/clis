@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, link, mkdir, readFile, readdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, link, mkdir, readdir, readFile, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
@@ -69,11 +69,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
       const existingPid = await this.readPidFile(runnerDir);
       if (existingPid && this.isProcessRunning(existingPid)) continue;
 
-      const proc = Bun.spawn(["bash", "./run.sh"], {
-        cwd: resolve(runnerDir),
-        stderr: "pipe",
-        stdout: "pipe",
-      });
+      const proc = Bun.spawn(["bash", "./run.sh"], { cwd: resolve(runnerDir), stderr: "pipe", stdout: "pipe" });
       proc.unref();
       await this.writePidFile(runnerDir, proc.pid);
     }
@@ -108,6 +104,21 @@ export class GitHubRunnerProvider implements RunnerProvider {
     return runners;
   }
 
+  async currentVersion(id: string): Promise<string | null> {
+    const runnerDir = join(this.profile.directory, id);
+    return this.detectVersion(runnerDir);
+  }
+
+  async update(ids: string[]): Promise<void> {
+    const sharedPath = await this.ensureDownloaded();
+
+    for (const id of ids) {
+      const runnerDir = join(this.profile.directory, id);
+      await this.removeRunnerBinaries(runnerDir);
+      await this.setupRunnerDir(sharedPath, runnerDir);
+    }
+  }
+
   private async getRunnerStatus(runnerDir: string, id: string): Promise<RunnerInfo> {
     const name = await this.readRunnerName(runnerDir);
     const pid = await this.readPidFile(runnerDir);
@@ -117,13 +128,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
     if (isRunning) status = "running";
     else if (existsSync(join(runnerDir, ".runner"))) status = "registered";
 
-    return {
-      directory: runnerDir,
-      id,
-      name,
-      pid: isRunning ? pid : undefined,
-      status,
-    };
+    return { directory: runnerDir, id, name, pid: isRunning ? pid : undefined, status };
   }
 
   private async ensureDownloaded(): Promise<string> {
@@ -166,7 +171,8 @@ export class GitHubRunnerProvider implements RunnerProvider {
 
   private async fetchRegistrationToken(): Promise<string> {
     const { owner, repo } = this.parseUrl(this.profile.url);
-    const result = await Bun.$`gh api repos/${owner}/${repo}/actions/runners/registration-token --method POST --jq .token`.quiet();
+    const result =
+      await Bun.$`gh api repos/${owner}/${repo}/actions/runners/registration-token --method POST --jq .token`.quiet();
     const token = result.stdout.toString().trim();
 
     if (!token) {
@@ -183,7 +189,8 @@ export class GitHubRunnerProvider implements RunnerProvider {
     if (!url) throw new Error("Cannot determine GitHub URL from runner config");
 
     const { owner, repo } = this.parseUrl(url);
-    const result = await Bun.$`gh api repos/${owner}/${repo}/actions/runners/remove-token --method POST --jq .token`.quiet();
+    const result =
+      await Bun.$`gh api repos/${owner}/${repo}/actions/runners/remove-token --method POST --jq .token`.quiet();
     return result.stdout.toString().trim();
   }
 
@@ -244,6 +251,31 @@ export class GitHubRunnerProvider implements RunnerProvider {
         await this.hardLinkDir(srcPath, destPath);
       } else {
         await link(srcPath, destPath);
+      }
+    }
+  }
+
+  private async detectVersion(runnerDir: string): Promise<string | null> {
+    try {
+      const target = await readlink(join(runnerDir, "externals"));
+      const match = target.match(/github\/([^/]+)/);
+      return match?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async removeRunnerBinaries(runnerDir: string) {
+    for (const dir of HARDLINK_DIRS) {
+      await rm(join(runnerDir, dir), { force: true, recursive: true });
+    }
+    for (const dir of SYMLINK_DIRS) {
+      await rm(join(runnerDir, dir), { force: true });
+    }
+    for (const pattern of ["*.sh", "*.sh.template"]) {
+      const files = await Array.fromAsync(new Bun.Glob(pattern).scan(runnerDir));
+      for (const file of files) {
+        await rm(join(runnerDir, file), { force: true });
       }
     }
   }

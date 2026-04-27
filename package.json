@@ -1,10 +1,10 @@
 {
   "devDependencies": {
-    "@biomejs/biome": "2.4.11",
+    "@biomejs/biome": "2.4.13",
     "@clack/prompts": "1.2.0",
-    "@types/bun": "1.3.12",
-    "lefthook": "2.1.5",
-    "typescript": "6.0.2"
+    "@types/bun": "1.3.13",
+    "lefthook": "2.1.6",
+    "typescript": "6.0.3"
   },
   "license": "Apache-2.0",
   "name": "r5n-clis",
@@ -32,5 +32,7 @@
     "type-check:go": "bun --elide-lines=0 --filter '*' type-check:go"
   },
   "version": "0.0.0",
-  "workspaces": { "packages": ["packages/*", "tools"] }
+  "workspaces": {
+  "packages": ["packages/*", "tools"]
+}
 }

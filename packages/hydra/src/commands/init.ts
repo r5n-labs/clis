@@ -1,13 +1,11 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { Cancel, Exit, args, color, confirm, group, note, positionals, text } from "@r5n/cli-core";
+import { args, Cancel, color, confirm, Exit, group, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
 
-const initPositionals = positionals({
-  url: { description: "GitHub repository or organization URL" },
-});
+const initPositionals = positionals({ url: { description: "GitHub repository or organization URL" } });
 
 const initArgs = args({
   force: { alias: "f", default: false, description: "Overwrite existing config", type: "boolean" },
@@ -27,9 +25,7 @@ export class InitCommand extends BaseCommand {
   prompts = true;
 
   async execute(ctx: InitCtx) {
-    const profileName = ctx.interactive
-      ? await this.promptProfileName(ctx)
-      : (ctx.args.profile ?? DEFAULT_PROFILE);
+    const profileName = ctx.interactive ? await this.promptProfileName(ctx) : (ctx.args.profile ?? DEFAULT_PROFILE);
 
     const isNewInit = !ctx.config.exists();
 
@@ -38,7 +34,10 @@ export class InitCommand extends BaseCommand {
       if (!ctx.interactive) {
         throw new Exit(`Profile "${profileName}" already exists. Use --force to overwrite.`);
       }
-      const overwrite = await confirm({ initialValue: false, message: `Profile "${profileName}" already exists. Overwrite?` });
+      const overwrite = await confirm({
+        initialValue: false,
+        message: `Profile "${profileName}" already exists. Overwrite?`,
+      });
       if (!overwrite) return;
     }
 
@@ -70,10 +69,7 @@ export class InitCommand extends BaseCommand {
   }
 
   private async promptProfileName(ctx: InitCtx): Promise<string> {
-    return text({
-      initialValue: ctx.args.profile ?? DEFAULT_PROFILE,
-      message: "Profile name",
-    });
+    return text({ initialValue: ctx.args.profile ?? DEFAULT_PROFILE, message: "Profile name" });
   }
 
   private async ensureDirectories() {
@@ -102,12 +98,7 @@ export class InitCommand extends BaseCommand {
               return undefined;
             },
           }),
-        name: () =>
-          text({
-            initialValue: "runner",
-            message: "Base name for runners",
-            placeholder: "runner",
-          }),
+        name: () => text({ initialValue: "runner", message: "Base name for runners", placeholder: "runner" }),
         runners: () =>
           text({
             initialValue: "1",
@@ -121,12 +112,13 @@ export class InitCommand extends BaseCommand {
             },
           }),
         labels: () =>
-          text({
-            message: "Additional labels (comma-separated, optional)",
-            placeholder: "self-hosted,macOS,ARM64",
-          }),
+          text({ message: "Additional labels (comma-separated, optional)", placeholder: "self-hosted,macOS,ARM64" }),
       },
-      { onCancel: () => { throw new Cancel(); } },
+      {
+        onCancel: () => {
+          throw new Cancel();
+        },
+      },
     );
 
     return {

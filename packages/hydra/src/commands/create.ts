@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { Exit, color, log, positionals, spinner, text } from "@r5n/cli-core";
+import { color, Exit, log, positionals, spinner, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { RunnerEntry } from "../types";
@@ -24,7 +24,9 @@ export class CreateCommand extends BaseCommand {
 
     const count = ctx.interactive
       ? await this.promptCount(profile.numberOfMachines)
-      : (ctx.positionals.count ? Number.parseInt(ctx.positionals.count, 10) : profile.numberOfMachines);
+      : ctx.positionals.count
+        ? Number.parseInt(ctx.positionals.count, 10)
+        : profile.numberOfMachines;
 
     if (!count || count < 1) {
       throw new Exit("Runner count must be at least 1");
@@ -73,7 +75,9 @@ export class CreateCommand extends BaseCommand {
 
     const isDefault = profileName === ctx.config.get("defaultProfile");
     const profileSuffix = isDefault ? "" : ` ${profileName}`;
-    log.info(`${color.green("Created")} ${toCreate} runner(s) for "${profileName}". Run ${color.green(`hydra start${profileSuffix}`)} to start them.`);
+    log.info(
+      `${color.green("Created")} ${toCreate} runner(s) for "${profileName}". Run ${color.green(`hydra start${profileSuffix}`)} to start them.`,
+    );
   }
 
   private async promptCount(defaultCount: number): Promise<number> {
