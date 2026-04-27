@@ -25,8 +25,4 @@ export type RunnerEntry = {
   createdAt: string;
 };
 
-export type HydraConfig = {
-  defaultProfile?: string;
-  profiles: Record<string, Profile>;
-  runners?: RunnerEntry[];
-};
+export type HydraConfig = { defaultProfile?: string; profiles: Record<string, Profile>; runners?: RunnerEntry[] };

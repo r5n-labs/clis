@@ -1,5 +1,5 @@
-import { Exit, select } from "@r5n/cli-core";
 import type { ConfigManager } from "@r5n/cli-core";
+import { Exit, select } from "@r5n/cli-core";
 import { DEFAULT_PROFILE } from "./constants";
 import type { HydraConfig, Profile } from "./types";
 
@@ -15,7 +15,10 @@ export function resolveRunnerIds(input: string[], available: string[]): string[]
   return input;
 }
 
-export function resolveProfile(config: ConfigManager<HydraConfig>, positionalProfile?: string): { name: string; profile: Profile } {
+export function resolveProfile(
+  config: ConfigManager<HydraConfig>,
+  positionalProfile?: string,
+): { name: string; profile: Profile } {
   const profiles = config.get("profiles");
 
   if (Object.keys(profiles).length === 0) {
@@ -44,10 +47,6 @@ export async function selectProfile(config: ConfigManager<HydraConfig>): Promise
 
   return select({
     message: "Select profile",
-    options: names.map((name) => ({
-      label: name,
-      value: name,
-      hint: profiles[name]?.url,
-    })),
+    options: names.map((name) => ({ label: name, value: name, hint: profiles[name]?.url })),
   });
 }

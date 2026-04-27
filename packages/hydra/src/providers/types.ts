@@ -1,17 +1,8 @@
 export type RunnerStatus = "running" | "stopped" | "registered" | "unknown";
 
-export type RunnerInfo = {
-  id: string;
-  name: string;
-  directory: string;
-  status: RunnerStatus;
-  pid?: number;
-};
+export type RunnerInfo = { id: string; name: string; directory: string; status: RunnerStatus; pid?: number };
 
-export type DownloadResult = {
-  version: string;
-  path: string;
-};
+export type DownloadResult = { version: string; path: string };
 
 export interface RunnerProvider {
   download(): Promise<DownloadResult>;
@@ -20,4 +11,6 @@ export interface RunnerProvider {
   start(ids: string[]): Promise<void>;
   stop(ids: string[]): Promise<void>;
   list(): Promise<RunnerInfo[]>;
+  currentVersion(id: string): Promise<string | null>;
+  update(ids: string[]): Promise<void>;
 }

@@ -1,7 +1,7 @@
-import { Exit, color, log } from "@r5n/cli-core";
+import { color, Exit, log } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { createProvider } from "../providers";
 import type { RunnerInfo } from "../providers";
+import { createProvider } from "../providers";
 import type { Profile } from "../types";
 
 type ListCtx = Ctx;

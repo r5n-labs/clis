@@ -1,4 +1,4 @@
-import { Exit, color, log, note } from "@r5n/cli-core";
+import { color, Exit, log, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { createProvider } from "../../providers";
 import type { Profile } from "../../types";
