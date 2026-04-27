@@ -7,7 +7,6 @@
     "declaration": true,
     "declarationMap": true,
     "disableSizeLimit": true,
-    "downlevelIteration": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedDeclarations": false,
