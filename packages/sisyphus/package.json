@@ -1,7 +1,7 @@
 {
   "bin": { "sisyphus": "./dist/cli.js" },
   "description": "Sisyphus CLI - A tool for versioning and publishing packages",
-  "devDependencies": { "@clack/prompts": "1.2.0", "@r5n/cli-core": "workspace:*", "@r5n/tools": "workspace:*" },
+  "devDependencies": { "@clack/prompts": "1.4.0", "@r5n/cli-core": "workspace:*", "@r5n/tools": "workspace:*" },
   "files": ["dist", "schema.json", "LICENSE"],
   "license": "Apache-2.0",
   "main": "dist/cli.js",
