@@ -18,8 +18,11 @@
       "bin": {
         "atlas": "./dist/cli.js",
       },
+      "dependencies": {
+        "@r5n/cli-core": "workspace:*",
+        "banditypes": "0.3.0",
+      },
       "devDependencies": {
-        "@clack/prompts": "1.2.0",
         "@r5n/tools": "workspace:*",
       },
     },

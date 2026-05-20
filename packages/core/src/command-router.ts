@@ -178,7 +178,10 @@ export class CommandRouter<TConfig extends object = object> {
   }
 
   private isHelpRequest(argv: string[]): boolean {
-    return argv.includes("--help") || argv.includes("-h");
+    const delimiterIndex = argv.indexOf("--");
+    const argvBeforeDelimiter = delimiterIndex < 0 ? argv : argv.slice(0, delimiterIndex);
+
+    return argvBeforeDelimiter.includes("--help") || argvBeforeDelimiter.includes("-h");
   }
 
   private printHelp(cmd: AbstractCommand<TConfig>): void {

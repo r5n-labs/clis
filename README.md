@@ -9,6 +9,10 @@
 
 ## Packages
 
+### [@r5n/atlas](packages/atlas) — App/Env Profiles
+
+Compose environment variables from local profiles, then run commands or export dotenv files.
+
 ### [@r5n/hydra](packages/hydra) — GitHub Runner Manager
 
 Manage self-hosted GitHub Actions runners without the pain.

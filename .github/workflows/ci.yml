@@ -95,8 +95,8 @@ jobs:
           # Verify Sisyphus
           ./packages/sisyphus/dist/cli.js --version
 
-          # # Verify Atlas
-          # ./packages/atlas/dist/cli.js --version
+          # Verify Atlas
+          ./packages/atlas/dist/cli.js --version
 
   integration:
     name: Integration Tests
@@ -122,20 +122,20 @@ jobs:
       - name: Test Hydra CLI
         run: |
           chmod +x packages/hydra/dist/cli.js
-          ./packages/hydra/dist/cli.js help
+          ./packages/hydra/dist/cli.js --help
           ./packages/hydra/dist/cli.js --version
 
       - name: Test Sisyphus CLI
         run: |
           chmod +x packages/sisyphus/dist/cli.js
-          ./packages/sisyphus/dist/cli.js
+          ./packages/sisyphus/dist/cli.js --help
           ./packages/sisyphus/dist/cli.js --version
 
-      # - name: Test Atlas CLI
-      #   run: |
-      #     chmod +x packages/atlas/dist/cli.js
-      #     ./packages/atlas/dist/cli.js help
-      #     ./packages/atlas/dist/cli.js doctor
+      - name: Test Atlas CLI
+        run: |
+          chmod +x packages/atlas/dist/cli.js
+          ./packages/atlas/dist/cli.js --help
+          ./packages/atlas/dist/cli.js --version
 
   release-check:
     name: Release Check
