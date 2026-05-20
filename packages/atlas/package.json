@@ -1,10 +1,10 @@
 {
   "author": "@ice-chillios",
   "bin": { "atlas": "dist/cli.js" },
-  "description": "Atlas CLI - A tool for exploring and mapping codebases",
-  "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
+  "description": "Atlas CLI - Profile-based env composition for apps and environments",
+  "devDependencies": { "@r5n/cli-core": "workspace:*", "@r5n/tools": "workspace:*", "banditypes": "0.3.0" },
   "files": ["dist", "LICENSE"],
-  "keywords": ["cli", "codebase", "exploration", "mapping", "analysis"],
+  "keywords": ["cli", "dotenv", "env", "config", "profiles"],
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/atlas",
@@ -21,6 +21,5 @@
     "type-check": "bun --bun tsc --noEmit"
   },
   "type": "module",
-  "types": "src/cli.ts",
   "version": "0.3.0"
 }
