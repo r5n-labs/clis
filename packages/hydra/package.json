@@ -3,7 +3,7 @@
   "bin": { "hydra": "./dist/cli.js" },
   "description": "A tool for spawning multiple local GitHub self-hosted runners",
   "dependencies": { "@r5n/cli-core": "workspace:*" },
-  "devDependencies": { "@clack/prompts": "1.2.0", "@r5n/tools": "workspace:*" },
+  "devDependencies": { "@clack/prompts": "1.4.0", "@r5n/tools": "workspace:*" },
   "files": ["dist", "schema.json", "LICENSE"],
   "keywords": ["github", "runner", "self-hosted", "ci", "cd", "automation"],
   "license": "Apache-2.0",
