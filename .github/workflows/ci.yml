@@ -11,7 +11,7 @@ jobs:
     name: Lint
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -31,7 +31,7 @@ jobs:
     name: Type Check
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -51,7 +51,7 @@ jobs:
     name: Test
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -71,7 +71,7 @@ jobs:
     name: Build
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -103,7 +103,7 @@ jobs:
     needs: build
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -142,7 +142,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}

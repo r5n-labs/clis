@@ -13,7 +13,7 @@ jobs:
     name: Dependency Audit
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -40,7 +40,7 @@ jobs:
       matrix:
         language: ['typescript', 'javascript']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -67,7 +67,7 @@ jobs:
     name: Secret Scanning
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -86,7 +86,7 @@ jobs:
     name: License Check
     runs-on: r5n-m2-ultra
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
