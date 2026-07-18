@@ -89,7 +89,7 @@ export class ReleaseOrchestrator {
     if (this.options.dryRun) return;
 
     const files = packages.map((pkg) => pkg.file);
-    const changelogFiles = this.getChangelogFiles(packages);
+    const changelogFiles = this.options.changelog ? this.getChangelogFiles(packages) : [];
     const sisyphusDir = this.config.get("sisyphusDir");
     const allFiles = [...files, ...changelogFiles, sisyphusDir];
 
