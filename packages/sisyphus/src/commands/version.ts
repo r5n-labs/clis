@@ -11,10 +11,13 @@ const versionPositionals = positionals({
 });
 
 const versionArgs = args({
+  all: { alias: "a", default: false, description: "Select all (filtered) packages without prompting", type: "boolean" },
+  bump: { alias: "b", description: "Bump type applied to all selected packages (major|minor|patch)", type: "string" },
   dryRun: { alias: "d", default: false, description: "Preview without writing files", type: "boolean" },
   filter: { alias: "f", description: "Filter packages by name", type: "string" },
   fromCommits: { default: false, description: "Generate stones from conventional commits", type: "boolean" },
   major: { alias: "M", description: "Packages for major bump (comma-separated)", type: "string" },
+  message: { description: "Stone message (skips the message prompt)", type: "string" },
   minor: { alias: "m", description: "Packages for minor bump (comma-separated)", type: "string" },
   patch: { alias: "p", description: "Packages for patch bump (comma-separated)", type: "string" },
   tag: { alias: "t", description: "Prerelease tag (e.g. beta, alpha)", type: "string" },
@@ -35,11 +38,15 @@ export class VersionCommand extends BaseCommand {
   async execute(ctx: VersionCtx) {
     if (ctx.args.fromCommits) {
       await this.executeFromCommits(ctx);
-    } else if (ctx.interactive) {
+    } else if (ctx.interactive && !this.hasFlagSelection(ctx)) {
       await this.executeInteractive(ctx);
     } else {
       await this.executeDirect(ctx);
     }
+  }
+
+  private hasFlagSelection(ctx: VersionCtx): boolean {
+    return Boolean(ctx.args.bump || ctx.args.major || ctx.args.minor || ctx.args.patch);
   }
 
   private async executeInteractive(ctx: VersionCtx) {
@@ -50,7 +57,7 @@ export class VersionCommand extends BaseCommand {
     }
 
     const selection = await this.selectPackagesInteractive(packages, packageNames);
-    const message = await this.promptMessage();
+    const message = ctx.args.message?.trim() || (await this.promptMessage());
     const description = await this.promptDescription();
 
     const stoneData = this.buildStoneData({ description, message, packages, selection });
@@ -58,13 +65,18 @@ export class VersionCommand extends BaseCommand {
   }
 
   private async executeDirect(ctx: VersionCtx) {
-    const selection = this.parsePackageArgs(ctx.args);
+    const message = ctx.positionals.message ?? ctx.args.message;
 
-    if (!ctx.positionals.message) {
-      throw new Exit("Message positional is required in non-interactive mode");
+    if (!message) {
+      throw new Exit("Message is required in non-interactive mode", 'Pass it as a positional or with --message "..."');
     }
 
-    const { packages } = await WorkspaceScanner.scan({ filter: ctx.args.filter, single: ctx.config.get("single") });
+    const { packages, packageNames } = await WorkspaceScanner.scan({
+      filter: ctx.args.filter,
+      single: ctx.config.get("single"),
+    });
+
+    const selection = this.resolveSelection(ctx, packageNames);
 
     const invalidPackages = this.validatePackages(selection, packages);
     if (invalidPackages.length > 0) {
@@ -73,12 +85,38 @@ export class VersionCommand extends BaseCommand {
 
     const stoneData = this.buildStoneData({
       description: ctx.positionals.description,
-      message: ctx.positionals.message,
+      message,
       packages,
       selection,
       tag: ctx.args.tag,
     });
     await this.createStone(ctx, stoneData, packages);
+  }
+
+  private resolveSelection(ctx: VersionCtx, packageNames: readonly string[]): PackageSelection {
+    const bump = ctx.args.bump;
+    if (!bump) return this.parsePackageArgs(ctx.args);
+
+    if (ctx.args.major || ctx.args.minor || ctx.args.patch) {
+      throw new Exit("--bump cannot be combined with --major, --minor, or --patch");
+    }
+
+    if (!ctx.args.all && !ctx.args.yes) {
+      throw new Exit("--bump selects every (filtered) package", "Confirm the selection with --all or --yes");
+    }
+
+    if (bump !== BumpType.Major && bump !== BumpType.Minor && bump !== BumpType.Patch) {
+      throw new Exit(`Invalid bump type "${bump}"`, "Use major, minor, or patch");
+    }
+
+    if (packageNames.length === 0) {
+      throw new Exit("No packages found matching the criteria");
+    }
+
+    const names = [...packageNames];
+    if (bump === BumpType.Major) return { major: names, minor: [], patch: [] };
+    if (bump === BumpType.Minor) return { major: [], minor: names, patch: [] };
+    return { major: [], minor: [], patch: names };
   }
 
   private parsePackageArgs(args: VersionCtx["args"]): PackageSelection {
@@ -96,7 +134,10 @@ export class VersionCommand extends BaseCommand {
 
     const hasPackages = selection.major.length > 0 || selection.minor.length > 0 || selection.patch.length > 0;
     if (!hasPackages) {
-      throw new Exit("At least one of --major (-M), --minor (-m), or --patch (-p) is required");
+      throw new Exit(
+        "At least one of --major (-M), --minor (-m), or --patch (-p) is required",
+        "Or use --bump <type> with --all to select every package",
+      );
     }
 
     return selection;
