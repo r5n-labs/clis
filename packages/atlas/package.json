@@ -1,42 +1,22 @@
 {
   "author": "@ice-chillios",
-  "bin": {
-    "atlas": "./dist/cli.js"
-  },
+  "bin": { "atlas": "./dist/cli.js" },
   "description": "Atlas CLI - A tool for exploring and mapping codebases",
-  "devDependencies": {
-    "@clack/prompts": "1.7.0",
-    "@r5n/tools": "workspace:*"
-  },
-  "files": [
-    "dist",
-    "LICENSE"
-  ],
-  "keywords": [
-    "cli",
-    "codebase",
-    "exploration",
-    "mapping",
-    "analysis"
-  ],
+  "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
+  "files": ["dist", "LICENSE"],
+  "keywords": ["cli", "codebase", "exploration", "mapping", "analysis"],
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/atlas",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/r5n-labs/clis.git"
-  },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "repository": { "type": "git", "url": "git+https://github.com/r5n-labs/clis.git" },
   "scripts": {
     "build": "rm -rf dist && bun build.ts",
     "clean": "rm -rf dist node_modules",
     "dev": "bun --bun src/cli.ts",
-    "package:dryRun": "bun run package:prepare && bun publish --dry-run --no-git-checks --access public --force && bun install",
+    "package:dryRun": "bun ../../tools/scripts/publish-package.ts . --dry-run",
     "package:prepare": "NODE_ENV=production bun run build && bun ../../tools/scripts/prepare-publish.ts .",
-    "package:publish": "bun run package:prepare && bun publish --access public --no-git-checks && bun install",
+    "package:publish": "bun ../../tools/scripts/publish-package.ts .",
     "type-check": "bun --bun tsc --noEmit"
   },
   "type": "module",

@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { CatalogMap, PackageManifest, RootManifest, WorkspaceVersionMap } from "./publish-manifest";
+import { createPublishManifest, extractCatalogs, extractWorkspaceGlobs } from "./publish-manifest";
 
-const CATALOG_PREFIX = "catalog:";
-const WORKSPACE_PREFIX = "workspace:";
+const JSON_INDENT = 2;
 
 const packages = Bun.argv.slice(2);
 
@@ -11,17 +12,16 @@ if (packages.length === 0) {
   process.exit(1);
 }
 
-async function loadRootPackageJson(packagePath: string) {
+async function loadRootPackage(packagePath: string): Promise<{ rootDir: string; rootPkg: RootManifest }> {
   let currentPath = resolve(packagePath);
 
   while (currentPath !== dirname(currentPath)) {
     const rootPkgPath = resolve(currentPath, "package.json");
     if (existsSync(rootPkgPath)) {
-      const file = Bun.file(rootPkgPath);
-      const rootPkg = await file.json();
+      const rootPkg = (await Bun.file(rootPkgPath).json()) as RootManifest;
 
       if (rootPkg.workspaces) {
-        return rootPkg;
+        return { rootDir: currentPath, rootPkg };
       }
     }
     currentPath = dirname(currentPath);
@@ -30,61 +30,27 @@ async function loadRootPackageJson(packagePath: string) {
   throw new Error("Could not find root package.json with workspaces");
 }
 
-function extractCatalogs(rootPkg: any) {
-  const catalogs: Record<string, Record<string, string>> = { default: {} };
+async function collectWorkspaceVersions(rootDir: string, rootPkg: RootManifest): Promise<WorkspaceVersionMap> {
+  const versions: WorkspaceVersionMap = {};
 
-  if (rootPkg.catalog) {
-    catalogs.default = rootPkg.catalog;
-  }
+  for (const workspaceGlob of extractWorkspaceGlobs(rootPkg)) {
+    const glob = new Bun.Glob(`${workspaceGlob}/package.json`);
 
-  if (rootPkg.workspaces?.catalog) {
-    catalogs.default = { ...catalogs.default, ...rootPkg.workspaces.catalog };
-  }
-
-  if (rootPkg.catalogs) {
-    Object.assign(catalogs, rootPkg.catalogs);
-  }
-
-  if (rootPkg.workspaces?.catalogs) {
-    Object.assign(catalogs, rootPkg.workspaces.catalogs);
-  }
-
-  return catalogs;
-}
-
-function resolveDependencies(
-  deps: Record<string, string> | undefined,
-  catalogs: Record<string, Record<string, string>>,
-  packageName: string,
-) {
-  if (!deps) return deps;
-
-  const resolved: Record<string, string> = {};
-
-  for (const [name, version] of Object.entries(deps)) {
-    if (version.startsWith(CATALOG_PREFIX)) {
-      const catalogName = version.slice(CATALOG_PREFIX.length) || "default";
-      const catalogVersion = catalogs[catalogName]?.[name];
-
-      if (!catalogVersion) {
-        throw new Error(`Catalog "${catalogName}" has no entry for "${name}" (required by ${packageName})`);
-      }
-
-      resolved[name] = catalogVersion;
-    } else if (version.startsWith(WORKSPACE_PREFIX)) {
-      resolved[name] = version;
-    } else {
-      resolved[name] = version;
+    for await (const match of glob.scan({ cwd: rootDir })) {
+      const manifest = (await Bun.file(resolve(rootDir, match)).json()) as PackageManifest;
+      if (!manifest.name) continue;
+      versions[manifest.name] = manifest.version ?? null;
     }
   }
 
-  return resolved;
+  return versions;
 }
 
 console.info(`Preparing ${packages.length} package${packages.length > 1 ? "s" : ""} for publish`);
 
 const errors: Array<{ pkg: string; error: string }> = [];
-let catalogs: Record<string, Record<string, string>> | null = null;
+let catalogs: CatalogMap | null = null;
+let workspaceVersions: WorkspaceVersionMap | null = null;
 
 for (const pkg of packages) {
   const pkgPath = resolve(pkg);
@@ -96,22 +62,16 @@ for (const pkg of packages) {
       continue;
     }
 
-    if (!catalogs) {
-      const rootPkg = await loadRootPackageJson(pkgPath);
+    if (!catalogs || !workspaceVersions) {
+      const { rootDir, rootPkg } = await loadRootPackage(pkgPath);
       catalogs = extractCatalogs(rootPkg);
+      workspaceVersions = await collectWorkspaceVersions(rootDir, rootPkg);
     }
 
-    const file = Bun.file(pkgFilePath);
-    const { devDependencies: _, ...pkgJson } = await file.json();
+    const manifest = (await Bun.file(pkgFilePath).json()) as PackageManifest;
+    const publishManifest = createPublishManifest(manifest, catalogs, workspaceVersions);
 
-    const resolvedPkg = {
-      ...pkgJson,
-      dependencies: resolveDependencies(pkgJson.dependencies, catalogs, pkgJson.name),
-      optionalDependencies: resolveDependencies(pkgJson.optionalDependencies, catalogs, pkgJson.name),
-      peerDependencies: resolveDependencies(pkgJson.peerDependencies, catalogs, pkgJson.name),
-    };
-
-    await Bun.write(pkgFilePath, `${JSON.stringify(resolvedPkg, null, 2)}\n`);
+    await Bun.write(pkgFilePath, `${JSON.stringify(publishManifest, null, JSON_INDENT)}\n`);
     console.info(`✅ Processed ${pkg}`);
   } catch (error) {
     errors.push({ error: error instanceof Error ? error.message : String(error), pkg });
