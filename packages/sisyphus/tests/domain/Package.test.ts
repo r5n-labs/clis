@@ -60,6 +60,16 @@ describe("Package.fromJson()", () => {
 
     expect(pkg.name).toBe("@app/private");
     expect(pkg.version).toBe("0.1.0");
+    expect(pkg.isPrivate).toBe(true);
+  });
+
+  test("preserves isPrivate through withBump and withVersions", () => {
+    const pkg = makePackage({ private: true });
+
+    expect(pkg.isPrivate).toBe(true);
+    expect(pkg.withBump(BumpType.Patch).isPrivate).toBe(true);
+    expect(pkg.withBump(BumpType.Patch).withVersions("1.2.3", "1.2.4").isPrivate).toBe(true);
+    expect(makePackage().isPrivate).toBe(false);
   });
 });
 

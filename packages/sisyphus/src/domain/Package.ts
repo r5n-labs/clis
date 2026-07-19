@@ -19,6 +19,7 @@ export type PackageOptions = {
   bump?: BumpType;
   tag?: string;
   newVersion?: string;
+  isPrivate?: boolean;
 };
 
 export class Package {
@@ -28,6 +29,7 @@ export class Package {
   readonly dependencyOf: readonly string[];
   readonly bump?: BumpType;
   readonly tag?: string;
+  readonly isPrivate: boolean;
   private readonly _newVersion?: string;
 
   constructor(options: PackageOptions) {
@@ -37,11 +39,17 @@ export class Package {
     this.dependencyOf = options.dependencyOf ?? [];
     this.bump = options.bump;
     this.tag = options.tag;
+    this.isPrivate = options.isPrivate ?? false;
     this._newVersion = options.newVersion;
   }
 
   static fromJson(json: PackageJson, file: string): Package {
-    return new Package({ file, name: json.name, version: json.version || DEFAULT_VERSION });
+    return new Package({
+      file,
+      isPrivate: json.private ?? false,
+      name: json.name,
+      version: json.version || DEFAULT_VERSION,
+    });
   }
 
   static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
@@ -87,6 +95,7 @@ export class Package {
       bump: this.bump,
       dependencyOf: this.dependencyOf,
       file: this.file,
+      isPrivate: this.isPrivate,
       name: this.name,
       newVersion: this._newVersion,
       tag: this.tag,

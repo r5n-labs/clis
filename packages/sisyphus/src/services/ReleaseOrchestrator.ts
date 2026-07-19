@@ -123,6 +123,10 @@ export class ReleaseOrchestrator {
     if (this.options.dryRun) return;
 
     for (const pkg of packages) {
+      if (pkg.isPrivate) {
+        log.info(color.dim(`Skipping ${pkg.name} (private)`));
+        continue;
+      }
       await this.publishPackage(pkg);
     }
   }
