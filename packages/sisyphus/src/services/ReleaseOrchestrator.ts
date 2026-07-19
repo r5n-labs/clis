@@ -97,7 +97,10 @@ export class ReleaseOrchestrator {
     const authorArg = this.getCommitAuthorArg();
 
     await this.run(() => Bun.$`git add -A -- ${allFiles}`.quiet(), "Failed to stage files");
-    await this.run(() => Bun.$`git commit ${authorArg} -m ${message}`.quiet(), "Failed to create commit");
+    await this.run(
+      () => Bun.$`git commit ${authorArg} -m ${message}`.env(this.getCommitterEnv()).quiet(),
+      "Failed to create commit",
+    );
     this.commitCreated = true;
   }
 
@@ -106,6 +109,16 @@ export class ReleaseOrchestrator {
     if (!author) return [];
     const authorString = email ? `${author} <${email}>` : author;
     return ["--author", authorString];
+  }
+
+  private getCommitterEnv(): Record<string, string> {
+    const { author, email } = this.config.get("commit");
+    const env = { ...process.env } as Record<string, string>;
+    if (!author) return env;
+
+    env.GIT_COMMITTER_NAME = author;
+    if (email) env.GIT_COMMITTER_EMAIL = email;
+    return env;
   }
 
   private getChangelogFiles(packages: Package[]): string[] {
