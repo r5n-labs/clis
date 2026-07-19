@@ -1,15 +1,36 @@
 {
   "author": "@ice-chillios",
-  "bin": { "hydra": "dist/cli.js" },
+  "bin": {
+    "hydra": "dist/cli.js"
+  },
   "description": "A tool for spawning multiple local GitHub self-hosted runners",
-  "dependencies": { "@r5n/cli-core": "workspace:*" },
-  "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
-  "files": ["dist", "schema.json", "LICENSE"],
-  "keywords": ["github", "runner", "self-hosted", "ci", "cd", "automation"],
+  "dependencies": {
+    "@r5n/cli-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@clack/prompts": "1.7.0",
+    "@r5n/tools": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "schema.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "github",
+    "runner",
+    "self-hosted",
+    "ci",
+    "cd",
+    "automation"
+  ],
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/hydra",
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "benchmark": "bun src/scripts/benchmark.ts",
     "build": "rm -rf dist && bun build.ts",
@@ -22,5 +43,5 @@
   },
   "type": "module",
   "types": "src/cli.ts",
-  "version": "0.6.0"
+  "version": "0.7.0"
 }

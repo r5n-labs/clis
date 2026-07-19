@@ -1,5 +1,11 @@
 # @r5n/tools
 
+## 🐛 0.0.2 (2026-07-19)
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## 🐛 0.0.1 (2026-07-19)
 
 ### 🪨 Bug fixes

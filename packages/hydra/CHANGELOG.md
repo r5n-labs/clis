@@ -1,5 +1,19 @@
 # @r5n/hydra
 
+## ✨ 0.7.0 (2026-07-19)
+
+### 🪨 Features
+
+- [`9feb9f3`](https://github.com/r5n-labs/clis/commit/9feb9f3) feat(hydra): support organization-level runners
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## ✨ 0.6.0 (2026-07-19)
 
 ### 🪨 Features

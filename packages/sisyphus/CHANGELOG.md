@@ -1,5 +1,20 @@
 # @r5n/sisyphus
 
+## ✨ 0.6.0 (2026-07-19)
+
+### 🪨 Features
+
+- [`bed3777`](https://github.com/r5n-labs/clis/commit/bed3777) feat(sisyphus): publish manifests with resolved workspace and catalog protocols
+- [`3023901`](https://github.com/r5n-labs/clis/commit/3023901) feat(sisyphus): install sis bin alias alongside sisyphus
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## 🐛 0.5.1 (2026-07-19)
 
 ### 🪨 Bug fixes

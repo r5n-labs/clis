@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-07-19 - @r5n/sisyphus@0.6.0, @r5n/hydra@0.7.0, @r5n/atlas@0.1.2, @r5n/cli-core@0.2.2, @r5n/tools@0.0.2
+
+**Packages**
+- ✨ `@r5n/sisyphus` 0.5.1 → 0.6.0
+- ✨ `@r5n/hydra` 0.6.0 → 0.7.0
+- 🐛 `@r5n/atlas` 0.1.1 → 0.1.2
+- 🐛 `@r5n/cli-core` 0.2.1 → 0.2.2
+- 🐛 `@r5n/tools` 0.0.1 → 0.0.2
+
+### 🪨 Features
+**Packages:** `@r5n/sisyphus` · `@r5n/hydra`
+
+<details>
+<summary>Commits (3)</summary>
+
+- [`bed3777`](https://github.com/r5n-labs/clis/commit/bed3777) feat(sisyphus): publish manifests with resolved workspace and catalog protocols
+- [`9feb9f3`](https://github.com/r5n-labs/clis/commit/9feb9f3) feat(hydra): support organization-level runners
+- [`3023901`](https://github.com/r5n-labs/clis/commit/3023901) feat(sisyphus): install sis bin alias alongside sisyphus
+
+</details>
+
+### 🪨 Documentation
+**Packages:** `@r5n/atlas` · `@r5n/cli-core` · `@r5n/hydra` · `@r5n/sisyphus`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+</details>
+
+### 🪨 Chores
+**Packages:** `@r5n/atlas` · `@r5n/cli-core` · `@r5n/hydra` · `@r5n/sisyphus` · `@r5n/tools`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
+</details>
+
 ## 2026-07-19 - @r5n/hydra@0.6.0, @r5n/atlas@0.1.1, @r5n/sisyphus@0.5.1, @r5n/tools@0.0.1, @r5n/cli-core@0.2.1
 
 **Packages**

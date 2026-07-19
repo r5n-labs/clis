@@ -1,5 +1,15 @@
 # @r5n/cli-core
 
+## 🐛 0.2.2 (2026-07-19)
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## 🐛 0.2.1 (2026-07-19)
 
 ### 🪨 Bug fixes
