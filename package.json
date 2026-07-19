@@ -32,7 +32,5 @@
     "type-check:go": "bun --elide-lines=0 --filter '*' type-check:go"
   },
   "version": "0.0.0",
-  "workspaces": {
-  "packages": ["packages/*", "tools"]
-}
+  "workspaces": { "packages": ["packages/*", "tools"] }
 }
