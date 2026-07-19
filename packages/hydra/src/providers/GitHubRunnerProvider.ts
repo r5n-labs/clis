@@ -3,7 +3,8 @@ import { cp, link, mkdir, readdir, readFile, readlink, rm, symlink, unlink, writ
 import { join, resolve } from "node:path";
 import { SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
-import type { DownloadResult, RunnerInfo, RunnerProvider } from "./types";
+import { DIAG_DIR, discoverLogFiles } from "./log-files";
+import type { DownloadResult, RunnerInfo, RunnerLogFile, RunnerProvider } from "./types";
 
 const RUNNER_REPO = "actions/runner";
 const PLATFORM_MAP = { linux: "linux-x64", osx: "osx-arm64", windows: "win-x64" } as const;
@@ -107,6 +108,10 @@ export class GitHubRunnerProvider implements RunnerProvider {
   async currentVersion(id: string): Promise<string | null> {
     const runnerDir = join(this.profile.directory, id);
     return this.detectVersion(runnerDir);
+  }
+
+  async logFiles(id: string): Promise<RunnerLogFile[]> {
+    return discoverLogFiles(join(this.profile.directory, id, DIAG_DIR));
   }
 
   async update(ids: string[]): Promise<void> {

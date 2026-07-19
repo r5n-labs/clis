@@ -3,6 +3,7 @@ import { version } from "../package.json";
 import {
   CreateCommand,
   InitCommand,
+  LogsCommand,
   ProfileCommand,
   RemoveCommand,
   StartCommand,
@@ -33,6 +34,7 @@ class HydraCLI extends AbstractCLI {
       new StartCommand(),
       new StopCommand(),
       new StatusCommand(),
+      new LogsCommand(),
       new RemoveCommand(),
       new UpdateCommand(),
       new ProfileCommand(),

@@ -4,6 +4,10 @@ export type RunnerInfo = { id: string; name: string; directory: string; status: 
 
 export type DownloadResult = { version: string; path: string };
 
+export type LogFileType = "runner" | "worker";
+
+export type RunnerLogFile = { type: LogFileType; name: string; path: string; mtime: Date; size: number };
+
 export interface RunnerProvider {
   download(): Promise<DownloadResult>;
   create(ids: string[]): Promise<RunnerInfo[]>;
@@ -13,4 +17,5 @@ export interface RunnerProvider {
   list(): Promise<RunnerInfo[]>;
   currentVersion(id: string): Promise<string | null>;
   update(ids: string[]): Promise<void>;
+  logFiles(id: string): Promise<RunnerLogFile[]>;
 }

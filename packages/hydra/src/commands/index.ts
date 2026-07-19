@@ -1,5 +1,6 @@
 export { CreateCommand } from "./create";
 export { InitCommand } from "./init";
+export { LogsCommand } from "./logs";
 export { ProfileCommand } from "./profile";
 export { RemoveCommand } from "./remove";
 export { StartCommand } from "./start";
