@@ -1,0 +1,27 @@
+{
+  "commits": [
+    {
+      "hash": "4454834",
+      "message": "add unit tests for pure functions (#11)",
+      "packages": [
+        "@r5n/cli-core",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "scope": "core,sisyphus",
+      "subject": "test(core,sisyphus): add unit tests for pure functions (#11)",
+      "type": "test"
+    }
+  ],
+  "dependency": [
+    "@r5n/hydra",
+    "@r5n/atlas"
+  ],
+  "id": "0003-dbf4d56e",
+  "message": "Tests",
+  "patch": [
+    "@r5n/cli-core",
+    "@r5n/sisyphus",
+    "@r5n/tools"
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "commits": [
+    {
+      "hash": "698f737",
+      "message": "[r5n-86] [Hydra] `update` command (#17)",
+      "packages": [
+        "@r5n/hydra",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "subject": "[r5n-86] [Hydra] `update` command (#17)",
+      "type": "other"
+    },
+    {
+      "hash": "b06781a",
+      "message": "[r5n-64] `hydra` cli (#16)",
+      "packages": [
+        "@r5n/cli-core",
+        "@r5n/hydra"
+      ],
+      "subject": "[r5n-64] `hydra` cli (#16)",
+      "type": "other"
+    },
+    {
+      "hash": "32916fb",
+      "message": "[r5n-0] gitlab support, `actions` command improvements/fixes (#14)",
+      "packages": [
+        "@r5n/cli-core",
+        "@r5n/sisyphus"
+      ],
+      "subject": "[r5n-0] gitlab support, `actions` command improvements/fixes (#14)",
+      "type": "other"
+    },
+    {
+      "hash": "644bde3",
+      "message": "[r5n-83] `actions` command (#7)",
+      "packages": [
+        "@r5n/cli-core",
+        "@r5n/sisyphus"
+      ],
+      "subject": "[r5n-83] `actions` command (#7)",
+      "type": "other"
+    },
+    {
+      "body": "Co-authored-by: Ice <17621507+ice-chillios@users.noreply.github.com>",
+      "hash": "3764b4b",
+      "message": "[R5N-80] Add `pr` command to create stones from pull requests (#4)",
+      "packages": [
+        "@r5n/cli-core",
+        "@r5n/sisyphus"
+      ],
+      "subject": "[R5N-80] Add `pr` command to create stones from pull requests (#4)",
+      "type": "other"
+    },
+    {
+      "hash": "b1cd013",
+      "message": ":tada",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "subject": ":tada",
+      "type": "other"
+    }
+  ],
+  "id": "0005-226570c5",
+  "message": "Other changes",
+  "patch": [
+    "@r5n/hydra",
+    "@r5n/sisyphus",
+    "@r5n/tools",
+    "@r5n/cli-core",
+    "@r5n/atlas"
+  ]
+}

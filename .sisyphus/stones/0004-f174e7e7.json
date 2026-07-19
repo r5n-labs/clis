@@ -1,0 +1,71 @@
+{
+  "commits": [
+    {
+      "hash": "ca3072d",
+      "message": "format package manifests with biome",
+      "packages": [
+        "@r5n/cli-core"
+      ],
+      "subject": "chore: format package manifests with biome",
+      "type": "chore"
+    },
+    {
+      "hash": "5ffd491",
+      "message": "bumps",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus"
+      ],
+      "subject": "chore: bumps",
+      "type": "chore"
+    },
+    {
+      "body": "Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "hash": "96ead19",
+      "message": "bump the dependencies group with 5 updates (#19)",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus"
+      ],
+      "scope": "deps",
+      "subject": "chore(deps): bump the dependencies group with 5 updates (#19)",
+      "type": "chore"
+    },
+    {
+      "hash": "5d3f8bc",
+      "message": "update workflows",
+      "packages": [
+        "@r5n/tools"
+      ],
+      "subject": "chore: update workflows",
+      "type": "chore"
+    },
+    {
+      "body": "Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "hash": "151af94",
+      "message": "bump the dependencies group with 4 updates (#3)",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus"
+      ],
+      "scope": "deps",
+      "subject": "chore(deps): bump the dependencies group with 4 updates (#3)",
+      "type": "chore"
+    }
+  ],
+  "id": "0004-f174e7e7",
+  "message": "Chores",
+  "patch": [
+    "@r5n/cli-core",
+    "@r5n/atlas",
+    "@r5n/hydra",
+    "@r5n/sisyphus",
+    "@r5n/tools"
+  ]
+}

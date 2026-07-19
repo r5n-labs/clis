@@ -1,0 +1,57 @@
+{
+  "commits": [
+    {
+      "hash": "1e05c63",
+      "message": "resolve workspace and catalog protocols on publish with manifest restore",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/hydra",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "scope": "tools",
+      "subject": "fix(tools): resolve workspace and catalog protocols on publish with manifest restore",
+      "type": "fix"
+    },
+    {
+      "hash": "5cc709f",
+      "message": "use spinner error styling on failure paths",
+      "packages": [
+        "@r5n/sisyphus"
+      ],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): use spinner error styling on failure paths",
+      "type": "fix"
+    },
+    {
+      "hash": "0edd9d6",
+      "message": "support help command and drop duplicate clack instruction hints",
+      "packages": [
+        "@r5n/cli-core"
+      ],
+      "scope": "core",
+      "subject": "fix(core): support help command and drop duplicate clack instruction hints",
+      "type": "fix"
+    },
+    {
+      "body": "Option is deprecated as of TS 5.5+ and TS5101 fails the build with a\nnon-zero exit. Target is ESNext so the flag has no runtime effect anyway.\n\nAlso picks up a Biome auto-format on package.json (workspaces field).",
+      "hash": "fd66bc2",
+      "message": "remove deprecated downlevelIteration to unblock CI",
+      "packages": [
+        "@r5n/tools"
+      ],
+      "scope": "tsconfig",
+      "subject": "fix(tsconfig): remove deprecated downlevelIteration to unblock CI",
+      "type": "fix"
+    }
+  ],
+  "id": "0002-97ca4abd",
+  "message": "Bug fixes",
+  "patch": [
+    "@r5n/atlas",
+    "@r5n/hydra",
+    "@r5n/sisyphus",
+    "@r5n/tools",
+    "@r5n/cli-core"
+  ]
+}

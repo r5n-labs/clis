@@ -4,7 +4,9 @@
     "append": true,
     "filename": "CHANGELOG.md",
     "generate": true,
+    "packageHeader": "{emoji} {version} ({date})",
     "root": true,
+    "rootHeader": "{date} - {packages}",
     "sections": {
       "breaking": "Breaking changes",
       "build": "Build",
@@ -21,9 +23,27 @@
       "test": "Tests"
     }
   },
-  "commit": { "author": "Sisyphus", "email": "contact@r5n.dev", "message": "release(🎉): {message}" },
+  "commit": {
+    "author": "Sisyphus",
+    "message": "release(🎉): {message}",
+    "email": "contact@r5n.dev"
+  },
+  "commits": {
+    "skip": {
+      "authors": [
+        "r5n-bot[bot]"
+      ],
+      "messagePatterns": [
+        "^chore\\(release\\):",
+        "^chore: add stone"
+      ]
+    }
+  },
   "ignore": [],
-  "lastStone": { "commit": "98273fb2f87b0095a93d9b863d6332bb5a1f8cb1", "date": "2026-03-07T01:37:47.284Z" },
+  "lastStone": {
+    "commit": "98273fb2f87b0095a93d9b863d6332bb5a1f8cb1",
+    "date": "2026-03-07T01:37:47.284Z"
+  },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -35,12 +55,40 @@
       "enhancement": "minor",
       "feature": "minor",
       "fix": "patch"
+    },
+    "skip": {
+      "authors": [
+        "r5n-bot[bot]"
+      ],
+      "labels": [
+        "sisyphus-release",
+        "skip-stone"
+      ],
+      "titlePatterns": [
+        "^chore\\(release\\):"
+      ]
     }
   },
-  "release": { "commitAndPush": true, "github": true, "npm": true, "push": false, "tags": true },
-  "scripts": { "post": {}, "pre": {} },
+  "release": {
+    "createRelease": false,
+    "npm": true,
+    "push": false,
+    "tags": true,
+    "commitAndPush": true,
+    "github": true
+  },
+  "scripts": {
+    "post": {},
+    "pre": {}
+  },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": [
+    "0001-741d2bed",
+    "0002-97ca4abd",
+    "0003-dbf4d56e",
+    "0004-f174e7e7",
+    "0005-226570c5"
+  ],
   "tag": "latest"
 }
