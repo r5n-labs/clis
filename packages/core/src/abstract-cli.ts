@@ -61,8 +61,18 @@ export abstract class AbstractCLI {
     if (flags.version && !command) return console.log(this.help.version());
     if (flags.interactive && !command) return this.runInteractive();
     if (!command) return console.log(this.help.global());
+    if (command === "help") return this.printHelpFor(restArgs[0]);
 
     await this.runDirect(command, restArgs, !!flags.help);
+  }
+
+  private printHelpFor(name?: string) {
+    if (!name) return console.log(this.help.global());
+
+    const cmd = this.commands.get(name);
+    if (!cmd) return this.handleUnknownCommand(name);
+
+    console.log(this.help.command(cmd));
   }
 
   private async runInteractive() {
