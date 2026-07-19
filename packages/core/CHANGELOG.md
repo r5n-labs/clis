@@ -1,5 +1,45 @@
 # @r5n/cli-core
 
+## 🐛 0.2.1 (2026-07-19)
+
+### 🪨 Bug fixes
+
+- [`0edd9d6`](https://github.com/r5n-labs/clis/commit/0edd9d6) fix(core): support help command and drop duplicate clack instruction hints
+
+### 🪨 Tests
+
+- [`4454834`](https://github.com/r5n-labs/clis/commit/4454834) test(core,sisyphus): add unit tests for pure functions (#11)
+
+### 🪨 Chores
+
+- [`ca3072d`](https://github.com/r5n-labs/clis/commit/ca3072d) chore: format package manifests with biome
+- [`5ffd491`](https://github.com/r5n-labs/clis/commit/5ffd491) chore: bumps
+- [`96ead19`](https://github.com/r5n-labs/clis/commit/96ead19) chore(deps): bump the dependencies group with 5 updates (#19)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+  </details>
+- [`151af94`](https://github.com/r5n-labs/clis/commit/151af94) chore(deps): bump the dependencies group with 4 updates (#3)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+  </details>
+
+### 🪨 Other changes
+
+- [`b06781a`](https://github.com/r5n-labs/clis/commit/b06781a) [r5n-64] `hydra` cli (#16)
+- [`32916fb`](https://github.com/r5n-labs/clis/commit/32916fb) [r5n-0] gitlab support, `actions` command improvements/fixes (#14)
+- [`644bde3`](https://github.com/r5n-labs/clis/commit/644bde3) [r5n-83] `actions` command (#7)
+- [`3764b4b`](https://github.com/r5n-labs/clis/commit/3764b4b) [R5N-80] Add `pr` command to create stones from pull requests (#4)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: Ice <17621507+ice-chillios@users.noreply.github.com>
+  </details>
+- [`b1cd013`](https://github.com/r5n-labs/clis/commit/b1cd013) :tada
+
 ## ✨ 0.2.0 (2026-03-07)
 
 ### 🪨 Rewrite from utility library to class-based CLI framework

@@ -1,16 +1,36 @@
 {
   "author": "@ice-chillios",
-  "bin": { "atlas": "dist/cli.js" },
+  "bin": {
+    "atlas": "dist/cli.js"
+  },
   "description": "Atlas CLI - A tool for exploring and mapping codebases",
-  "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
-  "files": ["dist", "LICENSE"],
-  "keywords": ["cli", "codebase", "exploration", "mapping", "analysis"],
+  "devDependencies": {
+    "@clack/prompts": "1.7.0",
+    "@r5n/tools": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "keywords": [
+    "cli",
+    "codebase",
+    "exploration",
+    "mapping",
+    "analysis"
+  ],
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/atlas",
   "private": true,
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
-  "repository": { "type": "git", "url": "git+https://github.com/r5n-labs/clis.git" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r5n-labs/clis.git"
+  },
   "scripts": {
     "build": "rm -rf dist && bun build.ts",
     "clean": "rm -rf dist node_modules",
@@ -22,5 +42,5 @@
   },
   "type": "module",
   "types": "src/cli.ts",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

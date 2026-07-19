@@ -1,5 +1,99 @@
 # Changelog
 
+## 2026-07-19 - @r5n/hydra@0.6.0, @r5n/atlas@0.1.1, @r5n/sisyphus@0.5.1, @r5n/tools@0.0.1, @r5n/cli-core@0.2.1
+
+**Packages**
+- ✨ `@r5n/hydra` 0.5.8 → 0.6.0
+- 🐛 `@r5n/atlas` 0.1.0 → 0.1.1
+- 🐛 `@r5n/sisyphus` 0.5.0 → 0.5.1
+- 🐛 `@r5n/tools` 0.0.0 → 0.0.1
+- 🐛 `@r5n/cli-core` 0.2.0 → 0.2.1
+
+### 🪨 Features
+**Packages:** `@r5n/hydra`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`8a6db08`](https://github.com/r5n-labs/clis/commit/8a6db08) feat(hydra): add logs command for inspecting runner job logs
+
+</details>
+
+### 🪨 Bug fixes
+**Packages:** `@r5n/atlas` · `@r5n/hydra` · `@r5n/sisyphus` · `@r5n/tools` · `@r5n/cli-core`
+
+<details>
+<summary>Commits (4)</summary>
+
+- [`1e05c63`](https://github.com/r5n-labs/clis/commit/1e05c63) fix(tools): resolve workspace and catalog protocols on publish with manifest restore
+- [`5cc709f`](https://github.com/r5n-labs/clis/commit/5cc709f) fix(sisyphus): use spinner error styling on failure paths
+- [`0edd9d6`](https://github.com/r5n-labs/clis/commit/0edd9d6) fix(core): support help command and drop duplicate clack instruction hints
+- [`fd66bc2`](https://github.com/r5n-labs/clis/commit/fd66bc2) fix(tsconfig): remove deprecated downlevelIteration to unblock CI
+  <details>
+  <summary>Details</summary>
+
+  Option is deprecated as of TS 5.5+ and TS5101 fails the build with a
+  non-zero exit. Target is ESNext so the flag has no runtime effect anyway.
+  
+  Also picks up a Biome auto-format on package.json (workspaces field).
+  </details>
+
+</details>
+
+### 🪨 Tests
+**Packages:** `@r5n/cli-core` · `@r5n/sisyphus` · `@r5n/tools`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`4454834`](https://github.com/r5n-labs/clis/commit/4454834) test(core,sisyphus): add unit tests for pure functions (#11)
+
+</details>
+
+### 🪨 Chores
+**Packages:** `@r5n/cli-core` · `@r5n/atlas` · `@r5n/hydra` · `@r5n/sisyphus` · `@r5n/tools`
+
+<details>
+<summary>Commits (5)</summary>
+
+- [`ca3072d`](https://github.com/r5n-labs/clis/commit/ca3072d) chore: format package manifests with biome
+- [`5ffd491`](https://github.com/r5n-labs/clis/commit/5ffd491) chore: bumps
+- [`96ead19`](https://github.com/r5n-labs/clis/commit/96ead19) chore(deps): bump the dependencies group with 5 updates (#19)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+  </details>
+- [`5d3f8bc`](https://github.com/r5n-labs/clis/commit/5d3f8bc) chore: update workflows
+- [`151af94`](https://github.com/r5n-labs/clis/commit/151af94) chore(deps): bump the dependencies group with 4 updates (#3)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+  </details>
+
+</details>
+
+### 🪨 Other changes
+**Packages:** `@r5n/hydra` · `@r5n/sisyphus` · `@r5n/tools` · `@r5n/cli-core` · `@r5n/atlas`
+
+<details>
+<summary>Commits (6)</summary>
+
+- [`698f737`](https://github.com/r5n-labs/clis/commit/698f737) [r5n-86] [Hydra] `update` command (#17)
+- [`b06781a`](https://github.com/r5n-labs/clis/commit/b06781a) [r5n-64] `hydra` cli (#16)
+- [`32916fb`](https://github.com/r5n-labs/clis/commit/32916fb) [r5n-0] gitlab support, `actions` command improvements/fixes (#14)
+- [`644bde3`](https://github.com/r5n-labs/clis/commit/644bde3) [r5n-83] `actions` command (#7)
+- [`3764b4b`](https://github.com/r5n-labs/clis/commit/3764b4b) [R5N-80] Add `pr` command to create stones from pull requests (#4)
+  <details>
+  <summary>Details</summary>
+
+  Co-authored-by: Ice <17621507+ice-chillios@users.noreply.github.com>
+  </details>
+- [`b1cd013`](https://github.com/r5n-labs/clis/commit/b1cd013) :tada
+
+</details>
+
 ## 2026-03-07
 
 **Packages**
