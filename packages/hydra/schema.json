@@ -1,5 +1,5 @@
 {
-  "$comment": "Add this to your hydra.json: \"$schema\": \"https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/hydra/schema.json\"",
+  "$comment": "Add this to your .hydra/config.json: \"$schema\": \"https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/hydra/schema.json\"",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
@@ -7,7 +7,7 @@
       "additionalProperties": false,
       "properties": {
         "directory": {
-          "default": "./gh-runners",
+          "default": ".hydra/runners",
           "description": "Directory where runners will be created",
           "type": "string"
         },
@@ -26,14 +26,45 @@
           "type": "string"
         },
         "overwrite": { "default": false, "description": "Whether to overwrite existing runners", "type": "boolean" },
+        "provider": {
+          "default": "github",
+          "description": "Runner provider backing this profile",
+          "enum": ["github", "gitlab"],
+          "type": "string"
+        },
         "run": {
           "default": false,
           "description": "Whether to start runners immediately after creation",
           "type": "boolean"
         },
-        "runnerGroup": { "description": "Runner group to assign runners to", "type": "string" },
-        "url": { "description": "GitHub repository or organization URL", "format": "uri", "type": "string" }
+        "runnerGroup": {
+          "description": "Runner group to assign runners to (applies to organization runners)",
+          "type": "string"
+        },
+        "url": {
+          "description": "GitHub repository URL (https://github.com/<owner>/<repo>) or organization URL (https://github.com/<org>)",
+          "format": "uri",
+          "type": "string"
+        }
       },
+      "type": "object"
+    },
+    "runnerEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": { "description": "ISO timestamp of when the runner was created", "type": "string" },
+        "directory": { "description": "Directory of the runner installation", "type": "string" },
+        "id": { "description": "Runner identifier", "type": "string" },
+        "name": { "description": "Runner name as registered with the provider", "type": "string" },
+        "profile": { "description": "Profile the runner belongs to", "type": "string" },
+        "provider": {
+          "description": "Provider the runner is registered with",
+          "enum": ["github", "gitlab"],
+          "type": "string"
+        },
+        "url": { "description": "Repository or organization URL the runner is registered against", "type": "string" }
+      },
+      "required": ["id", "name", "profile", "provider", "url", "directory", "createdAt"],
       "type": "object"
     }
   },
@@ -45,6 +76,11 @@
       "additionalProperties": { "$ref": "#/definitions/profile" },
       "description": "Named profiles for different runner configurations",
       "type": "object"
+    },
+    "runners": {
+      "description": "Runners Hydra has created; managed by Hydra, do not edit by hand",
+      "items": { "$ref": "#/definitions/runnerEntry" },
+      "type": "array"
     }
   },
   "required": ["profiles"],

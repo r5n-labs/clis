@@ -3,6 +3,8 @@ import { cp, link, mkdir, readdir, readFile, readlink, rm, symlink, unlink, writ
 import { join, resolve } from "node:path";
 import { SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
+import type { GitHubTarget } from "./github-url";
+import { describeGitHubTarget, parseGitHubUrl } from "./github-url";
 import { DIAG_DIR, discoverLogFiles } from "./log-files";
 import type { DownloadResult, RunnerInfo, RunnerLogFile, RunnerProvider } from "./types";
 
@@ -175,16 +177,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
   }
 
   private async fetchRegistrationToken(): Promise<string> {
-    const { owner, repo } = this.parseUrl(this.profile.url);
-    const result =
-      await Bun.$`gh api repos/${owner}/${repo}/actions/runners/registration-token --method POST --jq .token`.quiet();
-    const token = result.stdout.toString().trim();
-
-    if (!token) {
-      throw new Error(`Failed to fetch registration token for ${owner}/${repo}`);
-    }
-
-    return token;
+    return this.fetchRunnerToken(parseGitHubUrl(this.profile.url), "registration-token");
   }
 
   private async fetchRemovalToken(runnerDir: string): Promise<string> {
@@ -193,23 +186,36 @@ export class GitHubRunnerProvider implements RunnerProvider {
     const url = config.gitHubUrl;
     if (!url) throw new Error("Cannot determine GitHub URL from runner config");
 
-    const { owner, repo } = this.parseUrl(url);
-    const result =
-      await Bun.$`gh api repos/${owner}/${repo}/actions/runners/remove-token --method POST --jq .token`.quiet();
-    return result.stdout.toString().trim();
+    return this.fetchRunnerToken(parseGitHubUrl(url), "remove-token");
+  }
+
+  private async fetchRunnerToken(target: GitHubTarget, action: "registration-token" | "remove-token") {
+    const endpoint =
+      target.kind === "repo"
+        ? `repos/${target.owner}/${target.repo}/actions/runners/${action}`
+        : `orgs/${target.org}/actions/runners/${action}`;
+    const scopeHint =
+      target.kind === "repo" ? "gh needs admin access to the repository" : "gh needs the admin:org scope";
+
+    const result = await Bun.$`gh api ${endpoint} --method POST --jq .token`.quiet().nothrow();
+    if (result.exitCode !== 0) {
+      const stderr = result.stderr.toString().trim();
+      throw new Error(
+        `gh api ${endpoint} failed for ${describeGitHubTarget(target)} (${scopeHint})${stderr ? `: ${stderr}` : ""}`,
+      );
+    }
+
+    const token = result.stdout.toString().trim();
+    if (!token) {
+      throw new Error(`Failed to fetch ${action} for ${describeGitHubTarget(target)}`);
+    }
+
+    return token;
   }
 
   private async getLatestVersion(): Promise<string> {
     const result = await Bun.$`gh api repos/${RUNNER_REPO}/releases/latest --jq .tag_name`.quiet();
     return result.stdout.toString().trim().replace(/^v/, "");
-  }
-
-  private parseUrl(url: string): { owner: string; repo: string } {
-    const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
-    if (!match?.[1] || !match[2]) {
-      throw new Error(`Invalid GitHub URL: ${url}`);
-    }
-    return { owner: match[1], repo: match[2] };
   }
 
   private pidFilePath(runnerDir: string) {

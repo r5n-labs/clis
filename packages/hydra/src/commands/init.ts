@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { args, Cancel, color, confirm, Exit, group, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
+import { parseGitHubUrl } from "../providers";
 import type { Profile } from "../types";
 
 const initPositionals = positionals({ url: { description: "GitHub repository or organization URL" } });
@@ -91,9 +92,9 @@ export class InitCommand extends BaseCommand {
             validate: (v): string | undefined => {
               if (!v) return "URL is required";
               try {
-                new URL(v);
+                parseGitHubUrl(v);
               } catch {
-                return "Must be a valid URL";
+                return "Must be a GitHub repository or organization URL (https://github.com/<owner>/<repo> or https://github.com/<org>)";
               }
               return undefined;
             },
@@ -157,9 +158,12 @@ export class InitCommand extends BaseCommand {
 
   private validateUrl(url: string) {
     try {
-      new URL(url);
-    } catch {
-      throw new Exit(`Invalid URL: ${url}`);
+      parseGitHubUrl(url);
+    } catch (error) {
+      throw new Exit(
+        error instanceof Error ? error.message : `Invalid GitHub URL: ${url}`,
+        "Expected https://github.com/<owner>/<repo> or https://github.com/<org>",
+      );
     }
   }
 

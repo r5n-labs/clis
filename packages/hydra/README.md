@@ -4,12 +4,12 @@ Spawn and manage local self-hosted GitHub Actions runners.
 
 [![npm version](https://img.shields.io/npm/v/@r5n/hydra.svg)](https://www.npmjs.com/package/@r5n/hydra) [![License](https://img.shields.io/npm/l/@r5n/hydra.svg)](./LICENSE)
 
-Hydra registers runners against a GitHub repository and runs them as background processes on the machine it runs on. All state lives in a `.hydra/` directory relative to your current working directory, so each directory you run it from is its own isolated runner fleet.
+Hydra registers runners against a GitHub repository or organization and runs them as background processes on the machine it runs on. All state lives in a `.hydra/` directory relative to your current working directory, so each directory you run it from is its own isolated runner fleet.
 
 ## Requirements
 
 - Bun (the published CLI runs on Bun)
-- `gh` CLI, installed and authenticated (`gh auth login`), with admin access to the target repository — Hydra mints runner registration and removal tokens via `gh api`; it never asks for or stores a token itself
+- `gh` CLI, installed and authenticated (`gh auth login`) — Hydra mints runner registration and removal tokens via `gh api`; it never asks for or stores a token itself. Repository runners need admin access to the repository; organization runners need the `admin:org` scope.
 - `bash`, `curl`, `tar`
 - macOS (Apple Silicon) or Linux (x64). A `win-x64` runner download mapping exists in the code, but registration and startup shell out to `bash config.sh` / `bash run.sh`, so Windows is not actually supported.
 
@@ -102,9 +102,9 @@ Bare `hydra` prints help. `hydra -i` opens an interactive menu that walks throug
 }
 ```
 
-`os` is one of `osx` | `linux` | `windows` (auto-detected by `init`). An optional `runnerGroup` string is passed through to `config.sh --runnergroup`. The `runners` array is Hydra's record of what it created — leave it alone.
+`os` is one of `osx` | `linux` | `windows` (auto-detected by `init`). An optional `runnerGroup` string is passed through to `config.sh --runnergroup`; runner groups only apply to organization runners. The `runners` array is Hydra's record of what it created — leave it alone.
 
-The `url` must be a repository URL (`https://github.com/owner/repo`). Registration tokens are fetched from the repository endpoint, so organization-level runners are not supported.
+The `url` is either a repository URL (`https://github.com/owner/repo`) or an organization URL (`https://github.com/org`). Repository URLs mint tokens from the repository endpoint (requires repo admin); organization URLs use the organization endpoint (requires the `admin:org` scope).
 
 ## How it works
 

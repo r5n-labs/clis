@@ -3,6 +3,7 @@ import { GitHubRunnerProvider } from "./GitHubRunnerProvider";
 import type { RunnerProvider } from "./types";
 
 export { GitHubRunnerProvider } from "./GitHubRunnerProvider";
+export { describeGitHubTarget, type GitHubTarget, parseGitHubUrl } from "./github-url";
 export {
   classifyLogFile,
   DIAG_DIR,
