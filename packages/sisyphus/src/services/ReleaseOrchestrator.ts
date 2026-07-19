@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
 import { DEFAULT_NPM_TAG } from "../constants";
@@ -7,6 +8,15 @@ import type { SisyphusConfig } from "../types";
 import { ChangelogGenerator } from "./ChangelogGenerator";
 import { GitRemoteParser } from "./GitRemoteParser";
 import { PackageUpdater } from "./PackageUpdater";
+import {
+  type CatalogMap,
+  extractCatalogs,
+  type RootManifest,
+  renderPublishManifest,
+  type WorkspaceVersionMap,
+  workspaceVersionsFromPackages,
+} from "./PublishManifest";
+import { WorkspaceScanner } from "./WorkspaceScanner";
 
 export type ReleaseOptions = {
   changelog: boolean;
@@ -28,6 +38,7 @@ export class ReleaseOrchestrator {
   private createdReleases: string[] = [];
   private commitCreated = false;
   private pushedToRemote = false;
+  private publishContext: { catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap } | null = null;
 
   constructor(
     private config: ConfigManager<SisyphusConfig>,
@@ -272,10 +283,30 @@ export class ReleaseOrchestrator {
     const pkgDir = dirname(pkg.file);
 
     await this.run(() => Bun.$`bun run build`.cwd(pkgDir).quiet(), `Failed to build ${pkg.name}`);
-    await this.run(
-      () => Bun.$`npm publish --tag ${tag} --access public`.cwd(pkgDir).quiet(),
-      `Failed to publish ${pkg.name}`,
-    );
+
+    const originalText = await readFile(pkg.file, "utf-8");
+    try {
+      const { catalogs, workspaceVersions } = await this.getPublishContext();
+      await writeFile(pkg.file, renderPublishManifest(originalText, catalogs, workspaceVersions), "utf-8");
+      await this.run(
+        () => Bun.$`npm publish --tag ${tag} --access public`.cwd(pkgDir).quiet(),
+        `Failed to publish ${pkg.name}`,
+      );
+    } finally {
+      await writeFile(pkg.file, originalText, "utf-8");
+    }
+  }
+
+  private async getPublishContext(): Promise<{ catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap }> {
+    if (!this.publishContext) {
+      const rootManifest = (await Bun.file("package.json").json()) as RootManifest;
+      const { packages } = await WorkspaceScanner.scan({ single: this.config.get("single") });
+      this.publishContext = {
+        catalogs: extractCatalogs(rootManifest),
+        workspaceVersions: workspaceVersionsFromPackages(packages.values()),
+      };
+    }
+    return this.publishContext;
   }
 
   private formatCommitMessage(stone: Stone, packages: Package[]): string {

@@ -74,7 +74,7 @@ sisyphus roll -n -t -p -y
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
 - `-d, --dryRun`, `-y, --yes`
 
-Publishing builds each package (`bun run build`) and runs `npm publish --tag <tag> --access public` in its directory. Private packages (`"private": true`) are skipped.
+Publishing builds each package (`bun run build`) and runs `npm publish --tag <tag> --access public` in its directory. Private packages (`"private": true`) are skipped. Before publishing, each `package.json` is rewritten to a clean manifest: `workspace:` specifiers are resolved against the actual workspace versions (`workspace:*` pins the exact version, `workspace:^`/`workspace:~` become ranges), `catalog:` specifiers are resolved from the root `catalog`/`catalogs`, and `devDependencies` are stripped. The original file text is restored afterward, even if publishing fails.
 
 ### `sisyphus pr`
 
