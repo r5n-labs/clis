@@ -13,9 +13,10 @@ import {
 } from "../../src/services/PublishManifest";
 
 const workspaceVersions: WorkspaceVersionMap = {
-  "@org/core": "1.2.3",
-  "@org/unversioned": null,
-  "@org/utils": "0.5.0",
+  "@org/core": { isPrivate: false, version: "1.2.3" },
+  "@org/internal": { isPrivate: true, version: "0.9.0" },
+  "@org/unversioned": { isPrivate: false, version: null },
+  "@org/utils": { isPrivate: false, version: "0.5.0" },
 };
 
 const catalogs: CatalogMap = { default: { react: "^19.0.0", zod: "3.24.1" }, testing: { vitest: "^2.0.0" } };
@@ -42,6 +43,18 @@ describe("PublishManifest", () => {
       expect(() => resolveWorkspaceVersion("@org/missing", "workspace:*", workspaceVersions, "@org/app")).toThrow(Exit);
       expect(() => resolveWorkspaceVersion("@org/missing", "workspace:*", workspaceVersions, "@org/app")).toThrow(
         'Workspace package "@org/missing" (required by @org/app) was not found in the workspace',
+      );
+    });
+
+    test("private workspace package throws Exit for workspace:*", () => {
+      expect(() => resolveWorkspaceVersion("@org/internal", "workspace:*", workspaceVersions, "@org/app")).toThrow(
+        '"@org/app" depends on private workspace package "@org/internal", which is not published to the registry',
+      );
+    });
+
+    test("private workspace package throws Exit even for explicit workspace:<range>", () => {
+      expect(() => resolveWorkspaceVersion("@org/internal", "workspace:0.9.0", workspaceVersions, "@org/app")).toThrow(
+        Exit,
       );
     });
 
@@ -215,12 +228,15 @@ describe("PublishManifest", () => {
         new Package({ file: "packages/core/package.json", name: "@org/core", version: "1.2.3" }),
         new Package({ file: "packages/utils/package.json", name: "@org/utils", version: "0.5.0" }),
       ];
-      expect(workspaceVersionsFromPackages(packages)).toEqual({ "@org/core": "1.2.3", "@org/utils": "0.5.0" });
+      expect(workspaceVersionsFromPackages(packages)).toEqual({
+        "@org/core": { isPrivate: false, version: "1.2.3" },
+        "@org/utils": { isPrivate: false, version: "0.5.0" },
+      });
     });
 
     test("maps an empty version to null", () => {
       const packages = [new Package({ file: "packages/x/package.json", name: "@org/x", version: "" })];
-      expect(workspaceVersionsFromPackages(packages)).toEqual({ "@org/x": null });
+      expect(workspaceVersionsFromPackages(packages)).toEqual({ "@org/x": { isPrivate: false, version: null } });
     });
   });
 });
