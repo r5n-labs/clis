@@ -1,327 +1,218 @@
 # Sisyphus
 
-<div align="center">
+Monorepo versioning and release tool. Pending changes are recorded as "stones" (JSON files in `.sisyphus/stones/`, in the spirit of changesets); rolling them bumps versions, writes changelogs, tags, publishes, and pushes in one step.
 
-[![npm version](https://img.shields.io/npm/v/@r5n/sisyphus.svg)](https://www.npmjs.com/package/@r5n/sisyphus)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
-![Bundle Size](https://img.shields.io/badge/bundle_size-~163KB-green.svg)
+[![npm](https://img.shields.io/npm/v/@r5n/sisyphus.svg)](https://www.npmjs.com/package/@r5n/sisyphus) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Monorepo versioning with changesets ("stones").
+The binary is `sisyphus`, with `sis` as a short alias. Sisyphus runs on [Bun](https://bun.sh) and discovers packages from the `workspaces` globs in your root `package.json`.
 
-</div>
-
-## Quick Start
+## Install
 
 ```bash
-# Install
 bun add -g @r5n/sisyphus
-
-# Initialize
-sisyphus init
-
-# Create a version "stone"
-sisyphus version
-
-# Release
-sisyphus roll --npm --github
 ```
 
-## Why Stones?
+Or add it as a dev dependency and run it with `bunx @r5n/sisyphus`.
 
-Traditional versioning forces immediate releases. Stones let you stack changes and release when ready:
+## Quick start
 
 ```bash
-# Monday: Bug fix
-sisyphus version --bump patch --filter @org/auth
-
-# Tuesday: New feature
-sisyphus version --bump minor --filter @org/api
-
-# Friday: Ship it
-sisyphus check              # Review pending changes
-sisyphus roll --npm --github # Release all at once
+sisyphus init
+sisyphus version
+sisyphus check
+sisyphus roll
 ```
 
-**Benefits:**
-- Stack changes throughout the week
-- Coordinate multi-package updates
-- Review before releasing
-- Git-friendly (stones are markdown files)
+`init` writes `.sisyphus/config.json` (flag-driven; an interactive form lives in the `sis -i` menu). `version` with no arguments prompts you to pick packages per bump type and enter a message, then writes a stone. `check` shows workspace packages and what each pending stone will release. `roll` merges all pending stones, applies the version bumps, and deletes the stones.
+
+By default `roll` only updates files and creates the release commit. Publishing, tagging, pushing, and provider releases are opt-in via flags or the `release` section of the config.
 
 ## Commands
 
-### `sisyphus init`
-
-Initialize config in your project.
-
-```bash
-sisyphus init                    # Interactive
-sisyphus init --single           # Single package mode
-sisyphus init --nonInteractive   # Skip prompts
-```
-
 ### `sisyphus version`
 
-Create a version stone (changeset).
+Create a stone. Interactive when run without positionals; non-interactive with a message and package lists:
 
 ```bash
-# Interactive
-sisyphus version
-
-# Specify packages and bump
-sisyphus version --bump minor --filter @org/core
-
-# Snapshot/prerelease
-sisyphus version --snapshot --tag dev
+sisyphus version "feat: add auth" -m @org/auth -p @org/core
+sisyphus version "fix: rc fixes" -p @org/api -t beta
+sisyphus version --fromCommits
 ```
 
-**Options:**
-- `-b, --bump` — Bump type: major, minor, patch
-- `-f, --filter` — Package name filter
-- `-s, --snapshot` — Create snapshot version
-- `-t, --tag` — Release tag (alpha, beta, rc, etc.)
-- `-y, --yes` — Skip confirmation
+- `-M, --major` / `-m, --minor` / `-p, --patch` — comma-separated package lists
+- `--fromCommits` — generate stones from conventional commits since the last release (`lastStone` in config; `commits.skip` filters apply)
+- `-t, --tag` — prerelease tag (e.g. `beta`), applied to the computed versions
+- `-f, --filter` — filter workspace packages by name
+- `-d, --dryRun`, `-y, --yes`
+
+Packages that depend on the bumped ones are picked up automatically and get a dependency (patch-level) bump.
 
 ### `sisyphus check`
 
-Review pending stones.
-
-```bash
-sisyphus check
-sisyphus check --json  # JSON output
-```
-
-Shows:
-- Pending stones
-- Package version changes
-- Dependency updates
-- Last release info
-
-### `sisyphus roll`
-
-Process stones and release.
-
-```bash
-# Full release
-sisyphus roll --npm --github --changelog
-
-# Dry run
-sisyphus roll --dry-run
-
-# Just changelogs
-sisyphus roll --changelog
-```
-
-**Options:**
-- `-n, --npm` — Publish to npm
-- `-g, --github` — Create GitHub releases
-- `-c, --changelog` — Generate changelogs
-- `-t, --withTags` — Create git tags
-- `-d, --dryRun` — Preview without changes
-- `--npmToken` — NPM authentication token
-- `--githubToken` — GitHub authentication token
-
-### `sisyphus prerelease`
-
-Manage prerelease versions.
-
-```bash
-# Create beta prerelease
-sisyphus prerelease --type beta --bump minor
-
-# Promote prereleases interactively
-sisyphus prerelease --promote
-```
-
-**Promotion flow:**
-- Alpha → Beta, RC, or Stable
-- Beta → RC or Stable  
-- RC → Stable
+Show the root package, workspace packages, and pending stones with the versions they will produce. `--json` for machine-readable output (used in CI), `-c, --config` to include the resolved config.
 
 ### `sisyphus stone`
 
-Manage individual stones.
+Manage pending stones: `list` (`-j`, `-v`), `show <id>` (`-j`), `edit <id> -m "new message"`, `merge <id...> -m "message"` (`-d` deletes the originals; conflicting bumps resolve to the highest), `delete <id>`. Subcommands prompt for a stone when no id is given.
+
+### `sisyphus roll`
+
+Execute a release from all pending stones: bump versions, generate changelogs, delete the stones, commit, then optionally tag, publish, push, and create a provider release. Any step failure rolls back the created commit, tags, and file changes and restores the stones.
 
 ```bash
-sisyphus stone list              # List all stones
-sisyphus stone show <id>         # Show stone details
-sisyphus stone delete <id>       # Remove a stone
-sisyphus stone edit <id>         # Edit stone message
-sisyphus stone merge             # Combine multiple stones
+sisyphus roll --dryRun
+sisyphus roll -n -t -p -y
 ```
 
-### `sisyphus graph`
+- `-c, --changelog` — generate changelogs (default from `changelog.generate`)
+- `-n, --npm` — publish to npm (default from `release.npm`)
+- `-t, --tags` — create `name@version` git tags (default from `release.tags`)
+- `-p, --push` — push commits and tags (default from `release.push`)
+- `-r, --createRelease` — create a release on the git provider (default from `release.createRelease`)
+- `--noCommit` — skip the release commit (also disables tags, push, and provider release)
+- `--preview` — write changelogs, show them, then offer to revert
+- `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
+- `-d, --dryRun`, `-y, --yes`
 
-Visualize package dependencies.
+Publishing builds each package (`bun run build`) and runs `npm publish --tag <tag> --access public` in its directory. Private packages (`"private": true`) are skipped.
+
+### `sisyphus pr`
+
+Create a stone from a pull request (GitHub via the `gh` CLI, which must be installed and authenticated). Reads title, body, labels, commits, and changed files; the bump type comes from labels via `pr.labelMapping`, the title, `-b/--bump`, or a prompt. PRs matching `pr.skip` (labels, authors, title patterns) are ignored.
 
 ```bash
-sisyphus graph                   # Show full graph
-sisyphus graph --filter @org/core # Focus on package
-sisyphus graph --json            # Export as JSON
+sisyphus pr -u https://github.com/org/repo/pull/123 -y
 ```
+
+### `sisyphus migrate`
+
+Convert an existing `.changeset/` directory to stones and map supported changeset config (`ignore`, `commit`, `access`, `changelog`) onto the Sisyphus config. `-d, --dryRun`, `-y, --yes`.
+
+### `sisyphus actions`
+
+CI integration. `actions init` detects your provider (GitHub Actions or GitLab CI) and installs workflow templates: a create-stone workflow that turns merged PRs into stones and maintains a release PR, and a release workflow that publishes when the release PR merges (`--all`, `--createStone`, `--release`, `-d`, `-y`). `actions release-pr` creates or updates the `sisyphus/release` branch and PR from pending stones, archives the stones to `.sisyphus/released/<timestamp>/`, and records `currentRelease` in the config for a later `roll --publishOnly`.
+
+### `sisyphus init`
+
+Create or edit `.sisyphus/config.json`. Flag-driven when invoked directly (the interactive form lives in the `sis -i` menu); every form field has a matching flag (`--single`, `--tag`, `--npm`, `--tags`, `--push`, `--createRelease`, `--changelog`, `--rootChangelog`, `--commitAuthor`, `--commitEmail`, `--commitMessage`). `--default` resets to defaults, `--force` overwrites non-interactively. Also records the current HEAD as `lastStone`, the baseline for `version --fromCommits`.
 
 ## Configuration
 
-Sisyphus uses `.sisyphus/config.json`:
+`.sisyphus/config.json`, created by `init` (trimmed excerpt — `init` writes the full default set, including an extended `pr.labelMapping` and commit-skip patterns):
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/main/packages/sisyphus/schema.json",
-  "tag": "latest",
-  "ignore": ["*-internal"],
+  "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/sisyphus/schema.json",
   "single": false,
+  "tag": "latest",
   "commit": {
-    "message": "chore(release): ${message}"
-  },
-  "release": {
-    "github": true,
-    "npm": true,
-    "tags": true
+    "author": "r5n-bot",
+    "message": "chore(release): {message}"
   },
   "changelog": {
-    "generate": true
+    "generate": true,
+    "root": false,
+    "append": true,
+    "filename": "CHANGELOG.md",
+    "packageHeader": "{emoji} {version} ({date})",
+    "rootHeader": "{date} - {packages}"
+  },
+  "release": {
+    "npm": false,
+    "tags": false,
+    "push": false,
+    "createRelease": false
+  },
+  "commits": {
+    "skip": {
+      "authors": ["r5n-bot[bot]"],
+      "messagePatterns": ["^chore\\(release\\):"]
+    }
+  },
+  "pr": {
+    "labelMapping": { "breaking": "major", "feature": "minor", "fix": "patch" },
+    "skip": {
+      "labels": ["sisyphus-release", "skip-stone"],
+      "authors": ["r5n-bot[bot]"],
+      "titlePatterns": ["^chore\\(release\\):"]
+    }
   }
 }
 ```
 
-## Stone Format
+- `single` — version the root package instead of workspace packages
+- `tag` — npm dist-tag used when publishing
+- `commit` — release commit author/email and message template; `{message}` and `{packages}` are substituted
+- `changelog` — `sections` maps conventional commit types (`feat`, `fix`, `breaking`, ...) to headings; `root` adds a combined root changelog; `packageHeader`/`rootHeader` support `{emoji}`, `{version}`, `{date}`, `{packages}`
+- `commits.skip` / `pr.skip` — filters for `version --fromCommits` and `pr`
+- `release` — defaults for the corresponding `roll` flags
+- `sisyphusDir` / `stonesPath` — relocate the config directory or stone storage
+- `lastStone`, `stones`, `currentRelease` — managed by the CLI; don't edit by hand
 
-Stones are stored in `.sisyphus/stones/` as markdown:
+## Stones
 
-```markdown
-### feat: add authentication
+Each stone is a JSON file at `.sisyphus/stones/<id>.json`, safe to commit and review:
 
-Added OAuth2 support.
-
----
-
-|   minor   |        patch        |
-| :-------: | :-----------------: |
-| @org/auth | @org/core, @org/api |
+```json
+{
+  "id": "0001-741d2bed",
+  "message": "feat: add auth",
+  "description": "Optional longer notes",
+  "minor": ["@org/auth"],
+  "patch": ["@org/api"],
+  "dependency": ["@org/app"]
+}
 ```
 
-## Project Structure
+Stones may also carry a `tag` (prerelease) and the `commits` they were generated from. `roll` merges every pending stone, keeping the highest bump per package.
 
-```
-your-project/
-├── .sisyphus/
-│   ├── config.json
-│   └── stones/
-│       ├── feat-auth.md
-│       └── fix-bug.md
-├── packages/
-│   ├── core/
-│   │   ├── package.json
-│   │   └── CHANGELOG.md
-│   └── auth/
-│       ├── package.json
-│       └── CHANGELOG.md
-└── CHANGELOG.md
-```
+## GitHub Actions
 
-## Examples
-
-### Monorepo Workflow
-
-```bash
-# Feature work
-sisyphus version --bump minor --filter @app/core
-
-# Bug fix
-sisyphus version --bump patch --filter @app/auth
-
-# Breaking change
-sisyphus version --bump major --filter @app/api
-
-# Release all
-sisyphus check
-sisyphus roll --npm --github --changelog
-```
-
-### Prerelease Flow
-
-```bash
-# Create beta
-sisyphus prerelease --type beta --bump minor --filter @org/new-feature
-
-# Release beta
-sisyphus roll --npm
-
-# Promote to stable
-sisyphus prerelease --promote
-```
-
-### CI/CD Integration
+A push-based release job, modeled on this repo's own workflow: roll whenever pending stones land on the main branch. Uses npm trusted publishing (OIDC), which needs `id-token: write` and npm >= 11.5.1, plus each package configured for trusted publishing on npmjs.com. If you don't use OIDC, `roll` publishes with plain `npm publish`, so a granular token in `~/.npmrc` (via `NPM_TOKEN`) works too.
 
 ```yaml
-# .github/workflows/release.yml
 name: Release
 
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v1
-      
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
       - run: bun install
-      
-      - name: Check for stones
-        id: check
+      - run: npm install -g npm@11
+      - name: Check for pending stones
         run: |
-          if [ -d ".sisyphus/stones" ] && [ "$(ls -A .sisyphus/stones)" ]; then
-            echo "has_stones=true" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Release
-        if: steps.check.outputs.has_stones == 'true'
-        run: bunx @r5n/sisyphus roll --npm --github --changelog
+          COUNT=$(bunx @r5n/sisyphus check --json | jq '.stones | length')
+          echo "STONES_COUNT=$COUNT" >> "$GITHUB_ENV"
+      - name: Roll release
+        if: env.STONES_COUNT != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          bunx @r5n/sisyphus roll --yes
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-## Security
+On self-hosted runners, set `NPM_CONFIG_PROVENANCE: "false"` on the roll step; provenance generation only works on GitHub-hosted runners. For the PR-driven flow (stone per merged PR, rolling release PR, publish on merge), run `sisyphus actions init` and commit the generated workflows instead.
 
-### Token Management
+## Requirements
 
-- **NPM:** Requires `NPM_TOKEN` env var or `--npmToken`
-- **GitHub:** Requires `GITHUB_TOKEN` env var or `--githubToken`
-- Never store tokens in config files
-- Use environment variables in CI/CD
-
-### Best Practices
-
-1. Review stones before rolling (`sisyphus check`)
-2. Test with dry-run mode
-3. Commit stones to version control
-4. Use branch protection for releases
-
-## Troubleshooting
-
-**No stones found:**
-- Create stones with `sisyphus version` first
-- Check `.sisyphus/stones/` directory exists
-
-**Package not found:**
-- Verify package name
-- Check if package is ignored in config
-
-**Publish failed:**
-- Verify NPM token permissions
-- Check if version already exists
-- Ensure package.json has required fields
-
-**Debug mode:**
-```bash
-DEBUG=* sisyphus roll --dry-run
-cat .sisyphus/config.json
-ls -la .sisyphus/stones/
-```
+- Bun (the CLI is a Bun executable)
+- git, with a `workspaces` field in the root `package.json` (unless `single`)
+- `gh` CLI, authenticated, for GitHub PR and release operations (`pr`, `actions release-pr`, `roll --createRelease`); GitLab is supported via `GITLAB_TOKEN` or `glab`
 
 ## License
 

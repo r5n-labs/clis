@@ -13,6 +13,8 @@
 | Run single test file | `bun test packages/path/to/file.test.ts` |
 | Run tests by pattern | `bun test -t "pattern"` |
 | Clean & reinstall | `bun clean` |
+| Run sisyphus from source | `bun sis <command>` |
+| Run hydra from source | `bun hydra <command>` |
 
 ## Core Mandates
 
@@ -25,11 +27,11 @@
 
 ```
 packages/
-  core/           # @r5n/cli-core - Shared CLI framework
-  sisyphus/       # @r5n/sisyphus - Version/publish tool
-  atlas/          # @r5n/atlas - CLI tools
-  hydra/          # @r5n/hydra - CLI tools
-tools/            # @r5n/tools - Build utilities, shared configs
+  core/           # @r5n/cli-core - Shared CLI framework (private, bundled into each CLI)
+  sisyphus/       # @r5n/sisyphus - Monorepo versioning/releases via "stones"
+  hydra/          # @r5n/hydra - Local self-hosted GitHub Actions runner manager
+  atlas/          # @r5n/atlas - Env/config profile CLI (private, unreleased; rebuild in PR #12)
+tools/            # @r5n/tools - Build utilities, shared configs (git SUBMODULE - separate repo)
 ```
 
 ## Import Order (Biome-enforced)
@@ -164,3 +166,14 @@ pre-commit:
       glob: "*.{jsx,tsx,ts,js,json}"
       run: bun biome check --write {staged_files}
 ```
+
+## Releases
+
+Sisyphus releases this repo itself:
+
+- Conventional commits → stones: `bun sis version --fromCommits -y` (stones live in `.sisyphus/stones/`).
+- Pushing pending stones to `develop` triggers `.github/workflows/release.yml`, which rolls them: version bumps, changelogs, `release(🎉):` commit, git tags, npm publish, push. The workflow skips its own release commits.
+- npm auth is trusted publishing (OIDC): `id-token: write`, npm ≥ 11.5.1 (bootstrapped in the workflow), `NPM_CONFIG_PROVENANCE=false` because the self-hosted runner cannot sign provenance.
+- `private: true` packages (core, tools, atlas) get version bumps and tags but are never published.
+- Manual per-package publishing goes through `bun run package:publish` / `package:dryRun`, which use `tools/scripts/publish-package.ts`: resolve `workspace:`/`catalog:` protocols in the manifest, publish, then restore the original `package.json` even on failure. The pure manifest logic lives in `tools/scripts/publish-manifest.ts` (tested).
+- Never publish manually with bare `npm publish` — it skips manifest resolution and restore.

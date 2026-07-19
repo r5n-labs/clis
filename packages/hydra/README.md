@@ -35,7 +35,7 @@ Bare `hydra` prints help. `hydra -i` opens an interactive menu that walks throug
 
 ### init
 
-`hydra init [url]` writes a profile to `.hydra/config.json`. The first profile becomes the default. With `-i` it runs as a form; non-interactively the URL positional is required.
+`hydra init [url]` writes a profile to `.hydra/config.json`. The first profile becomes the default. Run with no arguments it opens an interactive form; when any positional or piped input is involved the URL is required.
 
 - `-p, --profile` profile name (default: `default`)
 - `-n, --name` base name for runners (default: `runner`)
