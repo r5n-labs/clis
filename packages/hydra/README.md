@@ -64,6 +64,19 @@ Bare `hydra` prints help. `hydra -i` opens an interactive menu that walks throug
 - `-l, --list` list available log files with timestamps and sizes
 - `-o, --open` open the log in `$EDITOR` (falls back to `open` on macOS)
 
+### cleanup
+
+`hydra cleanup` frees disk space. By default it prunes `_diag` log files older than 7 days (always keeping the newest runner and worker log per runner) and removes shared runner versions no runner's `externals` link points to (the newest installed version is always kept). `_work` holds job checkouts and caches, so it is never cleaned by default — pass `-w` explicitly. Runners that are currently running are skipped for `_work` cleanup.
+
+- `-l, --logs` prune old `_diag` log files
+- `-w, --work` delete `_work` contents of stopped runners
+- `-s, --shared` remove unused shared runner versions
+- `-d, --days` age threshold in days for log pruning (default: 7, or `cleanup.olderThanDays`)
+- `-n, --dry-run` list what would be deleted with sizes, delete nothing
+- `-y, --yes` skip confirmation prompts
+
+Passing any of `-l`/`-w`/`-s` cleans only those targets; with none, the targets come from the `cleanup` config section (default: logs and shared).
+
 ### update
 
 `hydra update` checks the latest `actions/runner` release, and if it differs from the installed version, swaps the binaries for every runner. Runners that were running are stopped, updated, and restarted.
@@ -103,6 +116,14 @@ Bare `hydra` prints help. `hydra -i` opens an interactive menu that walks throug
 ```
 
 `os` is one of `osx` | `linux` | `windows` (auto-detected by `init`). An optional `runnerGroup` string is passed through to `config.sh --runnergroup`; runner groups only apply to organization runners. The `runners` array is Hydra's record of what it created — leave it alone.
+
+An optional `cleanup` section controls `hydra cleanup` and automatic cleanup:
+
+```json
+"cleanup": { "auto": true, "intervalHours": 24, "olderThanDays": 7, "targets": ["logs", "shared"] }
+```
+
+All fields are optional; the values above (with `auto: false`) are the defaults. With `auto` enabled, `hydra start` and `hydra update` run a cleanup afterwards whenever the last run is more than `intervalHours` ago. Automatic runs never prompt and only touch the configured `targets` — `work` only if you list it explicitly. Hydra records `lastRun` itself; leave it alone.
 
 The `url` is either a repository URL (`https://github.com/owner/repo`) or an organization URL (`https://github.com/org`). Repository URLs mint tokens from the repository endpoint (requires repo admin); organization URLs use the organization endpoint (requires the `admin:org` scope).
 

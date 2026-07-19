@@ -3,6 +3,40 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
+    "cleanup": {
+      "additionalProperties": false,
+      "properties": {
+        "auto": {
+          "default": false,
+          "description": "Run cleanup automatically after hydra start and hydra update",
+          "type": "boolean"
+        },
+        "intervalHours": {
+          "default": 24,
+          "description": "Minimum hours between automatic cleanup runs",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "lastRun": {
+          "description": "ISO timestamp of the last cleanup run; managed by Hydra, do not edit by hand",
+          "format": "date-time",
+          "type": "string"
+        },
+        "olderThanDays": {
+          "default": 7,
+          "description": "Prune log files older than this many days",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "targets": {
+          "default": ["logs", "shared"],
+          "description": "What to clean: _diag log files, _work job workspaces, unused shared runner versions",
+          "items": { "enum": ["logs", "work", "shared"], "type": "string" },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "profile": {
       "additionalProperties": false,
       "properties": {
@@ -71,6 +105,10 @@
   "description": "Configuration for Hydra GitHub self-hosted runner manager",
   "properties": {
     "$schema": { "description": "JSON Schema reference for IDE support", "type": "string" },
+    "cleanup": {
+      "$ref": "#/definitions/cleanup",
+      "description": "Disk cleanup behavior for hydra cleanup and automatic cleanup"
+    },
     "defaultProfile": { "description": "The default profile to use when no profile is specified", "type": "string" },
     "profiles": {
       "additionalProperties": { "$ref": "#/definitions/profile" },

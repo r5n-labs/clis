@@ -1,3 +1,4 @@
+export { CleanupCommand } from "./cleanup";
 export { CreateCommand } from "./create";
 export { InitCommand } from "./init";
 export { LogsCommand } from "./logs";

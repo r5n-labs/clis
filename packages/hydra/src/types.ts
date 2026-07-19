@@ -25,4 +25,19 @@ export type RunnerEntry = {
   createdAt: string;
 };
 
-export type HydraConfig = { defaultProfile?: string; profiles: Record<string, Profile>; runners?: RunnerEntry[] };
+export type CleanupTarget = "logs" | "work" | "shared";
+
+export type CleanupConfig = {
+  auto: boolean;
+  intervalHours: number;
+  olderThanDays: number;
+  targets: CleanupTarget[];
+  lastRun?: string;
+};
+
+export type HydraConfig = {
+  cleanup?: Partial<CleanupConfig>;
+  defaultProfile?: string;
+  profiles: Record<string, Profile>;
+  runners?: RunnerEntry[];
+};

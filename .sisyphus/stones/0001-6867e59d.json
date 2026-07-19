@@ -3,9 +3,7 @@
     {
       "hash": "bed3777",
       "message": "publish manifests with resolved workspace and catalog protocols",
-      "packages": [
-        "@r5n/sisyphus"
-      ],
+      "packages": ["@r5n/sisyphus"],
       "scope": "sisyphus",
       "subject": "feat(sisyphus): publish manifests with resolved workspace and catalog protocols",
       "type": "feat"
@@ -13,9 +11,7 @@
     {
       "hash": "9feb9f3",
       "message": "support organization-level runners",
-      "packages": [
-        "@r5n/hydra"
-      ],
+      "packages": ["@r5n/hydra"],
       "scope": "hydra",
       "subject": "feat(hydra): support organization-level runners",
       "type": "feat"
@@ -23,9 +19,7 @@
     {
       "hash": "3023901",
       "message": "install sis bin alias alongside sisyphus",
-      "packages": [
-        "@r5n/sisyphus"
-      ],
+      "packages": ["@r5n/sisyphus"],
       "scope": "sisyphus",
       "subject": "feat(sisyphus): install sis bin alias alongside sisyphus",
       "type": "feat"
@@ -33,8 +27,5 @@
   ],
   "id": "0001-6867e59d",
   "message": "Features",
-  "minor": [
-    "@r5n/sisyphus",
-    "@r5n/hydra"
-  ]
+  "minor": ["@r5n/sisyphus", "@r5n/hydra"]
 }

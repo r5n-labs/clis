@@ -2,6 +2,7 @@ import { color, Exit, log, multiselect, positionals, spinner } from "@r5n/cli-co
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
+import { maybeAutoCleanup } from "./cleanup";
 
 const startPositionals = positionals({
   profile: { description: "Profile name" },
@@ -59,6 +60,8 @@ export class StartCommand extends BaseCommand {
     }
 
     log.info(`${color.green("Started")} ${started} runner(s).`);
+
+    await maybeAutoCleanup(ctx);
   }
 
   private async promptRunnerSelection(ids: string[]): Promise<string[]> {

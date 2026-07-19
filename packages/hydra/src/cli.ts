@@ -1,6 +1,7 @@
 import { AbstractCLI, ConfigManager } from "@r5n/cli-core";
 import { version } from "../package.json";
 import {
+  CleanupCommand,
   CreateCommand,
   InitCommand,
   LogsCommand,
@@ -35,6 +36,7 @@ class HydraCLI extends AbstractCLI {
       new StopCommand(),
       new StatusCommand(),
       new LogsCommand(),
+      new CleanupCommand(),
       new RemoveCommand(),
       new UpdateCommand(),
       new ProfileCommand(),

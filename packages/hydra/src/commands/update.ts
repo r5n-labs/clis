@@ -2,6 +2,7 @@ import { color, Exit, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { Profile } from "../types";
+import { maybeAutoCleanup } from "./cleanup";
 
 type UpdateCtx = Ctx;
 
@@ -40,6 +41,7 @@ export class UpdateCommand extends BaseCommand {
 
         if (currentVersion === latestVersion) {
           log.info(`Already on latest version ${color.dim(`(v${latestVersion})`)}`);
+          await maybeAutoCleanup(ctx);
           return;
         }
       }
@@ -62,5 +64,7 @@ export class UpdateCommand extends BaseCommand {
     }
 
     log.info(`${color.green("Updated")} ${entries.length} runner(s) from v${currentVersion} to v${latestVersion}`);
+
+    await maybeAutoCleanup(ctx);
   }
 }
