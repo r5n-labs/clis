@@ -23,12 +23,27 @@
       "test": "Tests"
     }
   },
-  "commit": { "author": "Sisyphus", "message": "release(🎉): {message}", "email": "contact@r5n.dev" },
+  "commit": {
+    "author": "Sisyphus",
+    "message": "release(🎉): {message}",
+    "email": "contact@r5n.dev"
+  },
   "commits": {
-    "skip": { "authors": ["r5n-bot[bot]"], "messagePatterns": ["^chore\\(release\\):", "^chore: add stone"] }
+    "skip": {
+      "authors": [
+        "r5n-bot[bot]"
+      ],
+      "messagePatterns": [
+        "^chore\\(release\\):",
+        "^chore: add stone"
+      ]
+    }
   },
   "ignore": [],
-  "lastStone": { "commit": "cdab9566a132b81d7cd93a47f2bbd238f1b13d47", "date": "2026-07-19T22:37:09.991Z" },
+  "lastStone": {
+    "commit": "cdab9566a132b81d7cd93a47f2bbd238f1b13d47",
+    "date": "2026-07-19T22:37:09.991Z"
+  },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -42,15 +57,36 @@
       "fix": "patch"
     },
     "skip": {
-      "authors": ["r5n-bot[bot]"],
-      "labels": ["sisyphus-release", "skip-stone"],
-      "titlePatterns": ["^chore\\(release\\):"]
+      "authors": [
+        "r5n-bot[bot]"
+      ],
+      "labels": [
+        "sisyphus-release",
+        "skip-stone"
+      ],
+      "titlePatterns": [
+        "^chore\\(release\\):"
+      ]
     }
   },
-  "release": { "createRelease": false, "npm": true, "push": true, "tags": true, "commitAndPush": true, "github": true },
-  "scripts": { "post": {}, "pre": {} },
+  "release": {
+    "createRelease": false,
+    "npm": true,
+    "push": true,
+    "tags": true,
+    "commitAndPush": true,
+    "github": true
+  },
+  "scripts": {
+    "post": {},
+    "pre": {}
+  },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": [
+    "0001-35594f7b",
+    "0002-1bbbc7cb",
+    "0003-fb246bf0"
+  ],
   "tag": "latest"
 }
