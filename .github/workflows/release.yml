@@ -21,11 +21,12 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure and checkout submodules
-        run: |
-          # Convert SSH URLs to HTTPS for GitHub Actions
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive
+      - name: Checkout submodules
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: git@github.com:
+        run: git submodule update --init --recursive
 
       - uses: ./tools/github/setup
         with:
