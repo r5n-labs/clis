@@ -1,0 +1,27 @@
+{
+  "commits": [
+    {
+      "hash": "d3788f3",
+      "message": "cleanup command with config-driven auto cleanup",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "scope": "hydra",
+      "subject": "feat(hydra): cleanup command with config-driven auto cleanup",
+      "type": "feat"
+    }
+  ],
+  "id": "0005-855168e4",
+  "message": "Features",
+  "minor": [
+    "@r5n/atlas",
+    "@r5n/cli-core",
+    "@r5n/hydra",
+    "@r5n/sisyphus",
+    "@r5n/tools"
+  ]
+}
