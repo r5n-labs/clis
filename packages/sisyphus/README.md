@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/r5n-labs/clis/develop/packages/sisyphus/assets/logo.svg" width="128" alt="Sisyphus logo — a boulder resting on a slope">
+</p>
+
 # Sisyphus
 
 Monorepo versioning and release tool. Pending changes are recorded as "stones" (JSON files in `.sisyphus/stones/`, in the spirit of changesets); rolling them bumps versions, writes changelogs, tags, publishes, and pushes in one step.
