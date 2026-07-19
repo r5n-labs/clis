@@ -39,7 +39,7 @@ async function collectWorkspaceVersions(rootDir: string, rootPkg: RootManifest):
     for await (const match of glob.scan({ cwd: rootDir })) {
       const manifest = (await Bun.file(resolve(rootDir, match)).json()) as PackageManifest;
       if (!manifest.name) continue;
-      versions[manifest.name] = manifest.version ?? null;
+      versions[manifest.name] = { isPrivate: manifest.private === true, version: manifest.version ?? null };
     }
   }
 

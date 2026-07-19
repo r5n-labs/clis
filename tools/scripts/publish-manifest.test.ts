@@ -11,7 +11,11 @@ import {
 
 const catalogs: CatalogMap = { default: { "left-pad": "1.3.0" }, react19: { react: "19.0.0" } };
 
-const workspaceVersions: WorkspaceVersionMap = { "@r5n/cli-core": "1.2.3", "@r5n/no-version": null };
+const workspaceVersions: WorkspaceVersionMap = {
+  "@r5n/cli-core": { isPrivate: false, version: "1.2.3" },
+  "@r5n/no-version": { isPrivate: false, version: null },
+  "@r5n/private-core": { isPrivate: true, version: "0.2.2" },
+};
 
 describe("resolveWorkspaceVersion", () => {
   test("workspace:* resolves to the exact pinned version", () => {
@@ -45,6 +49,12 @@ describe("resolveWorkspaceVersion", () => {
   test("throws when the workspace package has no version", () => {
     expect(() => resolveWorkspaceVersion("@r5n/no-version", "workspace:*", workspaceVersions, "@r5n/hydra")).toThrow(
       'Workspace package "@r5n/no-version" (required by @r5n/hydra) has no version in its package.json',
+    );
+  });
+
+  test("throws on a private workspace package", () => {
+    expect(() => resolveWorkspaceVersion("@r5n/private-core", "workspace:*", workspaceVersions, "@r5n/hydra")).toThrow(
+      'depends on private workspace package "@r5n/private-core"',
     );
   });
 

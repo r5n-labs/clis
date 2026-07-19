@@ -5,11 +5,13 @@ const RANGE_ONLY_SPECIFIERS = new Set(["*", "^", "~"]);
 
 export type DependencyMap = Record<string, string>;
 export type CatalogMap = Record<string, DependencyMap>;
-export type WorkspaceVersionMap = Record<string, string | null>;
+export type WorkspaceEntry = { version: string | null; isPrivate: boolean };
+export type WorkspaceVersionMap = Record<string, WorkspaceEntry>;
 
 export interface PackageManifest {
   name: string;
   version?: string;
+  private?: boolean;
   dependencies?: DependencyMap;
   devDependencies?: DependencyMap;
   optionalDependencies?: DependencyMap;
@@ -61,9 +63,16 @@ export function resolveWorkspaceVersion(
   packageName: string,
 ): string {
   const range = specifier.slice(WORKSPACE_PREFIX.length);
+  const entry = workspaceVersions[name];
 
-  if (!(name in workspaceVersions)) {
+  if (!entry) {
     throw new Error(`Workspace package "${name}" (required by ${packageName}) was not found in the workspace`);
+  }
+
+  if (entry.isPrivate) {
+    throw new Error(
+      `"${packageName}" depends on private workspace package "${name}", which is not published to the registry. Move "${name}" to devDependencies or publish it first`,
+    );
   }
 
   if (!RANGE_ONLY_SPECIFIERS.has(range)) {
@@ -73,7 +82,7 @@ export function resolveWorkspaceVersion(
     return range;
   }
 
-  const version = workspaceVersions[name];
+  const version = entry.version;
   if (!version) {
     throw new Error(`Workspace package "${name}" (required by ${packageName}) has no version in its package.json`);
   }
