@@ -72,3 +72,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
+          NPM_CONFIG_PROVENANCE: "false"
