@@ -1,182 +1,115 @@
 # Hydra
 
-<div align="center">
+Spawn and manage local self-hosted GitHub Actions runners.
 
-[![npm version](https://img.shields.io/npm/v/@r5n/hydra.svg)](https://www.npmjs.com/package/@r5n/hydra)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
-![Bundle Size](https://img.shields.io/badge/bundle_size-~110KB-green.svg)
+[![npm version](https://img.shields.io/npm/v/@r5n/hydra.svg)](https://www.npmjs.com/package/@r5n/hydra) [![License](https://img.shields.io/npm/l/@r5n/hydra.svg)](./LICENSE)
 
-Manage GitHub Actions self-hosted runners.
+Hydra registers runners against a GitHub repository and runs them as background processes on the machine it runs on. All state lives in a `.hydra/` directory relative to your current working directory, so each directory you run it from is its own isolated runner fleet.
 
-</div>
+## Requirements
 
-## Quick Start
+- Bun (the published CLI runs on Bun)
+- `gh` CLI, installed and authenticated (`gh auth login`), with admin access to the target repository — Hydra mints runner registration and removal tokens via `gh api`; it never asks for or stores a token itself
+- `bash`, `curl`, `tar`
+- macOS (Apple Silicon) or Linux (x64). A `win-x64` runner download mapping exists in the code, but registration and startup shell out to `bash config.sh` / `bash run.sh`, so Windows is not actually supported.
+
+## Install
 
 ```bash
-# Install
 bun add -g @r5n/hydra
-
-# Initialize config
-hydra init
-
-# Create runners
-hydra create -t $TOKEN -u https://github.com/org/repo -m 3
-
-# Check status
-hydra status -t $TOKEN -u https://github.com/org/repo
 ```
 
-## Why?
+## Quick start
 
-Setting up self-hosted runners manually is tedious. Hydra automates it:
+```bash
+mkdir ~/runners && cd ~/runners
+hydra init https://github.com/owner/repo -c 2
+hydra create
+hydra start
+hydra status
+```
 
-- Create multiple runners in parallel
-- Reusable profile configs
-- Monitor runner status
-- Cross-platform (macOS, Linux, Windows)
+Bare `hydra` prints help. `hydra -i` opens an interactive menu that walks through the same commands with prompts. `hydra help <command>` or `hydra <command> --help` shows per-command usage.
 
 ## Commands
 
-### `hydra init`
+### init
 
-Create a config file with profiles.
+`hydra init [url]` writes a profile to `.hydra/config.json`. The first profile becomes the default. With `-i` it runs as a form; non-interactively the URL positional is required.
 
-```bash
-hydra init              # Interactive
-hydra init --toml       # Use TOML format
-```
+- `-p, --profile` profile name (default: `default`)
+- `-n, --name` base name for runners (default: `runner`)
+- `-c, --runners` number of runners (default: 1)
+- `-l, --labels` comma-separated extra labels
+- `-f, --force` overwrite an existing profile
 
-### `hydra create`
+### create
 
-Create and register new runners.
+`hydra create [profile] [count]` downloads the latest `actions/runner` release (once per version, shared across runners), then registers runners named `<name>-1`, `<name>-2`, … It tops up to the target count: if the profile already has enough runners recorded, it does nothing. `count` overrides the profile's `numberOfMachines`.
 
-```bash
-# Basic
-hydra create -t TOKEN -u REPO_URL
+### start / stop
 
-# Multiple with labels
-hydra create -t TOKEN -u REPO_URL -m 5 -l "docker,gpu"
+`hydra start [profile] [ids...]` launches each runner's `run.sh` as a detached background process and records its pid. `hydra stop [profile] [ids...]` kills them. Omit the ids to target every runner in the profile; omit the profile to use the default. Runners do not survive a reboot — run `hydra start` again.
 
-# Using profile
-hydra create -p production -t TOKEN
-```
+### status
 
-**Options:**
-- `-t, --token` — GitHub PAT (required)
-- `-u, --url` — Repo/org URL (required)
-- `-m, --numberOfMachines` — Number of runners (default: 1)
-- `-n, --name` — Runner name prefix
-- `-l, --labels` — Comma-separated labels
-- `-d, --directory` — Runners directory
-- `-o, --os` — OS: osx, linux, windows
-- `-p, --profile` — Use config profile
+`hydra status` lists every profile's runners with their state (`running` with pid, `registered`, or `unknown`). State is determined locally from pid liveness and the runner's `.runner` file; no API calls.
 
-### `hydra run`
+### logs
 
-Start existing runners.
+`hydra logs [id]` tails the newest job log (`Worker_*.log`) from the runner's `_diag` directory. If no job has run yet it falls back to the runner daemon log with a warning. The id can be omitted when there is exactly one runner.
 
-```bash
-hydra run -t TOKEN -u REPO_URL -m 3
-hydra run -p production -t TOKEN
-```
+- `-n, --lines` lines to tail (default: 100)
+- `-r, --runner` show the runner daemon log (`Runner_*.log`) instead of the job log
+- `-l, --list` list available log files with timestamps and sizes
+- `-o, --open` open the log in `$EDITOR` (falls back to `open` on macOS)
 
-### `hydra remove`
+### update
 
-Remove runners and unregister from GitHub.
+`hydra update` checks the latest `actions/runner` release, and if it differs from the installed version, swaps the binaries for every runner. Runners that were running are stopped, updated, and restarted.
 
-```bash
-hydra remove -t TOKEN -u REPO_URL -m 3
-hydra remove -p production -t TOKEN -f  # Force without unregistering
-```
+### remove
 
-### `hydra status`
+`hydra remove [profile] [ids...]` stops the runners, deregisters them from GitHub, and deletes their directories.
 
-Check runner status.
+### profile
 
-```bash
-hydra status -t TOKEN -u REPO_URL
-hydra status -p production -t TOKEN --json
-```
+- `hydra profile list` — profiles with URL, OS, and created/running counts
+- `hydra profile default <name>` — set the default profile
+- `hydra profile remove <name>` — remove a profile; if it has runners, stops and deregisters them first (after confirmation)
 
 ## Configuration
 
-### Profiles
-
-Save common configs in `hydra.json` or `hydra.toml`:
+`.hydra/config.json`, resolved relative to the working directory. Hydra writes it; the `profiles` section is safe to edit by hand:
 
 ```json
 {
+  "defaultProfile": "default",
   "profiles": {
-    "production": {
-      "url": "https://github.com/org/repo",
-      "name": "prod-runner",
-      "numberOfMachines": 3,
-      "labels": "linux,docker",
-      "directory": "/opt/runners",
-      "os": "linux"
-    },
-    "dev": {
-      "url": "https://github.com/org/dev-repo",
-      "name": "dev-runner",
+    "default": {
+      "url": "https://github.com/owner/repo",
+      "name": "runner",
       "numberOfMachines": 2,
-      "labels": "test"
+      "labels": "macOS,ARM64",
+      "directory": ".hydra/runners",
+      "os": "osx",
+      "provider": "github",
+      "overwrite": false,
+      "run": false
     }
   },
-  "defaultProfile": "production"
+  "runners": []
 }
 ```
 
-Then use with `-p`:
+`os` is one of `osx` | `linux` | `windows` (auto-detected by `init`). An optional `runnerGroup` string is passed through to `config.sh --runnergroup`. The `runners` array is Hydra's record of what it created — leave it alone.
 
-```bash
-hydra create -p production -t $TOKEN
-hydra status -p dev -t $TOKEN
-```
+The `url` must be a repository URL (`https://github.com/owner/repo`). Registration tokens are fetched from the repository endpoint, so organization-level runners are not supported.
 
-### Environment Variables
+## How it works
 
-- `GITHUB_PERSONAL_ACCESS_TOKEN` — Default token
-- `HYDRA_CONFIG` — Config file path
-
-## Token Permissions
-
-- **Repository runners:** `repo` scope
-- **Organization runners:** `admin:org` scope
-
-Never commit tokens. Use environment variables or pass via `-t`.
-
-## Examples
-
-```bash
-# Development setup
-hydra create -p dev -t $TOKEN -m 2
-
-# Production with specific labels
-hydra create -p prod -t $TOKEN -l "deploy,production"
-
-# Monitor all runners
-hydra status -p prod -t $TOKEN --json | jq '.[] | select(.status == "offline")'
-
-# Cleanup
-hydra remove -p dev -t $TOKEN
-```
-
-## Troubleshooting
-
-**Invalid token error:**
-- Check token has `repo` or `admin:org` scope
-- Verify token isn't expired
-
-**Runner config failed:**
-- Check network connectivity
-- Verify GitHub URL format
-- Ensure write permissions in runner directory
-
-**Debug mode:**
-```bash
-DEBUG=* hydra create -t TOKEN -u URL
-```
+Runner binaries are downloaded once per version into `.hydra/shared/github/<version>`. Each runner directory under `.hydra/runners/<id>` gets hardlinks for `bin`, a symlink for `externals`, and its own copies of the shell scripts, so ten runners cost roughly one copy of the runner distribution on disk. Start/stop is plain process management: a detached `bash run.sh` plus a pid file per runner.
 
 ## License
 
-Apache 2.0 — see [LICENSE](./LICENSE)
+Apache-2.0 — see [LICENSE](./LICENSE)
