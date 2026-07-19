@@ -1,6 +1,6 @@
 {
   "author": "@ice-chillios",
-  "bin": { "atlas": "./dist/cli.js" },
+  "bin": { "atlas": "dist/cli.js" },
   "description": "Atlas CLI - A tool for exploring and mapping codebases",
   "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
   "files": ["dist", "LICENSE"],

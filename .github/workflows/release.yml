@@ -62,7 +62,15 @@ jobs:
       - name: Roll release
         if: env.STONES_COUNT != '0'
         run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not set — cannot publish. Add it with: gh secret set NPM_TOKEN"
+            exit 1
+          fi
+          NPMRC="$RUNNER_TEMP/.npmrc-release"
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$NPMRC"
+          trap 'rm -f "$NPMRC"' EXIT
+          export NPM_CONFIG_USERCONFIG="$NPMRC"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           bun release:roll
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

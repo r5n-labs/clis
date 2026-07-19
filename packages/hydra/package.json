@@ -1,6 +1,6 @@
 {
   "author": "@ice-chillios",
-  "bin": { "hydra": "./dist/cli.js" },
+  "bin": { "hydra": "dist/cli.js" },
   "description": "A tool for spawning multiple local GitHub self-hosted runners",
   "dependencies": { "@r5n/cli-core": "workspace:*" },
   "devDependencies": { "@clack/prompts": "1.7.0", "@r5n/tools": "workspace:*" },
