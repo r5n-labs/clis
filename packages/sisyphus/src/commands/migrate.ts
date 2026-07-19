@@ -46,7 +46,7 @@ export class MigrateCommand extends BaseCommand {
     const result = await this.parser.parse();
 
     if (result.errors.length > 0) {
-      s.stop("Found issues while parsing");
+      s.error("Found issues while parsing");
       for (const error of result.errors) {
         log.warn(color.yellow(error));
       }

@@ -213,7 +213,7 @@ export class RollCommand extends BaseCommand {
         color.green("Release complete"),
       );
     } catch (error) {
-      s.stop("Release failed, rolling back...");
+      s.error("Release failed, rolling back...");
       try {
         await orchestrator.rollback();
       } finally {
@@ -353,7 +353,7 @@ export class RollCommand extends BaseCommand {
         color.green("Publish complete"),
       );
     } catch (error) {
-      s.stop("Publish failed");
+      s.error("Publish failed");
       throw error;
     }
   }
