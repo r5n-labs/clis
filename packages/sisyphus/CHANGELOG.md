@@ -1,5 +1,11 @@
 # @r5n/sisyphus
 
+## 🐛 0.8.2 (2026-07-20)
+
+### 🪨 Update GitHub Actions to Node 24
+
+
+
 ## 📦 0.8.1 (2026-07-20)
 
 ### Dependency updates

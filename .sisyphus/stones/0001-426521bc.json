@@ -1,7 +1,0 @@
-{
-  "id": "0001-426521bc",
-  "message": "Update GitHub Actions to Node 24",
-  "patch": [
-    "@r5n/sisyphus"
-  ]
-}

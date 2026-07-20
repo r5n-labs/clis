@@ -87,8 +87,6 @@
   },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [
-    "0001-426521bc"
-  ],
+  "stones": [],
   "tag": "latest"
 }

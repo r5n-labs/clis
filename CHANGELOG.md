@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-20 - @r5n/sisyphus@0.8.2
+
+**Packages**
+- 🐛 `@r5n/sisyphus` 0.8.1 → 0.8.2
+
+### 🪨 Update GitHub Actions to Node 24
+**Packages:** `@r5n/sisyphus`
+
+
+
 ## 2026-07-20 - @r5n/cli-core@0.4.1, @r5n/hydra@0.9.1, @r5n/sisyphus@0.8.1
 
 **Packages**
