@@ -1,0 +1,24 @@
+{
+  "commits": [
+    {
+      "hash": "9a558c0",
+      "message": "rewrite READMEs from actual code and refresh agent guidelines",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/hydra",
+        "@r5n/sisyphus"
+      ],
+      "subject": "docs: rewrite READMEs from actual code and refresh agent guidelines",
+      "type": "docs"
+    }
+  ],
+  "id": "0003-8e215777",
+  "message": "Documentation",
+  "patch": [
+    "@r5n/atlas",
+    "@r5n/cli-core",
+    "@r5n/hydra",
+    "@r5n/sisyphus"
+  ]
+}
