@@ -1,0 +1,11 @@
+{
+  "dependency": [
+    "@r5n/sisyphus"
+  ],
+  "id": "0001-57592cc4",
+  "message": "Improve CLI help and cleanup safety",
+  "patch": [
+    "@r5n/cli-core",
+    "@r5n/hydra"
+  ]
+}
