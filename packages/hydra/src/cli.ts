@@ -20,6 +20,7 @@ class HydraCLI extends AbstractCLI {
     super(new ConfigManager<HydraConfig>(HYDRA_CONFIG_FILE, DEFAULT_CONFIG), {
       bin: CLI_BIN,
       clearOnStart: true,
+      description: "Manage GitHub Actions runners on this machine.",
       exitLabel: "Exit",
       goodbyeMessage: "Heads down.",
       name: "HYDRA",

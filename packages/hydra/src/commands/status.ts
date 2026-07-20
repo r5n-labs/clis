@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<string, (text: string) => string> = {
 
 export class StatusCommand extends BaseCommand {
   name = "status";
-  description = "Show runner status across all profiles";
+  description = "Show status across profiles";
 
   async execute(ctx: ListCtx) {
     const profiles = ctx.config.get("profiles");

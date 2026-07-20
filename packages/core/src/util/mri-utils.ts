@@ -14,7 +14,7 @@ export type GlobalParseResult = { command: string | undefined; flags: ParsedArgs
 
 export type CommandParseResult = { args: ParsedArgs; rawPositionals: string[] };
 
-function toKebabCase(str: string): string {
+export function toKebabCase(str: string): string {
   return str.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
 }
 

@@ -1,5 +1,6 @@
 import { args, color, confirm, Exit, log } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
+import { DEFAULT_CLEANUP_OLDER_THAN_DAYS } from "../constants";
 import type { CleanupReport } from "../providers";
 import { formatFileSize, isAutoCleanupDue, performCleanup, resolveCleanupConfig, totalFreedBytes } from "../providers";
 import type { CleanupTarget } from "../types";
@@ -12,21 +13,22 @@ const cleanupArgs = args({
   days: {
     alias: "d",
     default: DAYS_UNSET,
-    description: "Prune logs older than this many days (default from config)",
+    description: "Override log retention",
+    displayDefault: `config or ${DEFAULT_CLEANUP_OLDER_THAN_DAYS} days`,
     type: "number",
   },
-  dryRun: { alias: "n", default: false, description: "List what would be deleted without deleting", type: "boolean" },
-  logs: { alias: "l", default: false, description: "Prune old _diag log files", type: "boolean" },
-  shared: { alias: "s", default: false, description: "Remove unused shared runner versions", type: "boolean" },
-  work: { alias: "w", default: false, description: "Delete _work contents of stopped runners", type: "boolean" },
-  yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
+  dryRun: { alias: "n", default: false, description: "Preview cleanup without deleting", type: "boolean" },
+  logs: { alias: "l", default: false, description: "Remove old diagnostic logs", type: "boolean" },
+  shared: { alias: "s", default: false, description: "Remove unused runner versions", type: "boolean" },
+  work: { alias: "w", default: false, description: "Clear stopped runners' workspaces", type: "boolean" },
+  yes: { alias: "y", default: false, description: "Skip workspace confirmation", type: "boolean" },
 });
 
 type CleanupCtx = Ctx<typeof cleanupArgs>;
 
 export class CleanupCommand extends BaseCommand {
   name = "cleanup";
-  description = "Free disk space used by logs, job workspaces, and old runner versions";
+  description = "Remove logs, workspaces, and old runner versions";
   args = cleanupArgs;
 
   async execute(ctx: CleanupCtx) {
@@ -41,7 +43,7 @@ export class CleanupCommand extends BaseCommand {
     let targets = explicit.length > 0 ? explicit : resolved.targets;
     const olderThanDays = ctx.args.days > DAYS_UNSET ? ctx.args.days : resolved.olderThanDays;
 
-    if (targets.includes("work") && !ctx.args.dryRun && !ctx.args.yes && ctx.interactive) {
+    if (targets.includes("work") && !ctx.args.dryRun && !ctx.args.yes) {
       const proceed = await confirm({ message: "Delete _work contents (checkouts and caches) of stopped runners?" });
       if (!proceed) targets = targets.filter((target) => target !== "work");
     }

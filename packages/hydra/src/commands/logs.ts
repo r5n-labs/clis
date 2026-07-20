@@ -11,25 +11,10 @@ const DEFAULT_TAIL_LINES = 100;
 const LOG_TYPE_LABELS = { runner: "runner daemon log", worker: "job log" } as const;
 
 const logsArgs = args({
-  lines: { alias: "n", default: DEFAULT_TAIL_LINES, description: "Number of lines to tail", type: "number" },
-  list: {
-    alias: "l",
-    default: false,
-    description: "List available log files instead of printing content",
-    type: "boolean",
-  },
-  open: {
-    alias: "o",
-    default: false,
-    description: "Open the log file in $EDITOR instead of printing",
-    type: "boolean",
-  },
-  runner: {
-    alias: "r",
-    default: false,
-    description: "Show the runner daemon log instead of the latest job log",
-    type: "boolean",
-  },
+  lines: { alias: "n", default: DEFAULT_TAIL_LINES, description: "Number of lines to show", type: "number" },
+  list: { alias: "l", default: false, description: "List log files instead of showing one", type: "boolean" },
+  open: { alias: "o", default: false, description: "Open the log file", type: "boolean" },
+  runner: { alias: "r", default: false, description: "Show the runner log instead of a job log", type: "boolean" },
 });
 
 const logsPositionals = positionals({ id: { description: "Runner ID" } });
@@ -38,7 +23,7 @@ type LogsCtx = Ctx<typeof logsArgs, typeof logsPositionals>;
 
 export class LogsCommand extends BaseCommand {
   name = "logs";
-  description = "Inspect logs of the latest jobs";
+  description = "Show recent runner logs";
   args = logsArgs;
   positionals = logsPositionals;
 

@@ -25,7 +25,7 @@ export abstract class AbstractCLI {
 
   protected globalArgs: Record<string, ArgDefinition> = {
     help: { alias: "h", description: "Show help", type: "boolean" },
-    interactive: { alias: "i", description: "Enable interactive mode", type: "boolean" },
+    interactive: { alias: "i", description: "Open interactive mode", type: "boolean" },
     version: { alias: "v", description: "Show version", type: "boolean" },
   };
 

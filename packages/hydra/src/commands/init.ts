@@ -9,18 +9,18 @@ import type { Profile } from "../types";
 const initPositionals = positionals({ url: { description: "GitHub repository or organization URL" } });
 
 const initArgs = args({
-  force: { alias: "f", default: false, description: "Overwrite existing config", type: "boolean" },
-  labels: { alias: "l", description: "Comma-separated runner labels", type: "string" },
-  name: { alias: "n", description: "Base name for runners", type: "string" },
-  profile: { alias: "p", description: "Profile name", type: "string" },
-  runners: { alias: "c", description: "Number of runners to create", type: "number" },
+  force: { alias: "f", default: false, description: "Overwrite an existing profile", type: "boolean" },
+  labels: { alias: "l", description: "Set comma-separated runner labels", type: "string" },
+  name: { alias: "n", description: "Set the runner name prefix", type: "string" },
+  profile: { alias: "p", description: "Set the profile name", type: "string" },
+  runners: { alias: "c", description: "Set the runner count", type: "number" },
 });
 
 type InitCtx = Ctx<typeof initArgs, typeof initPositionals>;
 
 export class InitCommand extends BaseCommand {
   name = "init";
-  description = "Initialize Hydra runner manager";
+  description = "Set up a runner profile";
   positionals = initPositionals;
   args = initArgs;
   prompts = true;

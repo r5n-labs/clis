@@ -6,15 +6,15 @@ import type { RunnerEntry } from "../types";
 import { resolveProfile, selectProfile } from "../utils";
 
 const createPositionals = positionals({
-  profile: { description: "Profile name" },
-  count: { description: "Number of runners to create (overrides profile)" },
+  profile: { description: "Profile to use" },
+  count: { description: "Runner count override" },
 });
 
 type CreateCtx = Ctx<Record<string, never>, typeof createPositionals>;
 
 export class CreateCommand extends BaseCommand {
   name = "create";
-  description = "Create and register runners";
+  description = "Download and register runners";
   positionals = createPositionals;
 
   async execute(ctx: CreateCtx) {

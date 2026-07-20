@@ -7,7 +7,7 @@ type ListCtx = Ctx;
 
 export class ProfileListCommand extends BaseCommand {
   name = "list";
-  description = "List all profiles";
+  description = "List profiles";
 
   async execute(ctx: ListCtx) {
     const profiles = ctx.config.get("profiles");

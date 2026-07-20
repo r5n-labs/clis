@@ -5,8 +5,8 @@ import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
 import { maybeAutoCleanup } from "./cleanup";
 
 const startPositionals = positionals({
-  profile: { description: "Profile name" },
-  ids: { description: "Runner IDs (omit to target all)", variadic: true },
+  profile: { description: "Profile to use" },
+  ids: { description: "Runner IDs (all by default)", variadic: true },
 });
 
 type StartCtx = Ctx<Record<string, never>, typeof startPositionals>;

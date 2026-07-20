@@ -6,15 +6,15 @@ import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
 
 const removePositionals = positionals({
-  profile: { description: "Profile name" },
-  ids: { description: "Runner IDs (omit to target all)", variadic: true },
+  profile: { description: "Profile to use" },
+  ids: { description: "Runner IDs (all by default)", variadic: true },
 });
 
 type RemoveCtx = Ctx<Record<string, never>, typeof removePositionals>;
 
 export class RemoveCommand extends BaseCommand {
   name = "remove";
-  description = "Deregister and remove runners";
+  description = "Deregister and delete runners";
   positionals = removePositionals;
 
   async execute(ctx: RemoveCtx) {

@@ -8,7 +8,7 @@ type UpdateCtx = Ctx;
 
 export class UpdateCommand extends BaseCommand {
   name = "update";
-  description = "Update runners to the latest version";
+  description = "Update runner binaries";
 
   async execute(ctx: UpdateCtx) {
     const profiles = ctx.config.get("profiles");

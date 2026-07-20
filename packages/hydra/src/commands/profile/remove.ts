@@ -12,7 +12,7 @@ type RemoveCtx = Ctx<Record<string, never>, typeof removePositionals>;
 
 export class ProfileRemoveCommand extends BaseCommand {
   name = "remove";
-  description = "Remove a profile";
+  description = "Delete a profile and its runners";
   positionals = removePositionals;
 
   async execute(ctx: RemoveCtx) {

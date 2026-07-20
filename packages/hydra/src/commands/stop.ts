@@ -4,8 +4,8 @@ import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
 
 const stopPositionals = positionals({
-  profile: { description: "Profile name" },
-  ids: { description: "Runner IDs (omit to target all)", variadic: true },
+  profile: { description: "Profile to use" },
+  ids: { description: "Runner IDs (all by default)", variadic: true },
 });
 
 type StopCtx = Ctx<Record<string, never>, typeof stopPositionals>;

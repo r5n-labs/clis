@@ -2,7 +2,13 @@ export type ArgType = "string" | "boolean" | "number";
 
 export type ArgValue = string | boolean | number;
 
-export type ArgDefinition = { type: ArgType; alias?: string; default?: ArgValue; description?: string };
+export type ArgDefinition = {
+  type: ArgType;
+  alias?: string;
+  default?: ArgValue;
+  description?: string;
+  displayDefault?: string;
+};
 
 type ArgTypeMap = { string: string; boolean: boolean; number: number };
 
