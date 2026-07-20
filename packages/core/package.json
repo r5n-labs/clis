@@ -1,21 +1,11 @@
 {
-  "dependencies": {
-    "@clack/prompts": "1.7.0",
-    "banditypes": "0.3.0",
-    "fastest-levenshtein": "1.0.16",
-    "mri": "1.2.0"
-  },
-  "devDependencies": {
-    "@r5n/tools": "workspace:*"
-  },
+  "dependencies": { "@clack/prompts": "1.7.0", "banditypes": "0.3.0", "fastest-levenshtein": "1.0.16", "mri": "1.2.0" },
+  "devDependencies": { "@r5n/tools": "workspace:*" },
   "license": "Apache-2.0",
   "main": "./index.ts",
   "name": "@r5n/cli-core",
   "private": true,
-  "scripts": {
-    "clean": "rm -rf dist node_modules",
-    "type-check": "bun --bun tsc --noEmit"
-  },
+  "scripts": { "clean": "rm -rf dist node_modules", "type-check": "bun --bun tsc --noEmit" },
   "types": "./index.ts",
   "version": "0.3.0"
 }
