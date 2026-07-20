@@ -1,5 +1,19 @@
 # @r5n/tools
 
+## ✨ 0.1.0 (2026-07-20)
+
+### 🪨 Bug fixes
+
+- [`faf57dd`](https://github.com/r5n-labs/clis/commit/faf57dd) fix(tools): reject publishing manifests that depend on private workspace packages
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
+### 🪨 Features
+
+- [`d3788f3`](https://github.com/r5n-labs/clis/commit/d3788f3) feat(hydra): cleanup command with config-driven auto cleanup
+
 ## 🐛 0.0.2 (2026-07-19)
 
 ### 🪨 Chores

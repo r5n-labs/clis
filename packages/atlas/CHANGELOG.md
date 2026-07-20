@@ -1,5 +1,24 @@
 # @r5n/atlas
 
+## ✨ 0.2.0 (2026-07-20)
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
+### 🪨 Features
+
+- [`d3788f3`](https://github.com/r5n-labs/clis/commit/d3788f3) feat(hydra): cleanup command with config-driven auto cleanup
+
+### Dependency updates
+- `@r5n/tools` 0.0.2 → 0.1.0
+- `@r5n/sisyphus` 0.6.0 → 0.7.0
+- `@r5n/hydra` 0.7.0 → 0.8.0
+
 ## 🐛 0.1.2 (2026-07-19)
 
 ### 🪨 Documentation
