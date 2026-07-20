@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-20 - @r5n/cli-core@0.4.1, @r5n/hydra@0.9.1, @r5n/sisyphus@0.8.1
+
+**Packages**
+- 🐛 `@r5n/cli-core` 0.4.0 → 0.4.1
+- 🐛 `@r5n/hydra` 0.9.0 → 0.9.1
+- 📦 `@r5n/sisyphus` 0.8.0 → 0.8.1
+
+### 🪨 Improve CLI help and cleanup safety
+**Packages:** `@r5n/cli-core` · `@r5n/hydra`
+
+
+
 ## 2026-07-20 - @r5n/atlas@0.3.0, @r5n/cli-core@0.4.0, @r5n/hydra@0.9.0, @r5n/sisyphus@0.8.0, @r5n/tools@0.2.0
 
 **Packages**

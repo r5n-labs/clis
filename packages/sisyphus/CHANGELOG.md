@@ -1,5 +1,11 @@
 # @r5n/sisyphus
 
+## 📦 0.8.1 (2026-07-20)
+
+### Dependency updates
+- `@r5n/cli-core` 0.4.0 → 0.4.1
+- `@r5n/hydra` 0.9.0 → 0.9.1
+
 ## ✨ 0.8.0 (2026-07-20)
 
 ### 🪨 Features

@@ -1,5 +1,11 @@
 # @r5n/hydra
 
+## 🐛 0.9.1 (2026-07-20)
+
+### 🪨 Improve CLI help and cleanup safety
+
+
+
 ## ✨ 0.9.0 (2026-07-20)
 
 ### 🪨 Features

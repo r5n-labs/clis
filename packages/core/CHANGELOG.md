@@ -1,5 +1,11 @@
 # @r5n/cli-core
 
+## 🐛 0.4.1 (2026-07-20)
+
+### 🪨 Improve CLI help and cleanup safety
+
+
+
 ## ✨ 0.4.0 (2026-07-20)
 
 ### 🪨 Features
