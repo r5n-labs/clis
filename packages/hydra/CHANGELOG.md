@@ -1,5 +1,25 @@
 # @r5n/hydra
 
+## ✨ 0.9.0 (2026-07-20)
+
+### 🪨 Features
+
+- [`d3788f3`](https://github.com/r5n-labs/clis/commit/d3788f3) feat(hydra): cleanup command with config-driven auto cleanup
+- [`9feb9f3`](https://github.com/r5n-labs/clis/commit/9feb9f3) feat(hydra): support organization-level runners
+
+### 🪨 Bug fixes
+
+- [`1d37241`](https://github.com/r5n-labs/clis/commit/1d37241) fix(hydra): drop runtime dependency on private cli-core (published manifest was uninstallable)
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`9079453`](https://github.com/r5n-labs/clis/commit/9079453) chore: restore manifest formatting and sync lockfile after release
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## ✨ 0.8.0 (2026-07-20)
 
 ### 🪨 Features

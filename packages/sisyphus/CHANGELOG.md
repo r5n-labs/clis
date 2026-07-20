@@ -1,5 +1,29 @@
 # @r5n/sisyphus
 
+## ✨ 0.8.0 (2026-07-20)
+
+### 🪨 Features
+
+- [`d3788f3`](https://github.com/r5n-labs/clis/commit/d3788f3) feat(hydra): cleanup command with config-driven auto cleanup
+- [`bed3777`](https://github.com/r5n-labs/clis/commit/bed3777) feat(sisyphus): publish manifests with resolved workspace and catalog protocols
+- [`3023901`](https://github.com/r5n-labs/clis/commit/3023901) feat(sisyphus): install sis bin alias alongside sisyphus
+
+### 🪨 Bug fixes
+
+- [`6b18017`](https://github.com/r5n-labs/clis/commit/6b18017) fix(sisyphus): preserve package.json formatting when bumping versions
+- [`c164b2f`](https://github.com/r5n-labs/clis/commit/c164b2f) fix(sisyphus): reject publishing manifests that depend on private workspace packages
+- [`c4ebacc`](https://github.com/r5n-labs/clis/commit/c4ebacc) fix(sisyphus): make release committer match the configured author
+
+### 🪨 Documentation
+
+- [`9a558c0`](https://github.com/r5n-labs/clis/commit/9a558c0) docs: rewrite READMEs from actual code and refresh agent guidelines
+
+### 🪨 Chores
+
+- [`9079453`](https://github.com/r5n-labs/clis/commit/9079453) chore: restore manifest formatting and sync lockfile after release
+- [`28d36e3`](https://github.com/r5n-labs/clis/commit/28d36e3) chore: rebrand release identity to r5n-bot and add sisyphus logo
+- [`b4eefb3`](https://github.com/r5n-labs/clis/commit/b4eefb3) chore(sisyphus): push releases from CI and record rolled stones
+
 ## ✨ 0.7.0 (2026-07-20)
 
 ### 🪨 Features
