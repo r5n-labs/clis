@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashReleasePlan, hashReleaseSource } from "../../src/services/ReleaseSource";
@@ -35,6 +35,54 @@ describe("hashReleaseSource", () => {
     writeFileSync(join(root, "source.ts"), "export const value = 1;\n");
     chmodSync(join(root, "source.ts"), 0o755);
     expect(await hashReleaseSource(".sisyphus")).not.toBe(initial);
+  });
+
+  test("hashes tracked symlink targets without following them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sisyphus-symlink-source-"));
+    roots.push(root);
+    mkdirSync(join(root, ".sisyphus"), { recursive: true });
+    symlinkSync("missing-first-target", join(root, "current"));
+    await Bun.$`git init -q -b main`.cwd(root).quiet();
+    await Bun.$`git add current`.cwd(root).quiet();
+    process.chdir(root);
+
+    const initial = await hashReleaseSource(".sisyphus");
+    rmSync(join(root, "current"));
+    symlinkSync("missing-second-target", join(root, "current"));
+
+    expect(await hashReleaseSource(".sisyphus")).not.toBe(initial);
+  });
+
+  test("hashes clean gitlinks and rejects dirty checked-out submodules", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sisyphus-gitlink-source-"));
+    const submoduleSource = mkdtempSync(join(tmpdir(), "sisyphus-submodule-source-"));
+    roots.push(root, submoduleSource);
+    mkdirSync(join(root, ".sisyphus"), { recursive: true });
+    writeFileSync(join(submoduleSource, "source.txt"), "clean\n");
+    await Bun.$`git init -q -b main`.cwd(submoduleSource).quiet();
+    await Bun.$`git config user.email submodule@test.local`.cwd(submoduleSource).quiet();
+    await Bun.$`git config user.name "Sisyphus Submodule Test"`.cwd(submoduleSource).quiet();
+    await Bun.$`git add source.txt`.cwd(submoduleSource).quiet();
+    await Bun.$`git commit -q -m init`.cwd(submoduleSource).quiet();
+    await Bun.$`git init -q -b main`.cwd(root).quiet();
+    await Bun.$`git -c protocol.file.allow=always submodule add -q ${submoduleSource} vendor/dependency`
+      .cwd(root)
+      .quiet();
+    process.chdir(root);
+
+    await expect(hashReleaseSource(".sisyphus")).resolves.toMatch(/^[0-9a-f]{64}$/);
+
+    writeFileSync(join(root, "vendor/dependency/source.txt"), "dirty\n");
+    await expect(hashReleaseSource(".sisyphus")).rejects.toThrow("Release source gitlink is dirty: vendor/dependency");
+
+    await Bun.$`git config user.email submodule@test.local`.cwd(join(root, "vendor/dependency")).quiet();
+    await Bun.$`git config user.name "Sisyphus Submodule Test"`.cwd(join(root, "vendor/dependency")).quiet();
+    await Bun.$`git add source.txt`.cwd(join(root, "vendor/dependency")).quiet();
+    await Bun.$`git commit -q -m next`.cwd(join(root, "vendor/dependency")).quiet();
+
+    await expect(hashReleaseSource(".sisyphus")).rejects.toThrow(
+      "Release source gitlink does not match the recorded commit: vendor/dependency",
+    );
   });
 
   test("binds release packages and complete stone contents into the plan hash", () => {
