@@ -1,0 +1,6 @@
+{
+  "id": "0001-4be6244d",
+  "message": "feat: harden profile and release workflows",
+  "minor": ["@r5n/atlas", "@r5n/sisyphus"],
+  "patch": ["@r5n/cli-core", "@r5n/hydra"]
+}
