@@ -145,7 +145,7 @@ export abstract class AbstractCLI {
     if (error instanceof Exit) {
       log.warn(color.yellow(error.message));
       if (error.hint) log.info(color.dim(error.hint));
-      process.exit(0);
+      process.exit(error.exitCode);
     }
 
     if (error instanceof Error) {

@@ -46,7 +46,7 @@ export class ConfigManager<T extends object> {
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
     } catch (error) {
-      console.error(`Failed to save config to ${this.configPath}:`, error);
+      throw new Error(`Failed to save config to ${this.configPath}`, { cause: error });
     }
   }
 
@@ -57,7 +57,7 @@ export class ConfigManager<T extends object> {
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch (error) {
-        console.error(`Failed to create config directory at ${dir}:`, error);
+        throw new Error(`Failed to create config directory at ${dir}`, { cause: error });
       }
     }
   }
