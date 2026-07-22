@@ -29,9 +29,7 @@
     "atlas": "bun --bun packages/atlas/src/cli.ts",
     "atlas:dbg": "bun --inspect-brk packages/atlas/src/cli.ts",
     "test": "bun test",
-    "type-check": "bun --elide-lines=0 --filter '*' type-check",
-    "type-check:ci": "bun --filter '*' type-check",
-    "type-check:go": "bun --elide-lines=0 --filter '*' type-check:go"
+    "type-check": "bun --elide-lines=0 --filter '*' type-check"
   },
   "version": "0.0.0",
   "workspaces": { "packages": ["packages/*", "tools"] }

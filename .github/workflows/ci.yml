@@ -49,7 +49,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run type check
-        run: bun type-check:ci
+        run: bun type-check
 
   test:
     name: Test

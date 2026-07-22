@@ -69,7 +69,7 @@ bun install
 
 bun test              # all tests
 bun lint              # biome check + format
-bun type-check:ci     # type-check every package
+bun type-check        # type-check every package
 bun run build         # bundle all CLIs
 
 bun sis <command>     # run sisyphus from source
