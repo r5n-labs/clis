@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -69,7 +70,7 @@ describe("ReleaseLedger", () => {
     const ledger = await ReleaseLedger.create(input(), nested);
     const loaded = await ReleaseLedger.loadActive(nested);
 
-    expect(ledger.releaseDirectory.startsWith(join(root, ".git"))).toBe(true);
+    expect(realpathSync(ledger.releaseDirectory)).toBe(realpathSync(join(root, ".git", "sisyphus", "release")));
     expect(ledger.activePath).toBe(join(ledger.releaseDirectory, "active.json"));
     expect(loaded?.data).toEqual(ledger.data);
     expect((await Bun.$`git status --porcelain`.cwd(root).quiet()).stdout.toString()).toBe("");
