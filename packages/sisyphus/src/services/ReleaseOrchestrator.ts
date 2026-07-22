@@ -110,7 +110,7 @@ export class ReleaseOrchestrator {
     }
 
     try {
-      await orchestrator.recoverReleaseCommit(data, packages);
+      await orchestrator.recoverReleaseCommit(data);
       await orchestrator.validateReleaseCommit(ledger.data);
       await orchestrator.ensureLedgerPlan(packages, stones);
       if (data.options.npm) {
@@ -150,7 +150,10 @@ export class ReleaseOrchestrator {
   async finalizeExternalRelease(packages: Package[], stones: Stone[]): Promise<void> {
     if (!this.ledger) return;
     if (this.options.npm) await this.validatePublishSources();
-    await this.ledger.setReleaseCommit(await this.getHeadCommit());
+    const releaseCommit = await this.getHeadCommit();
+    await this.ensureExpectedReleaseTree(this.ledger.data, releaseCommit);
+    await this.validateReleaseCommitCandidate(this.ledger.data, releaseCommit);
+    await this.ledger.setReleaseCommit(releaseCommit);
     await this.ensureLedgerPlan(packages, stones);
   }
 
@@ -218,13 +221,24 @@ export class ReleaseOrchestrator {
     const pathspecs = ownedPaths.map((path) => this.toLiteralPathspec(path));
     const message = this.formatCommitMessage(stone, packages);
     const authorArg = this.getCommitAuthorArg();
+    const baseCommit = this.ledger?.data.baseCommit ?? (await this.getHeadCommit());
+    let expectedReleaseTree: string | undefined;
 
     try {
       await this.run(() => Bun.$`git add -A -- ${pathspecs}`.quiet(), "Failed to stage release files");
+      if ((await this.getHeadCommit()) !== baseCommit) {
+        throw new Exit(
+          "Release base commit changed before commit creation",
+          "Restart the release from the intended branch",
+        );
+      }
+      expectedReleaseTree = await this.writeExpectedReleaseTree(baseCommit, ownedPaths);
+      await this.ledger?.setExpectedReleaseTree(expectedReleaseTree);
       await this.run(
         () => Bun.$`git commit --only ${authorArg} -m ${message} -- ${pathspecs}`.env(this.getCommitterEnv()).quiet(),
         "Failed to create commit",
       );
+      this.commitCreated = true;
     } catch (error) {
       try {
         await this.unstageOwnedPaths(ownedPaths);
@@ -233,7 +247,16 @@ export class ReleaseOrchestrator {
       }
       throw error;
     }
-    this.commitCreated = true;
+
+    const releaseCommit = await this.getHeadCommit();
+    if (!expectedReleaseTree) throw new Error("Expected release tree was not recorded before commit");
+    if (this.ledger) {
+      await this.validateReleaseCommitCandidate(this.ledger.data, releaseCommit);
+      return;
+    }
+
+    await this.validateCommitParent(releaseCommit, baseCommit);
+    await this.validateCommitTree(releaseCommit, expectedReleaseTree);
   }
 
   private getCommitAuthorArg(): string[] {
@@ -544,37 +567,22 @@ export class ReleaseOrchestrator {
         `Check out ${data.releaseCommit} before resuming`,
       );
     }
+    if (data.expectedReleaseTree) await this.validateReleaseCommitCandidate(data, head);
   }
 
-  private async recoverReleaseCommit(data: ReleaseLedgerData, packages: Package[]): Promise<void> {
+  private async recoverReleaseCommit(data: ReleaseLedgerData): Promise<void> {
     if (data.releaseCommit || !this.ledger) return;
 
     const head = await this.getHeadCommit();
-    if (data.options.publishOnly && head === data.baseCommit) {
-      await this.ledger.setReleaseCommit(head);
-      return;
-    }
-
-    const parentResult = await Bun.$`git rev-parse HEAD^`.quiet().nothrow();
-    const parent = parentResult.stdout.toString().trim();
-    if (parentResult.exitCode !== 0 || parent !== data.baseCommit) {
+    if (!data.expectedReleaseTree && !data.options.publishOnly) {
       throw new Exit(
-        `Release ${data.id} stopped before its release commit was recorded`,
+        `Release ${data.id} stopped before its expected release tree was recorded`,
         "No external operation was attempted; inspect the local changes and release ledger manually",
       );
     }
 
-    for (const pkg of packages) {
-      const manifest = await this.readPackageManifest(pkg);
-      const expectedVersion = pkg.newVersion ?? pkg.version;
-      if (manifest.name !== pkg.name || manifest.version !== expectedVersion) {
-        throw new Exit(
-          `Cannot recover release commit: ${pkg.name} is not at ${expectedVersion}`,
-          "No external operation was attempted; inspect the release commit manually",
-        );
-      }
-    }
-
+    await this.ensureExpectedReleaseTree(data, head);
+    await this.validateReleaseCommitCandidate(this.ledger.data, head);
     await this.ledger.setReleaseCommit(head);
   }
 
@@ -1113,16 +1121,121 @@ export class ReleaseOrchestrator {
   }
 
   private async validatePublishSources(): Promise<void> {
-    const result = await this.run(
-      () => Bun.$`git status --porcelain=v1 -z --untracked-files=all`.quiet(),
-      "Failed to inspect release source files",
-    );
-    if (result.stdout.length === 0) return;
+    const status = await this.getPublishSourceStatus();
+    if (status.length === 0) return;
 
     throw new Exit(
       "Repository source files changed after the release commit",
       "Commit or stash all source changes before preparing npm artifacts",
     );
+  }
+
+  private async getPublishSourceStatus(): Promise<Buffer> {
+    const result = await this.run(
+      () => Bun.$`git status --porcelain=v1 -z --untracked-files=all`.quiet(),
+      "Failed to inspect release source files",
+    );
+    return result.stdout;
+  }
+
+  private async writeExpectedReleaseTree(baseCommit: string, paths: readonly string[]): Promise<string> {
+    const repositoryRoot = await this.getRepositoryRoot();
+    const tempDir = await mkdtemp(join(tmpdir(), "sisyphus-index-"));
+    const indexPath = join(tempDir, "index");
+    const env = { ...process.env, GIT_INDEX_FILE: indexPath } as Record<string, string>;
+    const pathspecs = paths.map((path) => this.toLiteralPathspec(path));
+
+    try {
+      await this.run(
+        () => Bun.$`git read-tree ${baseCommit}`.cwd(repositoryRoot).env(env).quiet(),
+        "Failed to initialize release tree",
+      );
+      await this.run(
+        () => Bun.$`git add -A -- ${pathspecs}`.cwd(repositoryRoot).env(env).quiet(),
+        "Failed to build release tree",
+      );
+
+      const result = await this.run(
+        () => Bun.$`git write-tree`.cwd(repositoryRoot).env(env).quiet(),
+        "Failed to write release tree",
+      );
+      const tree = result.stdout.toString().trim();
+      if (!tree) throw new Error("Git returned an empty release tree object ID");
+      return tree;
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  }
+
+  private async ensureExpectedReleaseTree(data: ReleaseLedgerData, candidate: string): Promise<void> {
+    if (data.expectedReleaseTree) return;
+    if (!this.ledger || !data.options.publishOnly || candidate !== data.baseCommit) {
+      throw new Exit(
+        `Release ${data.id} has no recorded expected release tree`,
+        "No external operation was attempted; inspect the release state manually",
+      );
+    }
+
+    await this.ledger.setExpectedReleaseTree(await this.getCommitTree(data.baseCommit));
+  }
+
+  private async validateReleaseCommitCandidate(data: ReleaseLedgerData, candidate: string): Promise<void> {
+    if (!data.expectedReleaseTree) {
+      throw new Exit(
+        `Release ${data.id} has no recorded expected release tree`,
+        "No external operation was attempted; inspect the release state manually",
+      );
+    }
+
+    if (data.options.publishOnly) {
+      if (candidate !== data.baseCommit) {
+        throw new Exit(
+          `Publish-only release ${data.id} must use commit ${data.baseCommit}, found ${candidate}`,
+          `Check out ${data.baseCommit} before resuming`,
+        );
+      }
+    } else {
+      await this.validateCommitParent(candidate, data.baseCommit, data.id);
+    }
+
+    await this.validateCommitTree(candidate, data.expectedReleaseTree, data.id);
+  }
+
+  private async validateCommitParent(commit: string, expectedParent: string, releaseId?: string): Promise<void> {
+    const result = await this.run(
+      () => Bun.$`git rev-list --parents -n 1 ${commit}`.quiet(),
+      "Failed to resolve release commit parent",
+    );
+    const [resolvedCommit, ...parents] = result.stdout.toString().trim().split(/\s+/);
+    if (resolvedCommit === commit && parents.length === 1 && parents[0] === expectedParent) return;
+
+    const release = releaseId ? ` for release ${releaseId}` : "";
+    throw new Exit(
+      `Release commit parent${release} does not match ${expectedParent}`,
+      "No external operation was attempted; inspect the release commit ancestry",
+    );
+  }
+
+  private async validateCommitTree(commit: string, expectedTree: string, releaseId?: string): Promise<void> {
+    const actualTree = await this.getCommitTree(commit);
+    if (actualTree === expectedTree) return;
+
+    const release = releaseId ? ` for release ${releaseId}` : "";
+    throw new Exit(
+      `Release commit tree${release} is ${actualTree}, expected ${expectedTree}`,
+      "No external operation was attempted; inspect the release commit for unrelated tracked changes",
+    );
+  }
+
+  private async getCommitTree(commit: string): Promise<string> {
+    const treeish = `${commit}^{tree}`;
+    const result = await this.run(
+      () => Bun.$`git rev-parse ${treeish}`.quiet(),
+      "Failed to resolve release commit tree",
+    );
+    const tree = result.stdout.toString().trim();
+    if (!tree) throw new Error(`Git returned an empty tree object ID for ${commit}`);
+    return tree;
   }
 
   private normalizeOwnedPath(repositoryRoot: string, path: string): string {
@@ -1215,7 +1328,24 @@ export class ReleaseOrchestrator {
     const packageDirectory = dirname(pkg.file);
     const originalText = await readFile(pkg.file, "utf-8");
     try {
+      const sourceCommit = await this.getHeadCommit();
+      const sourceStatus = await this.getPublishSourceStatus();
+      if (sourceStatus.length > 0) {
+        throw new Exit(
+          "Repository source files changed after the release commit",
+          "Commit or stash all source changes before preparing npm artifacts",
+        );
+      }
       await this.run(() => Bun.$`bun run build`.cwd(packageDirectory).quiet(), `Failed to build ${pkg.name}`);
+      const builtSourceCommit = await this.getHeadCommit();
+      const builtSourceStatus = await this.getPublishSourceStatus();
+      if (builtSourceCommit !== sourceCommit || builtSourceStatus.length > 0) {
+        throw new Exit(
+          `Package build changed repository source files for ${pkg.name}`,
+          "This package was not packed and nothing was published; restore the build changes before retrying",
+        );
+      }
+
       const builtText = await readFile(pkg.file, "utf-8");
       const { catalogs, workspaceVersions } = await this.getPublishContext();
       const publishText = renderPublishManifest(builtText, catalogs, workspaceVersions);

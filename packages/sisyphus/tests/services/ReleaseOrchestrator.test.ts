@@ -97,7 +97,7 @@ function makePendingStone(): Stone {
   return Stone.fromJson({ id: "0001-testtest", message: "ship it", patch: [PACKAGE_NAME] });
 }
 
-type PublishPackageOptions = { identityChanges?: boolean; preparationFails?: boolean; private?: boolean };
+type PublishPackageOptions = { preparationFails?: boolean; private?: boolean; sourceChanges?: boolean };
 
 function makePublishPackage(
   root: string,
@@ -110,14 +110,14 @@ function makePublishPackage(
     'const countFile = Bun.file("build-count.txt");',
     "const count = (await countFile.exists()) ? Number(await countFile.text()) : 0;",
     "await Bun.write(countFile, String(count + 1));",
-    'const manifestFile = Bun.file("package.json");',
-    "const manifest = await manifestFile.json();",
-    `await Bun.write(manifestFile, JSON.stringify({ ...manifest, ${options.identityChanges ? 'name: "@fixture/wrong"' : "prepared: true"} }, null, 2) + "\\n");`,
+    options.sourceChanges ? 'await Bun.write("source.ts", "export const changed = true;\\n");' : "",
     options.preparationFails ? "process.exit(1);" : "",
   ].join("\n");
 
   mkdirSync(join(root, directory), { recursive: true });
+  writeFileSync(join(root, directory, ".gitignore"), "build-count.txt\n");
   writeFileSync(join(root, directory, "prepare.ts"), `${prepareScript}\n`);
+  if (options.sourceChanges) writeFileSync(join(root, directory, "source.ts"), "export const changed = false;\n");
   writeFileSync(
     join(root, file),
     `${JSON.stringify(
@@ -449,11 +449,12 @@ describe("ReleaseOrchestrator release flow", () => {
     writeFileSync(join(root, "unrelated.txt"), "staged unrelated change\n");
     await Bun.$`git add unrelated.txt`.quiet();
 
-    const orchestrator = makeOrchestrator(root);
+    const orchestrator = makeOrchestrator(root, { push: true });
     const pkg = makePackage();
     const stone = makePendingStone();
 
     await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
     await orchestrator.updatePackageVersions([pkg]);
     appendFileSync(join(root, CHANGELOG_FILE), "\n## 1.0.1\n- ship it\n");
     rmSync(join(root, STONE_FILE));
@@ -462,6 +463,9 @@ describe("ReleaseOrchestrator release flow", () => {
 
     const stagedPaths = (await gitText(root, ["diff", "--cached", "--name-only"])).split("\n").filter(Boolean);
     expect(stagedPaths).toEqual(["unrelated.txt"]);
+    const active = await ReleaseLedger.loadActive(root);
+    expect(active?.data.expectedReleaseTree).toMatch(/^[0-9a-f]{40}$/);
+    expect(active?.data.releaseCommit).toBeUndefined();
   });
 
   test("unstages partially added release paths when git add fails", async () => {
@@ -633,6 +637,8 @@ describe("ReleaseOrchestrator release flow", () => {
 
     const privatePackage = makePublishPackage(root, "packages/private", "@fixture/private", { private: true });
     const publicPackage = makePublishPackage(root, "packages/public", "@fixture/public");
+    await Bun.$`git add packages/private packages/public`.quiet();
+    await Bun.$`git commit -q -m "add publish packages"`.quiet();
     const originalManifest = readFileSync(join(root, publicPackage.file), "utf-8");
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
 
@@ -668,6 +674,8 @@ describe("ReleaseOrchestrator release flow", () => {
     const published = startRegistry();
 
     const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
     await orchestrator.prepareNpmPublish([pkg]);
 
@@ -705,6 +713,8 @@ describe("ReleaseOrchestrator release flow", () => {
 
     const first = makePublishPackage(root, "packages/public-a", "@fixture/public-a");
     const second = makePublishPackage(root, "packages/public-b", "@fixture/public-b", { preparationFails: true });
+    await Bun.$`git add packages/public-a packages/public-b`.quiet();
+    await Bun.$`git commit -q -m "add public packages"`.quiet();
     const firstManifest = readFileSync(join(root, first.file), "utf-8");
     const secondManifest = readFileSync(join(root, second.file), "utf-8");
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
@@ -723,13 +733,35 @@ describe("ReleaseOrchestrator release flow", () => {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
     process.chdir(root);
-    const pkg = makePublishPackage(root, "packages/public", "@fixture/public", { identityChanges: true });
+    const sourcePackage = makePublishPackage(root, "packages/public", "@fixture/wrong");
+    const pkg = new Package({ file: sourcePackage.file, name: "@fixture/public", version: "1.0.0" });
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add mismatched public package"`.quiet();
     const originalManifest = readFileSync(join(root, pkg.file), "utf-8");
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
 
     await expect(orchestrator.prepareNpmPublish([pkg])).rejects.toThrow("Packed manifest identity mismatch");
 
     expect(readFileSync(join(root, pkg.file), "utf-8")).toBe(originalManifest);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("aborts before publication when a build changes another tracked source file", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public", { sourceChanges: true });
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
+    const originalManifest = readFileSync(join(root, pkg.file), "utf-8");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow("Package build changed repository source files");
+
+    expect(readFileSync(join(root, pkg.file), "utf-8")).toBe(originalManifest);
+    expect(readFileSync(join(root, "packages/public/source.ts"), "utf-8")).toBe("export const changed = true;\n");
+    expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
   });
 
@@ -755,6 +787,11 @@ describe("ReleaseOrchestrator release flow", () => {
     process.chdir(root);
     const published = startRegistry("@fixture/public-b");
 
+    const first = makePublishPackage(root, "packages/public-a", "@fixture/public-a");
+    const second = makePublishPackage(root, "packages/public-b", "@fixture/public-b");
+    await Bun.$`git add packages/public-a packages/public-b`.quiet();
+    await Bun.$`git commit -q -m "add public packages"`.quiet();
+
     const orchestrator = makeOrchestrator(root, { npm: true });
     const pkg = makePackage();
     const stone = makePendingStone();
@@ -766,9 +803,6 @@ describe("ReleaseOrchestrator release flow", () => {
     await orchestrator.createCommit(stone, [pkg], [stone]);
     await orchestrator.createGitTags([pkg]);
     const releaseHead = await gitText(root, ["rev-parse", "HEAD"]);
-
-    const first = makePublishPackage(root, "packages/public-a", "@fixture/public-a");
-    const second = makePublishPackage(root, "packages/public-b", "@fixture/public-b");
 
     await expect(orchestrator.publishToNpm([first, second])).rejects.toThrow("Failed to publish @fixture/public-b");
 
@@ -785,6 +819,88 @@ describe("ReleaseOrchestrator release flow", () => {
     const incomplete = orchestrator.createIncompleteReleaseError(new Error("second publication failed"));
     expect(incomplete.message).toContain("Release incomplete after npm publication began");
     expect(incomplete.hint).toContain("--resume");
+  });
+
+  test("recovers the exact release commit tree after commit recording is interrupted", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root, remote } = fixture;
+    process.chdir(root);
+    const pkg = makePackage();
+    const stone = makePendingStone();
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
+
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    const releaseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+    const releaseTree = await gitText(root, ["rev-parse", "HEAD^{tree}"]);
+    const interrupted = await ReleaseLedger.loadActive(root);
+
+    expect(interrupted?.data.expectedReleaseTree).toBe(releaseTree);
+    expect(interrupted?.data.releaseCommit).toBeUndefined();
+
+    await ReleaseOrchestrator.resume(makeConfig(root));
+
+    const remoteHead = (await gitText(root, ["ls-remote", remote, "refs/heads/main"])).split("\t")[0]?.trim();
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+    expect(remoteHead).toBe(releaseCommit);
+  });
+
+  test("rejects an amended release commit with an unrelated tracked change during recovery", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root, remote } = fixture;
+    process.chdir(root);
+    const pkg = makePackage();
+    const stone = makePendingStone();
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
+    const baseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    writeFileSync(join(root, "unrelated.txt"), "amended unrelated change\n");
+    await Bun.$`git add unrelated.txt`.quiet();
+    await Bun.$`git commit -q --amend --no-edit`.quiet();
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("Release commit tree for release");
+
+    const active = await ReleaseLedger.loadActive(root);
+    const remoteHead = (await gitText(root, ["ls-remote", remote, "refs/heads/main"])).split("\t")[0]?.trim();
+    expect(active?.data.releaseCommit).toBeUndefined();
+    expect(active?.data.operations.push).toBeUndefined();
+    expect(remoteHead).toBe(baseCommit);
+  });
+
+  test("rejects an amended release commit with changed owned metadata during recovery", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root, remote } = fixture;
+    process.chdir(root);
+    const pkg = makePackage();
+    const stone = makePendingStone();
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
+    const baseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    const manifest = JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8"));
+    writeFileSync(join(root, PACKAGE_FILE), `${JSON.stringify({ ...manifest, unexpected: true }, null, 2)}\n`);
+    await Bun.$`git add ${PACKAGE_FILE}`.quiet();
+    await Bun.$`git commit -q --amend --no-edit`.quiet();
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("Release commit tree for release");
+
+    const active = await ReleaseLedger.loadActive(root);
+    const remoteHead = (await gitText(root, ["ls-remote", remote, "refs/heads/main"])).split("\t")[0]?.trim();
+    expect(active?.data.releaseCommit).toBeUndefined();
+    expect(active?.data.operations.push).toBeUndefined();
+    expect(remoteHead).toBe(baseCommit);
   });
 
   test("resumes a started push by confirming exact remote refs without pushing again", async () => {
@@ -948,7 +1064,7 @@ describe("ReleaseOrchestrator release flow", () => {
     const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
     const pkg = makePackage();
     const stone = makePendingStone();
-    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.initializeExternalRelease([pkg], [stone], true);
 
     await expect(orchestrator.finalizeExternalRelease([pkg], [stone])).rejects.toThrow(
       "must have exactly one push URL",
@@ -967,7 +1083,7 @@ describe("ReleaseOrchestrator release flow", () => {
     const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
     const pkg = makePackage();
     const stone = makePendingStone();
-    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.initializeExternalRelease([pkg], [stone], true);
 
     await expect(orchestrator.finalizeExternalRelease([pkg], [stone])).rejects.toThrow(
       "Push URL contains embedded credentials",
@@ -975,6 +1091,30 @@ describe("ReleaseOrchestrator release flow", () => {
 
     const ledger = await ReleaseLedger.loadActive(root);
     expect(JSON.stringify(ledger?.data)).not.toContain("release-secret");
+    await orchestrator.rollback();
+  });
+
+  test("accepts a credential-free GitHub remote with checkout-managed authentication", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const remoteUrl = "https://github.com/fixture/repo.git";
+    await Bun.$`git remote set-url --push origin ${remoteUrl}`.quiet();
+    await Bun.$`git config http.https://github.com/.extraheader checkout-managed-auth`.quiet();
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
+    const pkg = makePackage();
+    const stone = makePendingStone();
+
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    await orchestrator.finalizeExternalRelease([pkg], [stone]);
+
+    const ledger = await ReleaseLedger.loadActive(root);
+    expect(ledger?.data.operations.push?.destination.canonicalUrl).toBe(remoteUrl);
+    expect(JSON.stringify(ledger?.data)).not.toContain("checkout-managed-auth");
     await orchestrator.rollback();
   });
 
@@ -1091,7 +1231,7 @@ describe("ReleaseOrchestrator release flow", () => {
     await Bun.$`git commit -q -m "add registry package"`.quiet();
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
 
-    await orchestrator.initializeExternalRelease([pkg], [], false);
+    await orchestrator.initializeExternalRelease([pkg], [], true);
     await orchestrator.finalizeExternalRelease([pkg], []);
 
     const ledger = await ReleaseLedger.loadActive(root);
@@ -1116,7 +1256,7 @@ describe("ReleaseOrchestrator release flow", () => {
     await Bun.$`git add packages/public`.quiet();
     await Bun.$`git commit -q -m "add scoped registry package"`.quiet();
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
-    await orchestrator.initializeExternalRelease([pkg], [], false);
+    await orchestrator.initializeExternalRelease([pkg], [], true);
     await orchestrator.finalizeExternalRelease([pkg], []);
 
     const unexpectedRequests: string[] = [];
@@ -1193,6 +1333,37 @@ describe("ReleaseOrchestrator release flow", () => {
 
     const remoteTag = (await gitText(root, ["ls-remote", remote, "refs/tags/moved-tag"])).split("\t")[0];
     expect(remoteTag).toBe(releaseCommit);
+  });
+
+  test("rejects a publish-only resume from a same-tree child commit", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const pkg = makePackage();
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: false,
+          npmTag: "latest",
+          publishOnly: true,
+          push: false,
+          tags: false,
+        },
+        packages: [pkg],
+        stones: [makePendingStone()],
+      },
+      root,
+    );
+    const baseTree = await gitText(root, ["rev-parse", "HEAD^{tree}"]);
+    await Bun.$`git commit -q --allow-empty -m "same tree child"`.quiet();
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("must use commit");
+
+    expect(ledger.data.expectedReleaseTree).toBe(baseTree);
+    expect((await ReleaseLedger.loadActive(root))?.data.releaseCommit).toBeUndefined();
   });
 
   test("finalizes a completed active ledger without requiring the original HEAD", async () => {

@@ -95,6 +95,7 @@ export type ReleaseLedgerData = {
   releaseTags: string[];
   tagsReady: boolean;
   stones: StoneJson[];
+  expectedReleaseTree?: string;
   releaseCommit?: string;
   artifacts: Record<string, ReleaseLedgerArtifact>;
   operations: ReleaseLedgerOperations;
@@ -181,6 +182,9 @@ export class ReleaseLedger {
     if (baseCommitResult.exitCode !== 0 || !FULL_GIT_OID_PATTERN.test(baseCommit)) {
       throw new ReleaseLedgerError("Cannot create release ledger: failed to resolve the current commit");
     }
+    const expectedReleaseTree = input.options.publishOnly
+      ? await resolveCommitTree(paths.repositoryRoot, baseCommit)
+      : undefined;
     const packages = serializePackages(input.packages);
     const stones = serializeStones(input.stones);
     const id = validateReleaseId(
@@ -227,6 +231,7 @@ export class ReleaseLedger {
       tagsReady: !input.options.tags,
       updatedAt: timestamp,
     };
+    if (expectedReleaseTree) candidate.expectedReleaseTree = expectedReleaseTree;
     const data = parseLedgerData(candidate, paths);
     await validatePackageFiles(data, paths);
 
@@ -339,6 +344,24 @@ export class ReleaseLedger {
 
     const next = structuredClone(this.value);
     next.releaseCommit = normalized;
+    await this.persist(next);
+  }
+
+  async setExpectedReleaseTree(tree: string): Promise<void> {
+    this.assertActive("set expected release tree");
+    const normalized = expectGitOid(tree, "expectedReleaseTree");
+    if (this.value.expectedReleaseTree === normalized) return;
+    if (this.value.expectedReleaseTree) {
+      throw new ReleaseLedgerError(
+        `Cannot replace expected release tree ${this.value.expectedReleaseTree} with ${normalized} in release ${this.value.id}`,
+      );
+    }
+    if (this.value.releaseCommit) {
+      throw new ReleaseLedgerError(`Cannot set expected release tree after release commit ${this.value.releaseCommit}`);
+    }
+
+    const next = structuredClone(this.value);
+    next.expectedReleaseTree = normalized;
     await this.persist(next);
   }
 
@@ -650,6 +673,16 @@ async function resolveLedgerPaths(cwd: string): Promise<LedgerPaths> {
   };
 }
 
+async function resolveCommitTree(repositoryRoot: string, commit: string): Promise<string> {
+  const treeish = `${commit}^{tree}`;
+  const result = await Bun.$`git rev-parse ${treeish}`.cwd(repositoryRoot).quiet().nothrow();
+  const tree = result.stdout.toString().trim();
+  if (result.exitCode !== 0 || !FULL_GIT_OID_PATTERN.test(tree)) {
+    throw new ReleaseLedgerError(`Cannot resolve release tree for commit ${commit}`);
+  }
+  return tree;
+}
+
 function hasExternalProgress(data: ReleaseLedgerData): boolean {
   if (Object.values(data.operations.npm).some((operation) => operation.state !== "pending")) return true;
   if (data.operations.push && data.operations.push.state !== "pending") return true;
@@ -706,7 +739,7 @@ function parseLedgerData(value: unknown, paths: LedgerPaths): ReleaseLedgerData 
       "artifacts",
       "operations",
     ],
-    ["releaseCommit"],
+    ["expectedReleaseTree", "releaseCommit"],
     "root",
   );
 
@@ -726,6 +759,10 @@ function parseLedgerData(value: unknown, paths: LedgerPaths): ReleaseLedgerData 
   const tagsReady = expectBoolean(object.tagsReady, "tagsReady");
   if (!options.tags && !tagsReady) invalid("tagsReady", "must be true when tags are disabled");
   const stones = parseStones(object.stones);
+  const expectedReleaseTree =
+    object.expectedReleaseTree === undefined
+      ? undefined
+      : expectGitOid(object.expectedReleaseTree, "expectedReleaseTree");
   const releaseCommit =
     object.releaseCommit === undefined ? undefined : expectGitOid(object.releaseCommit, "releaseCommit");
   const artifacts = parseArtifacts(object.artifacts, packages, paths, id);
@@ -745,6 +782,7 @@ function parseLedgerData(value: unknown, paths: LedgerPaths): ReleaseLedgerData 
     tagsReady,
     updatedAt,
   };
+  if (expectedReleaseTree !== undefined) data.expectedReleaseTree = expectedReleaseTree;
   if (releaseCommit !== undefined) data.releaseCommit = releaseCommit;
   if (options.tags && tagsReady && !releaseCommit) {
     invalid("tagsReady", "cannot be true before releaseCommit is recorded");

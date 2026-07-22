@@ -18,6 +18,7 @@ import { type CreateReleaseLedgerInput, ReleaseLedger, type ReleaseLedgerData } 
 const PACKAGE_NAME = "@fixture/public";
 const PACKAGE_FILE = "packages/public/package.json";
 const OID = "a".repeat(40);
+const TREE_OID = "b".repeat(40);
 const LOCK_HOLDER_SCRIPT = `
   import { randomUUID } from "node:crypto";
   import { link, open } from "node:fs/promises";
@@ -182,6 +183,37 @@ describe("ReleaseLedger", () => {
     expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
   });
 
+  test("records the base tree when creating a publish-only ledger", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const expectedTree = (await Bun.$`git rev-parse HEAD^{tree}`.cwd(root).quiet()).stdout.toString().trim();
+
+    const ledger = await ReleaseLedger.create(input({ publishOnly: true }), root);
+
+    expect(ledger.data.expectedReleaseTree).toBe(expectedTree);
+    expect((await ReleaseLedger.loadActive(root))?.data.expectedReleaseTree).toBe(expectedTree);
+  });
+
+  test("sets the expected release tree once before the release commit", async () => {
+    const root = await createRepository();
+    const committedRoot = await createRepository();
+    roots.push(root, committedRoot);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const committedLedger = await ReleaseLedger.create(input(), committedRoot);
+
+    await ledger.setExpectedReleaseTree(TREE_OID);
+    await ledger.setExpectedReleaseTree(TREE_OID);
+
+    expect(ledger.data.expectedReleaseTree).toBe(TREE_OID);
+    expect((await ReleaseLedger.loadActive(root))?.data.expectedReleaseTree).toBe(TREE_OID);
+    await expect(ledger.setExpectedReleaseTree(OID)).rejects.toThrow("Cannot replace expected release tree");
+
+    await committedLedger.setReleaseCommit(OID);
+    await expect(committedLedger.setExpectedReleaseTree(TREE_OID)).rejects.toThrow(
+      "Cannot set expected release tree after release commit",
+    );
+  });
+
   test("recovers subprocess locks left by process death before later writes and removal", async () => {
     const root = await createRepository();
     roots.push(root);
@@ -194,8 +226,10 @@ describe("ReleaseLedger", () => {
 
     const resumed = await ReleaseLedger.loadActive(root);
     if (!resumed) throw new Error("Expected active release ledger");
+    await resumed.setExpectedReleaseTree(TREE_OID);
     await resumed.setPhase("local-ready");
     expect(resumed.phase).toBe("local-ready");
+    expect(resumed.data.expectedReleaseTree).toBe(TREE_OID);
     expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
 
     const removeHolder = spawnWriteLockHolder(ledger.releaseDirectory);
