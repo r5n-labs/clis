@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigManager } from "@r5n/cli-core";
@@ -22,7 +22,7 @@ type RollCtx = Parameters<RollCommand["execute"]>[0];
 
 function makeCtx(config: ConfigManager<SisyphusConfig>, args: Partial<RollCtx["args"]> = {}): RollCtx {
   return {
-    args: { dryRun: false, noCommit: false, preview: false, publishOnly: false, yes: true, ...args },
+    args: { noCommit: false, preview: false, publishOnly: false, yes: true, ...args },
     cli: { name: "SISYPHUS" },
     config,
     interactive: false,
@@ -144,6 +144,42 @@ describe("RollCommand release metadata", () => {
     expect(await gitText(root, ["status", "--porcelain"])).toBe("");
   });
 
+  test("rolls back release-generated files when the commit hook fails", async () => {
+    const hooksDirectory = join(root, ".git/no-hooks");
+    const hookPath = join(hooksDirectory, "pre-commit");
+    mkdirSync(hooksDirectory, { recursive: true });
+    writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+    chmodSync(hookPath, 0o755);
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+    const originalConfig = readFileSync(join(root, ".sisyphus/config.json"), "utf-8");
+    const originalPackage = readFileSync(join(root, PACKAGE_FILE), "utf-8");
+    const originalStone = readFileSync(join(root, STONE_FILE), "utf-8");
+
+    await expect(new RollCommand().execute(makeCtx(config, { push: true }))).rejects.toThrow("Failed to create commit");
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    expect(readFileSync(join(root, ".sisyphus/config.json"), "utf-8")).toBe(originalConfig);
+    expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toBe(originalPackage);
+    expect(readFileSync(join(root, STONE_FILE), "utf-8")).toBe(originalStone);
+    expect(await gitText(root, ["status", "--porcelain"])).toBe("");
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test("preserves release-owned files when a failing commit hook edits them", async () => {
+    const hooksDirectory = join(root, ".git/no-hooks");
+    const hookPath = join(hooksDirectory, "pre-commit");
+    mkdirSync(hooksDirectory, { recursive: true });
+    writeFileSync(hookPath, `#!/bin/sh\nprintf '\\nHOOK_EDIT\\n' >> ${PACKAGE_FILE}\nexit 1\n`);
+    chmodSync(hookPath, 0o755);
+
+    await expect(new RollCommand().execute(makeCtx(config, { push: true }))).rejects.toThrow(
+      "Release failed and rollback could not be completed; local release state was preserved",
+    );
+
+    expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toContain("HOOK_EDIT");
+    expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
+  });
+
   test("no-commit release leaves lastStone metadata unchanged", async () => {
     await new RollCommand().execute(makeCtx(config, { noCommit: true }));
 
@@ -203,6 +239,36 @@ describe("RollCommand release metadata", () => {
     expect(await gitText(root, ["status", "--porcelain"])).toBe("");
   });
 
+  test("preserves the recovery ledger when a package build moves HEAD", async () => {
+    writeFileSync(
+      join(root, PACKAGE_FILE),
+      `${JSON.stringify(
+        {
+          name: PACKAGE_NAME,
+          private: false,
+          scripts: { build: 'git commit -q --allow-empty -m "build moved head"', "package:prepare": "bun -e 'void 0'" },
+          version: "1.0.0",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await Bun.$`git add ${PACKAGE_FILE}`.cwd(root).quiet();
+    await Bun.$`git commit -q -m "make package move head"`.cwd(root).quiet();
+    process.env.NPM_CONFIG_REGISTRY = "https://registry.npmjs.org/";
+
+    await expect(new RollCommand().execute(makeCtx(config, { npm: true }))).rejects.toThrow(
+      "Release failed and rollback could not be completed; local release state was preserved",
+    );
+
+    const active = await ReleaseLedger.loadActive(root);
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    expect(active?.data.releaseCommit).toBeDefined();
+    expect(active?.data.releaseCommit).not.toBe(head);
+    expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toContain('"version": "1.0.1"');
+    expect(existsSync(join(root, STONE_FILE))).toBe(false);
+  });
+
   test("rejects a traversal-shaped stone during the full roll path before changing packages", async () => {
     rmSync(join(root, STONE_FILE));
     config.set("stones", []);
@@ -238,6 +304,7 @@ describe("RollCommand release metadata", () => {
       [{ createRelease: true }, "--createRelease"],
       [{ createRelease: false }, "--createRelease"],
       [{ dryRun: true }, "--dryRun"],
+      [{ dryRun: false }, "--dryRun"],
       [{ noCommit: true }, "--noCommit"],
       [{ npm: true }, "--npm"],
       [{ npm: false }, "--npm"],
@@ -317,6 +384,7 @@ describe("RollCommand release metadata", () => {
       ["--create-release", "--createRelease"],
       ["--no-create-release", "--createRelease"],
       ["--dry-run", "--dryRun"],
+      ["--no-dry-run", "--dryRun"],
       ["--noCommit", "--noCommit"],
       ["--npm", "--npm"],
       ["--no-npm", "--npm"],

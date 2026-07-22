@@ -14,7 +14,7 @@ import {
 const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
   createRelease: { alias: "r", description: "Create a release on git provider", type: "boolean" },
-  dryRun: { alias: "d", default: false, description: "Preview without making changes", type: "boolean" },
+  dryRun: { alias: "d", description: "Preview without making changes", type: "boolean" },
   noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
   preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
@@ -133,7 +133,7 @@ export class RollCommand extends BaseCommand {
       changelog: ctx.args.changelog ?? changelog.generate,
       commit,
       createRelease: commit ? (ctx.args.createRelease ?? release.createRelease) : false,
-      dryRun: ctx.args.dryRun,
+      dryRun: ctx.args.dryRun ?? false,
       npm: ctx.args.npm ?? release.npm,
       push: commit ? (ctx.args.push ?? release.push) : false,
       tags: commit ? (ctx.args.tags ?? release.tags) : false,
@@ -267,9 +267,20 @@ export class RollCommand extends BaseCommand {
       s.stop("Release failed, rolling back...");
       try {
         await orchestrator.rollback(false);
-      } finally {
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "Release failed and rollback could not be completed; local release state was preserved",
+        );
+      }
+      try {
         ctx.config.set("lastStone", previousLastStone);
         await this.restoreStones(ctx, originalStones);
+      } catch (restorationError) {
+        throw new AggregateError(
+          [error, restorationError],
+          "Release failed and local metadata could not be restored; the recovery ledger was preserved",
+        );
       }
       await orchestrator.removeReleaseLedger();
       throw error;
@@ -306,7 +317,7 @@ export class RollCommand extends BaseCommand {
       const incompatibleFlags = [
         ctx.args.changelog !== undefined ? "--changelog" : undefined,
         ctx.args.createRelease !== undefined ? "--createRelease" : undefined,
-        ctx.args.dryRun ? "--dryRun" : undefined,
+        ctx.args.dryRun !== undefined ? "--dryRun" : undefined,
         ctx.args.noCommit ? "--noCommit" : undefined,
         ctx.args.npm !== undefined ? "--npm" : undefined,
         ctx.args.preview ? "--preview" : undefined,
@@ -412,7 +423,7 @@ export class RollCommand extends BaseCommand {
     const release = ctx.config.get("release");
     const options: PublishOnlyOptions = {
       createRelease: ctx.args.createRelease ?? release.createRelease,
-      dryRun: ctx.args.dryRun,
+      dryRun: ctx.args.dryRun ?? false,
       npm: ctx.args.npm ?? release.npm,
       tags: ctx.args.tags ?? release.tags,
     };
