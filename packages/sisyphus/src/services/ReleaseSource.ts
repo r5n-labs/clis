@@ -47,6 +47,9 @@ export async function hashReleaseSource(sisyphusDir: string): Promise<string> {
     sourceHash.update(entry.path);
     sourceHash.update("\0");
     if (!pathStatus) {
+      if (entry.kind === "tracked" && entry.mode === GITLINK_MODE) {
+        throw new Exit(`Release source gitlink is not initialized: ${entry.path}`);
+      }
       sourceHash.update("deleted");
     } else if (entry.kind === "untracked" || REGULAR_FILE_MODES.has(entry.mode)) {
       if (!pathStatus.isFile() || pathStatus.isSymbolicLink()) {
@@ -68,12 +71,104 @@ export async function hashReleaseSource(sisyphusDir: string): Promise<string> {
         throw new Exit(`Release source path does not match Git mode ${GITLINK_MODE}: ${entry.path}`);
       }
       sourceHash.update(await resolveGitlinkObjectId(repositoryRoot, absolutePath, entry));
+      await validateReleaseCheckout(absolutePath);
       sourceHash.update(GITLINK_MODE);
     }
     sourceHash.update("\0");
   }
 
   return sourceHash.digest("hex");
+}
+
+export async function validateReleaseCheckout(
+  cwd: string = process.cwd(),
+  allowedChanges: readonly string[] = [],
+): Promise<void> {
+  const rootResult = await Bun.$`git rev-parse --show-toplevel`.cwd(cwd).quiet();
+  const repositoryRoot = resolve(rootResult.stdout.toString().trim());
+  await validateRepositoryCheckout(repositoryRoot, new Set(allowedChanges), "");
+}
+
+async function validateRepositoryCheckout(
+  repositoryRoot: string,
+  allowedChanges: ReadonlySet<string>,
+  prefix: string,
+): Promise<void> {
+  const [indexResult, flagsResult] = await Promise.all([
+    Bun.$`git ls-files --stage -z --cached`.cwd(repositoryRoot).quiet(),
+    Bun.$`git ls-files -v -z --cached`.cwd(repositoryRoot).quiet(),
+  ]);
+  const paths = new Set<string>();
+  const flags = new Map<string, string>();
+
+  for (const record of splitNullTerminated(flagsResult.stdout.toString())) {
+    const flag = record.slice(0, 1);
+    const path = record.slice(2);
+    if (!flag || record.slice(1, 2) !== " " || !path) {
+      throw new Exit("Unable to parse Git index flags while validating release source");
+    }
+    flags.set(path, flag);
+  }
+
+  for (const record of splitNullTerminated(indexResult.stdout.toString())) {
+    const entry = parseIndexEntry(record);
+    if (entry.stage !== "0") {
+      throw new Exit(`Release source has an unresolved index entry: ${entry.path}`);
+    }
+    if (paths.has(entry.path)) throw new Exit(`Release source has duplicate index entries: ${entry.path}`);
+    paths.add(entry.path);
+    if (flags.get(entry.path) !== "H") {
+      throw new Exit(`Release source index flags hide working tree changes: ${entry.path}`);
+    }
+
+    const trackedEntry: TrackedSourceEntry = {
+      kind: "tracked",
+      mode: entry.mode,
+      objectId: entry.objectId,
+      path: entry.path,
+    };
+    const absolutePath = await resolveSourcePath(repositoryRoot, entry.path);
+    const pathStatus = await lstatIfExists(absolutePath);
+    if (!pathStatus) throw new Exit(`Release source path is missing: ${entry.path}`);
+    const prefixedPath = `${prefix}${entry.path}`;
+    if (allowedChanges.has(prefixedPath)) continue;
+
+    if (REGULAR_FILE_MODES.has(entry.mode)) {
+      if (!pathStatus.isFile() || pathStatus.isSymbolicLink()) {
+        throw new Exit(`Release source path is not a regular file: ${entry.path}`);
+      }
+      const hashResult = await Bun.$`git hash-object ${`--path=${entry.path}`} ${absolutePath}`
+        .cwd(repositoryRoot)
+        .quiet();
+      const objectId = hashResult.stdout.toString().trim();
+      const mode = pathStatus.mode & 0o111 ? "100755" : "100644";
+      if (objectId !== entry.objectId || mode !== entry.mode) {
+        throw new Exit(`Release source path differs from the Git index: ${entry.path}`);
+      }
+      continue;
+    }
+
+    if (entry.mode === SYMLINK_MODE) {
+      if (!pathStatus.isSymbolicLink()) {
+        throw new Exit(`Release source path does not match Git mode ${SYMLINK_MODE}: ${entry.path}`);
+      }
+      const expectedTarget = await Bun.$`git cat-file blob ${entry.objectId}`.cwd(repositoryRoot).quiet();
+      const actualTarget = await readlink(absolutePath, { encoding: "buffer" });
+      if (!Buffer.from(expectedTarget.stdout).equals(actualTarget)) {
+        throw new Exit(`Release source symlink differs from the Git index: ${entry.path}`);
+      }
+      continue;
+    }
+
+    if (entry.mode !== GITLINK_MODE) {
+      throw new Exit(`Release source has unsupported Git mode ${entry.mode}: ${entry.path}`);
+    }
+    if (!pathStatus.isDirectory() || pathStatus.isSymbolicLink()) {
+      throw new Exit(`Release source gitlink is not initialized: ${entry.path}`);
+    }
+    await resolveGitlinkObjectId(repositoryRoot, absolutePath, trackedEntry);
+    await validateRepositoryCheckout(absolutePath, allowedChanges, `${prefixedPath}/`);
+  }
 }
 
 export function hashReleasePlan(plan: ReleasePlan, stones: readonly StoneJson[]): string {
@@ -227,11 +322,25 @@ async function resolveGitlinkObjectId(
   absolutePath: string,
   entry: TrackedSourceEntry,
 ): Promise<string> {
-  const topLevelResult = await Bun.$`git rev-parse --show-toplevel`.cwd(absolutePath).quiet();
+  const [topLevelResult, superprojectResult, gitDirectoryResult, modulesPathResult] = await Promise.all([
+    Bun.$`git rev-parse --show-toplevel`.cwd(absolutePath).quiet(),
+    Bun.$`git rev-parse --show-superproject-working-tree`.cwd(absolutePath).quiet(),
+    Bun.$`git rev-parse --absolute-git-dir`.cwd(absolutePath).quiet(),
+    Bun.$`git rev-parse --git-path modules`.cwd(repositoryRoot).quiet(),
+  ]);
   const topLevel = resolve(topLevelResult.stdout.toString().trim());
-  if (topLevel === repositoryRoot) return entry.objectId;
-  if (topLevel !== absolutePath) {
-    throw new Exit(`Release source gitlink resolves outside its checkout: ${entry.path}`);
+  const superprojectOutput = superprojectResult.stdout.toString().trim();
+  const superproject = superprojectOutput ? resolve(superprojectOutput) : null;
+  const gitDirectory = resolve(gitDirectoryResult.stdout.toString().trim());
+  const modulesRoot = resolve(repositoryRoot, modulesPathResult.stdout.toString().trim());
+  const moduleRelativePath = relative(modulesRoot, gitDirectory);
+  if (
+    topLevel !== absolutePath ||
+    superproject !== repositoryRoot ||
+    !moduleRelativePath ||
+    isOutsideRepository(moduleRelativePath)
+  ) {
+    throw new Exit(`Release source gitlink is not initialized: ${entry.path}`);
   }
 
   const statusResult = await Bun.$`git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none`

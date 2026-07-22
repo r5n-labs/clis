@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConfigManager } from "@r5n/cli-core";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
@@ -97,7 +97,14 @@ function makePendingStone(): Stone {
   return Stone.fromJson({ id: "0001-testtest", message: "ship it", patch: [PACKAGE_NAME] });
 }
 
-type PublishPackageOptions = { preparationFails?: boolean; private?: boolean; sourceChanges?: boolean };
+type PublishPackageOptions = {
+  commitChanges?: boolean;
+  packManifestChanges?: boolean;
+  packSourceChanges?: boolean;
+  preparationFails?: boolean;
+  private?: boolean;
+  sourceChanges?: boolean;
+};
 
 function makePublishPackage(
   root: string,
@@ -111,13 +118,31 @@ function makePublishPackage(
     "const count = (await countFile.exists()) ? Number(await countFile.text()) : 0;",
     "await Bun.write(countFile, String(count + 1));",
     options.sourceChanges ? 'await Bun.write("source.ts", "export const changed = true;\\n");' : "",
+    options.commitChanges ? 'await Bun.$`git commit -q --allow-empty -m "build moved head"`;' : "",
+    options.packSourceChanges || options.packManifestChanges
+      ? [
+          'const watcher = Bun.spawn([process.execPath, "pack-watcher.ts"], { stderr: "ignore", stdout: "ignore" });',
+          "watcher.unref();",
+        ].join("\n")
+      : "",
     options.preparationFails ? "process.exit(1);" : "",
   ].join("\n");
 
   mkdirSync(join(root, directory), { recursive: true });
   writeFileSync(join(root, directory, ".gitignore"), "build-count.txt\n");
   writeFileSync(join(root, directory, "prepare.ts"), `${prepareScript}\n`);
-  if (options.sourceChanges) writeFileSync(join(root, directory, "source.ts"), "export const changed = false;\n");
+  if (options.sourceChanges || options.packSourceChanges) {
+    writeFileSync(join(root, directory, "source.ts"), "export const changed = false;\n");
+  }
+  if (options.packSourceChanges || options.packManifestChanges) {
+    const mutation = options.packManifestChanges
+      ? [
+          'const manifest = await Bun.file("package.json").json();',
+          'await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
+        ]
+      : ['await Bun.write("source.ts", "export const changed = true;\\n");'];
+    writeFileSync(join(root, directory, "pack-watcher.ts"), ["await Bun.sleep(100);", ...mutation].join("\n"));
+  }
   writeFileSync(
     join(root, file),
     `${JSON.stringify(
@@ -142,6 +167,11 @@ function makePublishPackage(
 async function gitText(root: string, args: string[]): Promise<string> {
   const result = await Bun.$`git ${args}`.cwd(root).quiet();
   return result.stdout.toString().trim();
+}
+
+async function recordReleaseCommit(ledger: ReleaseLedger, root: string, commit: string): Promise<void> {
+  await ledger.setExpectedReleaseTree(await gitText(root, ["rev-parse", `${commit}^{tree}`]));
+  await ledger.setReleaseCommit(commit);
 }
 
 describe("ReleaseOrchestrator release flow", () => {
@@ -621,12 +651,63 @@ describe("ReleaseOrchestrator release flow", () => {
     rmSync(join(root, STONE_FILE));
     await orchestrator.createCommit(stone, [pkg], [stone]);
     await orchestrator.createGitTags([pkg]);
+    const releaseCommit = await gitText(root, ["rev-parse", "HEAD"]);
     await Bun.$`git checkout --detach -q`.quiet();
 
     await expect(orchestrator.pushToRemote()).rejects.toThrow("detached HEAD");
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
-    expect(await orchestrator.rollback()).toBe(true);
-    expect(await gitText(root, ["tag", "--list", RELEASE_TAG])).toBe("");
+    await expect(orchestrator.rollback()).rejects.toThrow("Cannot roll back release commit because HEAD changed");
+    expect(await gitText(root, ["rev-parse", "refs/heads/main"])).toBe(releaseCommit);
+    expect(await gitText(root, ["tag", "--list", RELEASE_TAG])).toBe(RELEASE_TAG);
+  });
+
+  test("preserves post-commit edits to release-owned files instead of rolling them back", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true, tags: false });
+    const pkg = makePackage();
+    const stone = makePendingStone();
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    await orchestrator.finalizeExternalRelease([pkg], [stone]);
+    const releaseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+    const manifest = JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8"));
+    writeFileSync(join(root, PACKAGE_FILE), `${JSON.stringify({ ...manifest, userEdit: true }, null, 2)}\n`);
+
+    await expect(orchestrator.rollback(false)).rejects.toThrow("release-owned files changed after commit creation");
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(releaseCommit);
+    expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toContain('"userEdit": true');
+    expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
+  });
+
+  test("preserves a release tag that moved after creation instead of deleting it", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const baseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+    const orchestrator = makeOrchestrator(root, { changelog: false, push: true });
+    const pkg = makePackage();
+    const stone = makePendingStone();
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    rmSync(join(root, STONE_FILE));
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    await orchestrator.createGitTags([pkg]);
+    await orchestrator.finalizeExternalRelease([pkg], [stone]);
+    const releaseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+    await Bun.$`git tag -f ${RELEASE_TAG} ${baseCommit}`.quiet();
+
+    await expect(orchestrator.rollback(false)).rejects.toThrow(`tag ${RELEASE_TAG} changed after creation`);
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(releaseCommit);
+    expect(await gitText(root, ["rev-parse", `refs/tags/${RELEASE_TAG}`])).toBe(baseCommit);
+    expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
   });
 
   test("skips private packages and publishes prepared public package artifacts", async () => {
@@ -757,10 +838,128 @@ describe("ReleaseOrchestrator release flow", () => {
     const originalManifest = readFileSync(join(root, pkg.file), "utf-8");
     const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
 
-    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow("Package build changed repository source files");
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Release source path differs from the Git index: packages/public/source.ts",
+    );
 
     expect(readFileSync(join(root, pkg.file), "utf-8")).toBe(originalManifest);
     expect(readFileSync(join(root, "packages/public/source.ts"), "utf-8")).toBe("export const changed = true;\n");
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("rejects ignored pre-build files included by the package manifest", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    const manifestPath = join(root, pkg.file);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, files: ["ignored.js"] }, null, 2)}\n`);
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\nignored.js\n");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "include ignored source"`.quiet();
+    writeFileSync(join(root, "packages/public/ignored.js"), "unbound payload\n");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Repository contains an ignored build input outside node_modules: packages/public/ignored.js",
+    );
+
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("rejects ignored inputs that a build would copy into generated output", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    const manifestPath = join(root, pkg.file);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    writeFileSync(
+      manifestPath,
+      `${JSON.stringify({ ...manifest, files: ["dist"], scripts: { ...manifest.scripts, build: "bun copy-ignored.ts" } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, "packages/public/copy-ignored.ts"),
+      'await Bun.write("dist/output.js", await Bun.file("payload.txt").text());\n',
+    );
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\ndist/\npayload.txt\n");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "copy ignored source"`.quiet();
+    writeFileSync(join(root, "packages/public/payload.txt"), "unbound build input\n");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Repository contains an ignored build input outside node_modules: packages/public/payload.txt",
+    );
+
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("rejects tracked release source hidden by assume-unchanged", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
+    await Bun.$`git update-index --assume-unchanged packages/public/prepare.ts`.quiet();
+    writeFileSync(join(root, "packages/public/prepare.ts"), "await Bun.write('hidden.js', 'payload');\n");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Release source index flags hide working tree changes: packages/public/prepare.ts",
+    );
+
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("rejects ignored package inputs inside a clean submodule", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    const dependency = mkdtempSync(join(tmpdir(), "sisyphus-package-submodule-"));
+    writeFileSync(join(dependency, "tracked.js"), "export const tracked = true;\n");
+    await Bun.$`git init -q -b main`.cwd(dependency).quiet();
+    await Bun.$`git config user.email submodule@test.local`.cwd(dependency).quiet();
+    await Bun.$`git config user.name "Sisyphus Submodule Test"`.cwd(dependency).quiet();
+    await Bun.$`git add tracked.js`.cwd(dependency).quiet();
+    await Bun.$`git commit -q -m init`.cwd(dependency).quiet();
+    await Bun.$`git -c protocol.file.allow=always submodule add -q ${dependency} packages/public/vendor/dependency`.quiet();
+    const manifestPath = join(root, pkg.file);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    writeFileSync(
+      manifestPath,
+      `${JSON.stringify({ ...manifest, files: ["vendor/dependency/ignored.js"] }, null, 2)}\n`,
+    );
+    await Bun.$`git add packages/public .gitmodules`.quiet();
+    await Bun.$`git commit -q -m "add nested dependency"`.quiet();
+    const submodule = join(root, "packages/public/vendor/dependency");
+    const excludePath = resolve(
+      submodule,
+      (await Bun.$`git rev-parse --git-path info/exclude`.cwd(submodule).quiet()).stdout.toString().trim(),
+    );
+    writeFileSync(excludePath, "ignored.js\n", { flag: "a" });
+    writeFileSync(join(submodule, "ignored.js"), "unbound nested payload\n");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    try {
+      await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+        "Repository contains an ignored build input outside node_modules: packages/public/vendor/dependency/ignored.js",
+      );
+    } finally {
+      rmSync(dependency, { force: true, recursive: true });
+    }
+
     expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
   });
@@ -771,6 +970,8 @@ describe("ReleaseOrchestrator release flow", () => {
     const published = startRegistry();
 
     const pkg = makePublishPackage(root, "packages/wrapper", "@fixture/wrapper");
+    await Bun.$`git add packages/wrapper`.cwd(root).quiet();
+    await Bun.$`git commit -q -m "add wrapper package"`.cwd(root).quiet();
     const manifestPath = join(root, pkg.file);
     const originalManifest = readFileSync(manifestPath, "utf-8");
     const result = await Bun.$`bun ${PUBLISH_SCRIPT} ${dirname(manifestPath)} --dry-run`.quiet().nothrow();
@@ -779,6 +980,80 @@ describe("ReleaseOrchestrator release flow", () => {
     expect(readFileSync(join(dirname(manifestPath), "build-count.txt"), "utf-8")).toBe("1");
     expect(readFileSync(manifestPath, "utf-8")).toBe(originalManifest);
     expect(published).toEqual([]);
+  });
+
+  test("preserves the recovery ledger when a build moves HEAD after the release commit", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public", { commitChanges: true }).withVersions(
+      "1.0.0",
+      "1.0.1",
+    );
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+    const stone = makePendingStone();
+    await orchestrator.preflight([pkg], [stone]);
+    await orchestrator.initializeExternalRelease([pkg], [stone], false);
+    await orchestrator.updatePackageVersions([pkg]);
+    await orchestrator.createCommit(stone, [pkg], [stone]);
+    await orchestrator.finalizeExternalRelease([pkg], [stone]);
+    const releaseCommit = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Publish source does not match the recorded release commit",
+    );
+    await expect(orchestrator.rollback(false)).rejects.toThrow("Cannot roll back release commit because HEAD changed");
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).not.toBe(releaseCommit);
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+    expect((await ReleaseLedger.loadActive(root))?.data.releaseCommit).toBe(releaseCommit);
+    expect(readFileSync(join(root, pkg.file), "utf-8")).toContain('"version": "1.0.1"');
+  });
+
+  test("rejects source changes that occur while the package artifact is packed", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public", { packSourceChanges: true });
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
+    const originalManifest = readFileSync(join(root, pkg.file), "utf-8");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Release source path differs from the Git index: packages/public/source.ts",
+    );
+
+    expect(readFileSync(join(root, pkg.file), "utf-8")).toBe(originalManifest);
+    expect(readFileSync(join(root, "packages/public/source.ts"), "utf-8")).toBe("export const changed = true;\n");
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
+  });
+
+  test("rejects manifest changes that occur while the artifact is packed", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public", { packManifestChanges: true });
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add public package"`.quiet();
+    const originalManifest = readFileSync(join(root, pkg.file), "utf-8");
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Release source path differs from the Git index: packages/public/package.json",
+    );
+
+    expect(readFileSync(join(root, pkg.file), "utf-8")).not.toBe(originalManifest);
+    expect(readFileSync(join(root, pkg.file), "utf-8")).toContain('"injected": "1.0.0"');
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
   });
 
   test("preserves local release state when a later npm publication fails", async () => {
@@ -918,7 +1193,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: false,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: true,
           tags: false,
         },
@@ -927,7 +1202,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(head);
+    await recordReleaseCommit(ledger, root, head);
     await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(remote).href }, [
       { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
     ]);
@@ -945,7 +1220,7 @@ describe("ReleaseOrchestrator release flow", () => {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
     process.chdir(root);
-    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const baseCommit = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
         options: {
@@ -963,6 +1238,9 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
+    await ledger.setExpectedReleaseTree(await gitText(root, ["rev-parse", `${baseCommit}^{tree}`]));
+    await Bun.$`git commit -q --allow-empty -m "release commit"`.quiet();
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
     await ledger.setReleaseCommit(head);
 
     await ReleaseOrchestrator.resume(makeConfig(root));
@@ -986,7 +1264,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: false,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: true,
           tags: false,
         },
@@ -995,7 +1273,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(head);
+    await recordReleaseCommit(ledger, root, head);
     await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(remote).href }, [
       { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
     ]);
@@ -1029,7 +1307,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: false,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: true,
           tags: false,
         },
@@ -1038,7 +1316,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(head);
+    await recordReleaseCommit(ledger, root, head);
     await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(pushRemote).href }, [
       { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
     ]);
@@ -1134,7 +1412,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: true,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: false,
           tags: false,
         },
@@ -1143,7 +1421,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(head);
+    await recordReleaseCommit(ledger, root, head);
     const artifact = await ledger.setArtifact(pkg.name, artifactSource);
 
     const methods: string[] = [];
@@ -1190,7 +1468,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: true,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: false,
           tags: false,
         },
@@ -1199,7 +1477,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(head);
+    await recordReleaseCommit(ledger, root, head);
     await ledger.setNpmRegistry(pkg.name, "https://registry.npmjs.org/");
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
     writeFileSync(
@@ -1208,7 +1486,7 @@ describe("ReleaseOrchestrator release flow", () => {
     );
 
     await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow(
-      "Repository source files changed after the release commit",
+      "Release source path differs from the Git index: package.json",
     );
 
     const active = await ReleaseLedger.loadActive(root);
@@ -1314,7 +1592,7 @@ describe("ReleaseOrchestrator release flow", () => {
           dryRun: false,
           npm: false,
           npmTag: "latest",
-          publishOnly: false,
+          publishOnly: true,
           push: true,
           tags: true,
         },
@@ -1323,7 +1601,7 @@ describe("ReleaseOrchestrator release flow", () => {
       },
       root,
     );
-    await ledger.setReleaseCommit(releaseCommit);
+    await recordReleaseCommit(ledger, root, releaseCommit);
     await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(remote).href }, [
       { destination: "refs/tags/moved-tag", oid: releaseCommit, source: "refs/tags/moved-tag" },
     ]);
@@ -1364,6 +1642,38 @@ describe("ReleaseOrchestrator release flow", () => {
 
     expect(ledger.data.expectedReleaseTree).toBe(baseTree);
     expect((await ReleaseLedger.loadActive(root))?.data.releaseCommit).toBeUndefined();
+  });
+
+  test("refuses to resume a legacy release commit without its expected tree", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: false,
+          npmTag: "latest",
+          publishOnly: true,
+          push: false,
+          tags: false,
+        },
+        packages: [makePackage()],
+        stones: [makePendingStone()],
+      },
+      root,
+    );
+    await ledger.setReleaseCommit(head);
+    const legacy = ledger.data;
+    delete legacy.expectedReleaseTree;
+    writeFileSync(ledger.activePath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("has no recorded expected release tree");
+
+    expect((await ReleaseLedger.loadActive(root))?.data.releaseCommit).toBe(head);
   });
 
   test("finalizes a completed active ledger without requiring the original HEAD", async () => {

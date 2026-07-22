@@ -1,4 +1,5 @@
-import { lstat, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,6 +26,7 @@ import {
   type ReleaseLedgerPushOperation,
   type ReleaseLedgerRemoteDestination,
 } from "./ReleaseLedger";
+import { validateReleaseCheckout } from "./ReleaseSource";
 import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
@@ -39,12 +41,20 @@ export type ReleaseOptions = {
 
 type PreparedNpmPackage = { artifactPath: string; pkg: Package };
 type PreparedNpmPublish = { key: string; packages: PreparedNpmPackage[]; tempDir: string | null };
+type PackedPackageIdentity = { name: string; version: string };
 type PushTarget = { branch: string; remote: string };
 type ResumeResult = { packages: Package[] };
 
 const NPM_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z._-]*$/;
 const SEMVER_LIKE_NPM_TAG_PATTERN =
   /^(?:[vV]?\d+(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?|[xX])$/;
+const TAR_BLOCK_SIZE = 512;
+const TAR_NAME_LENGTH = 100;
+const TAR_SIZE_OFFSET = 124;
+const TAR_SIZE_LENGTH = 12;
+const TAR_PREFIX_OFFSET = 345;
+const TAR_PREFIX_LENGTH = 155;
+const PACKED_MANIFEST_PATH = "package/package.json";
 
 export function isValidNpmTag(tag: string): boolean {
   return NPM_TAG_PATTERN.test(tag) && !SEMVER_LIKE_NPM_TAG_PATTERN.test(tag);
@@ -59,10 +69,14 @@ export class ReleaseOrchestrator {
   private commitUrlFn: ((hash: string) => string) | null = null;
   private options: ReleaseOptions;
   private createdTags: string[] = [];
+  private createdTagTargets = new Map<string, string>();
   private commitCreated = false;
+  private createdCommit: { baseCommit: string; oid: string; ref: string | null } | null = null;
   private irreversibleOperation: string | null = null;
   private ownedPaths: string[] | null = null;
   private repositoryRoot: string | null = null;
+  private rollbackBlockedReason: string | null = null;
+  private ignoredBuildInputsValidated = false;
   private preparedNpmPublish: PreparedNpmPublish | null = null;
   private ledger: ReleaseLedger | null = null;
   private publishContext: { catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap } | null = null;
@@ -222,7 +236,9 @@ export class ReleaseOrchestrator {
     const message = this.formatCommitMessage(stone, packages);
     const authorArg = this.getCommitAuthorArg();
     const baseCommit = this.ledger?.data.baseCommit ?? (await this.getHeadCommit());
+    const headReference = await this.getHeadReference();
     let expectedReleaseTree: string | undefined;
+    let stagedState: string | undefined;
 
     try {
       await this.run(() => Bun.$`git add -A -- ${pathspecs}`.quiet(), "Failed to stage release files");
@@ -234,12 +250,26 @@ export class ReleaseOrchestrator {
       }
       expectedReleaseTree = await this.writeExpectedReleaseTree(baseCommit, ownedPaths);
       await this.ledger?.setExpectedReleaseTree(expectedReleaseTree);
+      stagedState = await this.getOwnedMutationFingerprint(ownedPaths);
       await this.run(
         () => Bun.$`git commit --only ${authorArg} -m ${message} -- ${pathspecs}`.env(this.getCommitterEnv()).quiet(),
         "Failed to create commit",
       );
       this.commitCreated = true;
     } catch (error) {
+      if (stagedState) {
+        let currentState: string;
+        try {
+          currentState = await this.getOwnedMutationFingerprint(ownedPaths);
+        } catch (inspectionError) {
+          this.rollbackBlockedReason = "release files could not be verified after commit failure";
+          throw new AggregateError([error, inspectionError], "Commit failed and release files could not be verified");
+        }
+        if (currentState !== stagedState) {
+          this.rollbackBlockedReason = "release-owned files changed while commit hooks ran";
+          throw new AggregateError([error], "Commit failed after a hook changed release-owned files");
+        }
+      }
       try {
         await this.unstageOwnedPaths(ownedPaths);
       } catch (cleanupError) {
@@ -249,6 +279,7 @@ export class ReleaseOrchestrator {
     }
 
     const releaseCommit = await this.getHeadCommit();
+    this.createdCommit = { baseCommit, oid: releaseCommit, ref: headReference };
     if (!expectedReleaseTree) throw new Error("Expected release tree was not recorded before commit");
     if (this.ledger) {
       await this.validateReleaseCommitCandidate(this.ledger.data, releaseCommit);
@@ -299,8 +330,10 @@ export class ReleaseOrchestrator {
     for (const pkg of packages) {
       const version = pkg.newVersion ?? pkg.version;
       const tagName = `${pkg.name}@${version}`;
+      const target = await this.getHeadCommit();
       await this.run(() => Bun.$`git tag -- ${tagName}`.quiet(), `Failed to create tag ${tagName}`);
       this.createdTags.push(tagName);
+      this.createdTagTargets.set(tagName, target);
     }
   }
 
@@ -520,26 +553,103 @@ export class ReleaseOrchestrator {
 
   async rollback(removeLedger = true): Promise<boolean> {
     if (this.hasCrossedIrreversibleBoundary()) return false;
+    await this.validateRollbackState();
 
     await this.cleanupPreparedNpmPublish();
-
-    if (this.createdTags.length > 0) {
-      await this.run(() => Bun.$`git tag -d -- ${this.createdTags}`.quiet(), "Failed to delete local release tags");
-      this.createdTags = [];
-    }
+    await this.updateRollbackRefs();
 
     if (this.commitCreated) {
-      await this.run(() => Bun.$`git reset --soft HEAD~1`.quiet(), "Failed to reset release commit");
       if (this.ownedPaths) {
         await this.unstageOwnedPaths(this.ownedPaths);
       }
       this.commitCreated = false;
+      this.createdCommit = null;
     }
+
+    this.createdTags = [];
+    this.createdTagTargets.clear();
 
     await this.changelogGenerator.rollback();
     await this.packageUpdater.rollback();
     if (removeLedger) await this.removeReleaseLedger();
     return true;
+  }
+
+  private async validateRollbackState(): Promise<void> {
+    if (this.rollbackBlockedReason) {
+      throw new Exit(
+        `Cannot roll back release because ${this.rollbackBlockedReason}`,
+        "Local release state and the recovery ledger were preserved",
+      );
+    }
+    if (this.commitCreated && !this.createdCommit) {
+      throw new Exit(
+        "Cannot identify the release commit for rollback",
+        "Local release state and the recovery ledger were preserved",
+      );
+    }
+    if (this.commitCreated && this.createdCommit) {
+      const [head, headReference] = await Promise.all([this.getHeadCommit(), this.getHeadReference()]);
+      if (head !== this.createdCommit.oid || headReference !== this.createdCommit.ref) {
+        throw new Exit(
+          `Cannot roll back release commit because HEAD changed from ${this.createdCommit.oid}`,
+          "Local release state and the recovery ledger were preserved",
+        );
+      }
+    }
+
+    if (this.commitCreated && this.ownedPaths) {
+      const pathspecs = this.ownedPaths.map((path) => this.toLiteralPathspec(path));
+      const status = await this.run(
+        () => Bun.$`git status --porcelain=v1 -z --untracked-files=all -- ${pathspecs}`.quiet(),
+        "Failed to inspect release files before rollback",
+      );
+      if (status.stdout.length > 0) {
+        throw new Exit(
+          "Cannot roll back release because release-owned files changed after commit creation",
+          "Local release state and the recovery ledger were preserved",
+        );
+      }
+    }
+
+    for (const tag of this.createdTags) {
+      const expectedTarget = this.createdTagTargets.get(tag);
+      const currentTarget = await this.resolveRef(`refs/tags/${tag}`);
+      if (!expectedTarget || currentTarget !== expectedTarget) {
+        throw new Exit(
+          `Cannot roll back release because tag ${tag} changed after creation`,
+          "Local release state and the recovery ledger were preserved",
+        );
+      }
+    }
+  }
+
+  private async updateRollbackRefs(): Promise<void> {
+    const commands: string[] = [];
+    if (this.createdCommit) {
+      commands.push(
+        `update ${this.createdCommit.ref ?? "HEAD"} ${this.createdCommit.baseCommit} ${this.createdCommit.oid}`,
+      );
+    }
+    for (const tag of this.createdTags) {
+      const target = this.createdTagTargets.get(tag);
+      if (!target) throw new Error(`Missing rollback target for release tag ${tag}`);
+      commands.push(`delete refs/tags/${tag} ${target}`);
+    }
+    if (commands.length === 0) return;
+
+    const repositoryRoot = await this.getRepositoryRoot();
+    const input = Buffer.from(["start", ...commands, "prepare", "commit", ""].join("\n"));
+    await this.run(async () => {
+      const subprocess = Bun.spawn(["git", "update-ref", "--stdin"], {
+        cwd: repositoryRoot,
+        stderr: "pipe",
+        stdin: input,
+        stdout: "pipe",
+      });
+      const [exitCode, stderr] = await Promise.all([subprocess.exited, new Response(subprocess.stderr).text()]);
+      if (exitCode !== 0) throw new Error(stderr.trim() || `git update-ref exited with code ${exitCode}`);
+    }, "Failed to atomically restore release refs");
   }
 
   async removeReleaseLedger(): Promise<void> {
@@ -567,7 +677,13 @@ export class ReleaseOrchestrator {
         `Check out ${data.releaseCommit} before resuming`,
       );
     }
-    if (data.expectedReleaseTree) await this.validateReleaseCommitCandidate(data, head);
+    if (!data.expectedReleaseTree) {
+      throw new Exit(
+        `Release ${data.id} has no recorded expected release tree`,
+        "No external operation will be retried; inspect the release ledger manually",
+      );
+    }
+    await this.validateReleaseCommitCandidate(data, head);
   }
 
   private async recoverReleaseCommit(data: ReleaseLedgerData): Promise<void> {
@@ -1059,6 +1175,19 @@ export class ReleaseOrchestrator {
     return commit;
   }
 
+  private async getHeadReference(): Promise<string | null> {
+    const result = await Bun.$`git symbolic-ref -q HEAD`.quiet().nothrow();
+    if (result.exitCode === 1) return null;
+    if (result.exitCode !== 0) throw new Exit("Failed to resolve the current Git reference");
+    return result.stdout.toString().trim() || null;
+  }
+
+  private async resolveRef(ref: string): Promise<string | null> {
+    const result = await Bun.$`git rev-parse --verify ${ref}`.quiet().nothrow();
+    if (result.exitCode !== 0) return null;
+    return result.stdout.toString().trim() || null;
+  }
+
   private async getOwnedPaths(packages: Package[], stones: Stone[]): Promise<string[]> {
     const repositoryRoot = await this.getRepositoryRoot();
     const changelogFiles = this.options.changelog ? this.getChangelogFiles(packages) : [];
@@ -1080,6 +1209,22 @@ export class ReleaseOrchestrator {
 
     this.ownedPaths = normalized;
     return normalized;
+  }
+
+  private async getOwnedMutationFingerprint(paths: readonly string[]): Promise<string> {
+    const pathspecs = paths.map((path) => this.toLiteralPathspec(path));
+    const [status, staged, unstaged] = await Promise.all([
+      Bun.$`git status --porcelain=v1 -z --untracked-files=all -- ${pathspecs}`.quiet(),
+      Bun.$`git diff --cached --binary --no-ext-diff -- ${pathspecs}`.quiet(),
+      Bun.$`git diff --binary --no-ext-diff -- ${pathspecs}`.quiet(),
+    ]);
+    const hash = createHash("sha256");
+    for (const output of [status.stdout, staged.stdout, unstaged.stdout]) {
+      hash.update(String(output.length));
+      hash.update("\0");
+      hash.update(output);
+    }
+    return hash.digest("hex");
   }
 
   private async getRepositoryRoot(): Promise<string> {
@@ -1130,12 +1275,30 @@ export class ReleaseOrchestrator {
     );
   }
 
-  private async getPublishSourceStatus(): Promise<Buffer> {
+  private async getPublishSourceStatus(allowedChanges: readonly string[] = []): Promise<Buffer> {
+    const repositoryRoot = await this.getRepositoryRoot();
+    await validateReleaseCheckout(repositoryRoot, allowedChanges);
     const result = await this.run(
-      () => Bun.$`git status --porcelain=v1 -z --untracked-files=all`.quiet(),
+      () =>
+        Bun.$`git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none`.cwd(repositoryRoot).quiet(),
       "Failed to inspect release source files",
     );
     return result.stdout;
+  }
+
+  private async validatePublishCommitBinding(commit: string): Promise<void> {
+    if (!this.ledger) return;
+
+    const data = this.ledger.data;
+    if (!data.releaseCommit || !data.expectedReleaseTree || commit !== data.releaseCommit) {
+      throw new Exit(
+        `Publish source does not match the recorded release commit for ${data.id}`,
+        data.releaseCommit
+          ? `Check out ${data.releaseCommit} before publishing`
+          : "Resume the release before publishing",
+      );
+    }
+    await this.validateReleaseCommitCandidate(data, commit);
   }
 
   private async writeExpectedReleaseTree(baseCommit: string, paths: readonly string[]): Promise<string> {
@@ -1326,9 +1489,10 @@ export class ReleaseOrchestrator {
 
   private async prepareNpmArtifact(pkg: Package, artifactPath: string): Promise<void> {
     const packageDirectory = dirname(pkg.file);
-    const originalText = await readFile(pkg.file, "utf-8");
+    let stagingDirectory: string | null = null;
     try {
       const sourceCommit = await this.getHeadCommit();
+      await this.validatePublishCommitBinding(sourceCommit);
       const sourceStatus = await this.getPublishSourceStatus();
       if (sourceStatus.length > 0) {
         throw new Exit(
@@ -1336,8 +1500,11 @@ export class ReleaseOrchestrator {
           "Commit or stash all source changes before preparing npm artifacts",
         );
       }
+      await this.validateIgnoredBuildInputs();
+      await this.validateExistingPackInputs(pkg, packageDirectory);
       await this.run(() => Bun.$`bun run build`.cwd(packageDirectory).quiet(), `Failed to build ${pkg.name}`);
       const builtSourceCommit = await this.getHeadCommit();
+      await this.validatePublishCommitBinding(builtSourceCommit);
       const builtSourceStatus = await this.getPublishSourceStatus();
       if (builtSourceCommit !== sourceCommit || builtSourceStatus.length > 0) {
         throw new Exit(
@@ -1357,23 +1524,57 @@ export class ReleaseOrchestrator {
         );
       }
 
-      await writeFile(pkg.file, publishText, "utf-8");
-      await this.packNpmArtifact(packageDirectory, artifactPath);
+      stagingDirectory = await this.stagePackageForPack(packageDirectory, publishText);
+      const packedIdentity = await this.packNpmArtifact(stagingDirectory, artifactPath);
+      if (packedIdentity.name !== pkg.name || packedIdentity.version !== expectedVersion) {
+        throw new Exit(
+          `Packed artifact identity mismatch for ${pkg.name}: found ${packedIdentity.name}@${packedIdentity.version}`,
+          "This package was not recorded and nothing was published",
+        );
+      }
+      if (!sameJsonDocument(publishText, await readPackedManifest(artifactPath))) {
+        throw new Exit(
+          `Packed manifest does not match the prepared manifest for ${pkg.name}`,
+          "This package was not recorded and nothing was published",
+        );
+      }
+      const packedSourceCommit = await this.getHeadCommit();
+      await this.validatePublishCommitBinding(packedSourceCommit);
+      const packedSourceStatus = await this.getPublishSourceStatus();
+      if (packedSourceCommit !== sourceCommit || packedSourceStatus.length > 0) {
+        throw new Exit(
+          `Package packing changed repository source files for ${pkg.name}`,
+          "This package was not recorded and nothing was published; restore the changes before retrying",
+        );
+      }
     } finally {
-      await writeFile(pkg.file, originalText, "utf-8");
+      if (stagingDirectory) await rm(stagingDirectory, { force: true, recursive: true });
     }
   }
 
-  private async packNpmArtifact(packageDirectory: string, artifactPath: string): Promise<void> {
+  private async packNpmArtifact(packageDirectory: string, artifactPath: string): Promise<PackedPackageIdentity> {
     const artifactDirectory = dirname(artifactPath);
     const result = await Bun.$`npm pack --ignore-scripts --json --pack-destination ${artifactDirectory}`
       .cwd(packageDirectory)
       .quiet();
-    const output = JSON.parse(result.stdout.toString()) as Array<{ filename?: unknown }>;
-    const filename = output[0]?.filename;
-    if (typeof filename !== "string" || !filename) throw new Error("npm pack did not return an artifact filename");
+    const output = JSON.parse(result.stdout.toString()) as Array<{
+      filename?: unknown;
+      name?: unknown;
+      version?: unknown;
+    }>;
+    const packed = output[0];
+    if (
+      typeof packed?.filename !== "string" ||
+      !packed.filename ||
+      typeof packed.name !== "string" ||
+      !packed.name ||
+      typeof packed.version !== "string" ||
+      !packed.version
+    ) {
+      throw new Error("npm pack did not return a valid artifact identity");
+    }
 
-    const generatedPath = resolve(artifactDirectory, filename);
+    const generatedPath = resolve(artifactDirectory, packed.filename);
     const artifactRelativePath = relative(artifactDirectory, generatedPath);
     if (
       artifactRelativePath === ".." ||
@@ -1383,6 +1584,135 @@ export class ReleaseOrchestrator {
       throw new Error("npm pack returned an artifact outside the destination directory");
     }
     if (generatedPath !== resolve(artifactPath)) await rename(generatedPath, artifactPath);
+    return { name: packed.name, version: packed.version };
+  }
+
+  private async stagePackageForPack(packageDirectory: string, publishManifest: string): Promise<string> {
+    const result = await Bun.$`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet();
+    const output = JSON.parse(result.stdout.toString()) as Array<{ files?: unknown }>;
+    const files = output[0]?.files;
+    if (!Array.isArray(files)) throw new Error("npm pack did not return a package file list after build");
+    const stagingDirectory = await mkdtemp(join(tmpdir(), "sisyphus-package-stage-"));
+
+    try {
+      for (const file of files) {
+        if (typeof file !== "object" || file === null || Array.isArray(file) || !("path" in file)) {
+          throw new Error("npm pack returned an invalid package file entry after build");
+        }
+        const path = (file as { path?: unknown }).path;
+        if (typeof path !== "string" || !path) throw new Error("npm pack returned an invalid package file path");
+        const source = resolve(packageDirectory, path);
+        const packageRelativePath = relative(packageDirectory, source);
+        if (
+          packageRelativePath === ".." ||
+          packageRelativePath.startsWith(`..${sep}`) ||
+          isAbsolute(packageRelativePath)
+        ) {
+          throw new Exit(`Package includes a file outside its directory: ${path}`);
+        }
+        const destination = resolve(stagingDirectory, path);
+        await mkdir(dirname(destination), { recursive: true });
+        await cp(source, destination, { errorOnExist: true, force: false, recursive: false, verbatimSymlinks: true });
+      }
+      await writeFile(join(stagingDirectory, "package.json"), publishManifest, "utf-8");
+      return stagingDirectory;
+    } catch (error) {
+      try {
+        await rm(stagingDirectory, { force: true, recursive: true });
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Failed to clean staged npm package");
+      }
+      throw error;
+    }
+  }
+
+  private async validateExistingPackInputs(pkg: Package, packageDirectory: string): Promise<void> {
+    const repositoryRoot = await this.getRepositoryRoot();
+    const [packResult, trackedPaths] = await Promise.all([
+      Bun.$`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet(),
+      this.collectTrackedPaths(repositoryRoot),
+    ]);
+    const packOutput = JSON.parse(packResult.stdout.toString()) as Array<{ files?: unknown }>;
+    const files = packOutput[0]?.files;
+    if (!Array.isArray(files)) throw new Error(`npm pack did not return a file list for ${pkg.name}`);
+
+    for (const file of files) {
+      if (typeof file !== "object" || file === null || Array.isArray(file) || !("path" in file)) {
+        throw new Error(`npm pack returned an invalid file entry for ${pkg.name}`);
+      }
+      const path = (file as { path?: unknown }).path;
+      if (typeof path !== "string" || !path) {
+        throw new Error(`npm pack returned an invalid file path for ${pkg.name}`);
+      }
+      const absolutePath = resolve(packageDirectory, path);
+      const packageRelativePath = relative(packageDirectory, absolutePath);
+      if (
+        packageRelativePath === ".." ||
+        packageRelativePath.startsWith(`..${sep}`) ||
+        isAbsolute(packageRelativePath)
+      ) {
+        throw new Exit(`Package ${pkg.name} includes a file outside its directory: ${path}`);
+      }
+      const repositoryPath = relative(repositoryRoot, absolutePath).split(sep).join("/");
+      if (!trackedPaths.has(repositoryPath)) {
+        throw new Exit(`Package ${pkg.name} includes an untracked or ignored pre-build file: ${path}`);
+      }
+    }
+  }
+
+  private async validateIgnoredBuildInputs(): Promise<void> {
+    if (this.ignoredBuildInputsValidated) return;
+    await this.validateRepositoryIgnoredInputs(await this.getRepositoryRoot(), "");
+    this.ignoredBuildInputsValidated = true;
+  }
+
+  private async validateRepositoryIgnoredInputs(root: string, prefix: string): Promise<void> {
+    const [ignoredResult, indexResult] = await Promise.all([
+      Bun.$`git ls-files --others --ignored --exclude-standard -z`.cwd(root).quiet(),
+      Bun.$`git ls-files --stage -z --cached`.cwd(root).quiet(),
+    ]);
+    const ignoredInput = ignoredResult.stdout
+      .toString()
+      .split("\0")
+      .filter(Boolean)
+      .find((path) => !path.split("/").includes("node_modules"));
+    if (ignoredInput) {
+      throw new Exit(
+        `Repository contains an ignored build input outside node_modules: ${prefix}${ignoredInput}`,
+        "Remove ignored source and stale build outputs before preparing npm artifacts",
+      );
+    }
+
+    for (const record of indexResult.stdout.toString().split("\0").filter(Boolean)) {
+      const separatorIndex = record.indexOf("\t");
+      const [mode] = (separatorIndex < 0 ? "" : record.slice(0, separatorIndex)).split(" ");
+      const path = separatorIndex < 0 ? "" : record.slice(separatorIndex + 1);
+      if (mode === "160000" && path) {
+        await this.validateRepositoryIgnoredInputs(resolve(root, path), `${prefix}${path}/`);
+      }
+    }
+  }
+
+  private async collectTrackedPaths(repositoryRoot: string, prefix = ""): Promise<Set<string>> {
+    const result = await Bun.$`git ls-files --stage -z --cached`.cwd(repositoryRoot).quiet();
+    const paths = new Set<string>();
+
+    for (const record of result.stdout.toString().split("\0").filter(Boolean)) {
+      const separatorIndex = record.indexOf("\t");
+      const fields = separatorIndex < 0 ? [] : record.slice(0, separatorIndex).split(" ");
+      const [mode, , stage, ...unexpected] = fields;
+      const path = separatorIndex < 0 ? "" : record.slice(separatorIndex + 1);
+      if (!mode || !stage || unexpected.length > 0 || !path) {
+        throw new Error("Unable to parse Git index while collecting tracked package inputs");
+      }
+      if (stage !== "0") throw new Exit(`Repository has an unresolved index entry: ${path}`);
+      const prefixedPath = `${prefix}${path}`;
+      paths.add(prefixedPath);
+      if (mode !== "160000") continue;
+      const nestedPaths = await this.collectTrackedPaths(resolve(repositoryRoot, path), `${prefixedPath}/`);
+      for (const nestedPath of nestedPaths) paths.add(nestedPath);
+    }
+    return paths;
   }
 
   private async getPublishContext(): Promise<{ catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap }> {
@@ -1497,4 +1827,47 @@ export class ReleaseOrchestrator {
     }
     return undefined;
   }
+}
+
+async function readPackedManifest(artifactPath: string): Promise<string> {
+  const compressed = new Uint8Array(await Bun.file(artifactPath).arrayBuffer());
+  const archive = Bun.gunzipSync(compressed);
+  const decoder = new TextDecoder();
+
+  for (let offset = 0; offset + TAR_BLOCK_SIZE <= archive.length; ) {
+    const name = readTarString(archive, offset, TAR_NAME_LENGTH, decoder);
+    if (!name) break;
+    const prefix = readTarString(archive, offset + TAR_PREFIX_OFFSET, TAR_PREFIX_LENGTH, decoder);
+    const path = prefix ? `${prefix}/${name}` : name;
+    const sizeText = readTarString(archive, offset + TAR_SIZE_OFFSET, TAR_SIZE_LENGTH, decoder).trim();
+    const size = Number.parseInt(sizeText, 8);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid tar entry size for ${path}`);
+    const contentOffset = offset + TAR_BLOCK_SIZE;
+    const contentEnd = contentOffset + size;
+    if (contentEnd > archive.length) throw new Error(`Truncated tar entry for ${path}`);
+    if (path === PACKED_MANIFEST_PATH) return decoder.decode(archive.subarray(contentOffset, contentEnd));
+    offset = contentOffset + Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  }
+
+  throw new Error("Packed artifact does not contain package/package.json");
+}
+
+function readTarString(archive: Uint8Array, offset: number, length: number, decoder: TextDecoder): string {
+  const field = archive.subarray(offset, offset + length);
+  const terminator = field.indexOf(0);
+  return decoder.decode(terminator < 0 ? field : field.subarray(0, terminator));
+}
+
+function sameJsonDocument(first: string, second: string): boolean {
+  return JSON.stringify(canonicalizeJson(JSON.parse(first))) === JSON.stringify(canonicalizeJson(JSON.parse(second)));
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalizeJson(entry)]),
+  );
 }

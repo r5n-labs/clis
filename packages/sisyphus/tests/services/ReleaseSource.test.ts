@@ -68,6 +68,7 @@ describe("hashReleaseSource", () => {
     await Bun.$`git -c protocol.file.allow=always submodule add -q ${submoduleSource} vendor/dependency`
       .cwd(root)
       .quiet();
+    const recordedObjectId = (await Bun.$`git rev-parse :vendor/dependency`.cwd(root).quiet()).stdout.toString().trim();
     process.chdir(root);
 
     await expect(hashReleaseSource(".sisyphus")).resolves.toMatch(/^[0-9a-f]{64}$/);
@@ -82,6 +83,24 @@ describe("hashReleaseSource", () => {
 
     await expect(hashReleaseSource(".sisyphus")).rejects.toThrow(
       "Release source gitlink does not match the recorded commit: vendor/dependency",
+    );
+
+    rmSync(join(root, "vendor/dependency"), { force: true, recursive: true });
+    await expect(hashReleaseSource(".sisyphus")).rejects.toThrow(
+      "Release source gitlink is not initialized: vendor/dependency",
+    );
+
+    mkdirSync(join(root, "vendor/dependency"), { recursive: true });
+    writeFileSync(join(root, "vendor/dependency/injected.txt"), "not a submodule\n");
+    await expect(hashReleaseSource(".sisyphus")).rejects.toThrow(
+      "Release source gitlink is not initialized: vendor/dependency",
+    );
+
+    rmSync(join(root, "vendor/dependency"), { force: true, recursive: true });
+    await Bun.$`git clone -q ${submoduleSource} vendor/dependency`.cwd(root).quiet();
+    await Bun.$`git checkout -q ${recordedObjectId}`.cwd(join(root, "vendor/dependency")).quiet();
+    await expect(hashReleaseSource(".sisyphus")).rejects.toThrow(
+      "Release source gitlink is not initialized: vendor/dependency",
     );
   });
 
