@@ -17,6 +17,7 @@ describe("release workflow templates", () => {
     expect(template).toContain("actions/cache/save@v5");
     expect(template).toContain("if: always()");
     expect(template).toContain("rm -f .git/sisyphus/release/.write.lock");
+    expect(template).toContain(".git/sisyphus/release/.write.lock.*.claim");
     expect(template).toContain("sis roll --resume");
     expect(template).toContain("cancel-in-progress: false");
   });
@@ -29,6 +30,7 @@ describe("release workflow templates", () => {
     expect(template).toContain("npm config set //registry.npmjs.org/:_authToken");
     expect(template).toContain(".git/sisyphus/release/");
     expect(template).toContain("rm -f .git/sisyphus/release/.write.lock");
+    expect(template).toContain(".git/sisyphus/release/.write.lock.*.claim");
     expect(template).toContain("sis roll --resume");
     expect(template).toContain("resource_group: sisyphus-release");
   });

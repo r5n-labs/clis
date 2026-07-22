@@ -2,16 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type CreateReleaseLedgerInput, ReleaseLedger, type ReleaseLedgerData } from "../../src/services/ReleaseLedger";
 
@@ -19,9 +21,10 @@ const PACKAGE_NAME = "@fixture/public";
 const PACKAGE_FILE = "packages/public/package.json";
 const OID = "a".repeat(40);
 const TREE_OID = "b".repeat(40);
+const PROC_STAT_START_TIME_INDEX = 19;
 const LOCK_HOLDER_SCRIPT = `
   import { randomUUID } from "node:crypto";
-  import { link, open } from "node:fs/promises";
+  import { link, open, readFile } from "node:fs/promises";
   import { hostname } from "node:os";
   import { join } from "node:path";
 
@@ -30,6 +33,23 @@ const LOCK_HOLDER_SCRIPT = `
   const ownerId = randomUUID();
   const ownerPath = join(releaseDirectory, ".write.lock." + ownerId + ".owner");
   const lockPath = join(releaseDirectory, ".write.lock");
+  let processStartedAt;
+  if (process.platform === "linux") {
+    const bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf-8")).trim();
+    const stat = await readFile("/proc/" + process.pid + "/stat", "utf-8");
+    const commandEnd = stat.lastIndexOf(")");
+    const startTime = commandEnd < 0 ? undefined : stat.slice(commandEnd + 1).trim().split(/\\s+/)[${PROC_STAT_START_TIME_INDEX}];
+    processStartedAt = bootId && startTime ? "linux:" + bootId + ":" + startTime : "";
+  } else {
+    const startedAt = Bun.spawnSync({
+      cmd: ["ps", "-o", "lstart=", "-p", String(process.pid)],
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+      stderr: "pipe",
+      stdout: "pipe",
+    }).stdout.toString().trim().replace(/\\s+/g, " ");
+    processStartedAt = startedAt ? "ps:" + startedAt : "";
+  }
+  if (!processStartedAt) throw new Error("Missing process start identity");
   const handle = await open(ownerPath, "wx", 0o600);
   try {
     await handle.writeFile(JSON.stringify({
@@ -37,7 +57,8 @@ const LOCK_HOLDER_SCRIPT = `
       hostname: hostname(),
       ownerId,
       pid: process.pid,
-      schemaVersion: 1,
+      processStartedAt,
+      schemaVersion: 2,
     }) + "\\n", "utf-8");
     await handle.sync();
   } finally {
@@ -84,8 +105,9 @@ function input(options: Partial<CreateReleaseLedgerInput["options"]> = {}): Crea
   };
 }
 
-function spawnWriteLockHolder(releaseDirectory: string) {
+function spawnWriteLockHolder(releaseDirectory: string, env: Record<string, string> = {}) {
   return Bun.spawn([process.execPath, "--eval", LOCK_HOLDER_SCRIPT, releaseDirectory], {
+    env: { ...process.env, ...env },
     stderr: "pipe",
     stdin: "ignore",
     stdout: "pipe",
@@ -118,6 +140,36 @@ function simulateCachedWriteLock(lockPath: string, restoredHostname?: string): v
   const ownerPath = join(dirname(lockPath), `.write.lock.${metadata.ownerId}.owner`);
   rmSync(ownerPath);
   writeFileSync(ownerPath, content, { mode: 0o600 });
+}
+
+function installWriteLock(
+  releaseDirectory: string,
+  metadata: Record<string, unknown>,
+): { lockPath: string; ownerPath: string } {
+  const ownerId = metadata.ownerId;
+  if (typeof ownerId !== "string") throw new Error("Expected lock owner ID");
+  const ownerPath = join(releaseDirectory, `.write.lock.${ownerId}.owner`);
+  const lockPath = join(releaseDirectory, ".write.lock");
+  writeFileSync(ownerPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+  linkSync(ownerPath, lockPath);
+  return { lockPath, ownerPath };
+}
+
+function staleCurrentProcessLock(releaseDirectory: string): { lockPath: string; ownerPath: string } {
+  const processStartedAt =
+    process.platform === "linux"
+      ? "linux:00000000-0000-4000-8000-000000000000:0"
+      : process.platform === "win32"
+        ? "windows:0"
+        : "ps:stale-process-identity";
+  return installWriteLock(releaseDirectory, {
+    acquiredAt: new Date().toISOString(),
+    hostname: hostname(),
+    ownerId: randomUUID(),
+    pid: process.pid,
+    processStartedAt,
+    schemaVersion: 2,
+  });
 }
 
 describe("ReleaseLedger", () => {
@@ -208,10 +260,12 @@ describe("ReleaseLedger", () => {
     expect((await ReleaseLedger.loadActive(root))?.data.expectedReleaseTree).toBe(TREE_OID);
     await expect(ledger.setExpectedReleaseTree(OID)).rejects.toThrow("Cannot replace expected release tree");
 
-    await committedLedger.setReleaseCommit(OID);
-    await expect(committedLedger.setExpectedReleaseTree(TREE_OID)).rejects.toThrow(
-      "Cannot set expected release tree after release commit",
+    await expect(committedLedger.setReleaseCommit(OID)).rejects.toThrow(
+      "Cannot set release commit before the expected release tree",
     );
+    await committedLedger.setExpectedReleaseTree(TREE_OID);
+    await committedLedger.setReleaseCommit(OID);
+    expect(committedLedger.data.releaseCommit).toBe(OID);
   });
 
   test("recovers subprocess locks left by process death before later writes and removal", async () => {
@@ -258,6 +312,27 @@ describe("ReleaseLedger", () => {
     expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(true);
   });
 
+  test("fails closed for a live lock owner across timezone environments", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory, { TZ: "UTC" });
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+
+    try {
+      await expect(ledger.save()).rejects.toThrow("lock owner is still live");
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+
+    expect(holder.exitCode).toBeNull();
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(true);
+  });
+
   test("serializes concurrent writers recovering the same dead subprocess lock", async () => {
     const root = await createRepository();
     roots.push(root);
@@ -276,6 +351,52 @@ describe("ReleaseLedger", () => {
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
     expect(["local-ready", "external"]).toContain((await ReleaseLedger.loadActive(root))?.phase);
+  });
+
+  test("recovers a stale lock when its PID belongs to a newer process", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = staleCurrentProcessLock(ledger.releaseDirectory);
+
+    await ledger.setExpectedReleaseTree(TREE_OID);
+
+    expect(existsSync(lockPath)).toBe(false);
+    expect(existsSync(ownerPath)).toBe(false);
+    expect(ledger.data.expectedReleaseTree).toBe(TREE_OID);
+  });
+
+  test("fails closed when stale lock recovery was interrupted after claiming", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = staleCurrentProcessLock(ledger.releaseDirectory);
+    const claimPath = ownerPath.replace(/\.owner$/, ".claim");
+    renameSync(ownerPath, claimPath);
+
+    await expect(ledger.setExpectedReleaseTree(TREE_OID)).rejects.toThrow("stale lock recovery is incomplete");
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(existsSync(ownerPath)).toBe(false);
+    expect(existsSync(claimPath)).toBe(true);
+  });
+
+  test("fails closed without deleting a legacy lock that lacks process identity", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = installWriteLock(ledger.releaseDirectory, {
+      acquiredAt: new Date().toISOString(),
+      hostname: hostname(),
+      ownerId: randomUUID(),
+      pid: process.pid,
+      schemaVersion: 1,
+    });
+
+    await expect(ledger.save()).rejects.toThrow("lock metadata is malformed");
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(existsSync(ownerPath)).toBe(true);
   });
 
   test("fails closed without deleting malformed lock metadata", async () => {
@@ -443,6 +564,7 @@ describe("ReleaseLedger", () => {
     await ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.npmjs.org/");
     await ledger.markNpm(PACKAGE_NAME, "started");
     await ledger.markNpm(PACKAGE_NAME, "completed");
+    await ledger.setExpectedReleaseTree(TREE_OID);
     await ledger.setReleaseCommit(OID);
     await ledger.markTagsReady();
 
