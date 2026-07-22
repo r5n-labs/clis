@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { ConfigManager } from "@r5n/cli-core";
 import { RollCommand } from "../../src/commands/roll";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
 import { Stone } from "../../src/domain";
-import { hashReleasePlan, hashReleaseSource, StoneManager } from "../../src/services";
+import { hashReleasePlan, hashReleaseSource, ReleaseOrchestrator, StoneManager } from "../../src/services";
 import { ReleaseLedger } from "../../src/services/ReleaseLedger";
 import type { SisyphusConfig } from "../../src/types";
 
@@ -16,6 +16,7 @@ const STONE_ID = "0001-rollsafe";
 const STONE_FILE = `.sisyphus/stones/${STONE_ID}.json`;
 const RELEASE_TAG = `${PACKAGE_NAME}@1.0.1`;
 const PREVIOUS_LAST_STONE = { commit: "previous-baseline", date: "2026-01-02T03:04:05.000Z" };
+const LEDGER_SENTINEL = "invalid-ledger-must-not-be-loaded-or-changed\n";
 
 type RollCtx = Parameters<RollCommand["execute"]>[0];
 
@@ -32,6 +33,14 @@ function makeCtx(config: ConfigManager<SisyphusConfig>, args: Partial<RollCtx["a
 async function gitText(root: string, args: string[]): Promise<string> {
   const result = await Bun.$`git ${args}`.cwd(root).quiet();
   return result.stdout.toString().trim();
+}
+
+function writeLedgerSentinel(root: string): string {
+  const releaseDirectory = join(root, ".git/sisyphus/release");
+  const activeLedger = join(releaseDirectory, "active.json");
+  mkdirSync(releaseDirectory, { recursive: true });
+  writeFileSync(activeLedger, LEDGER_SENTINEL);
+  return activeLedger;
 }
 
 describe("RollCommand release metadata", () => {
@@ -220,6 +229,130 @@ describe("RollCommand release metadata", () => {
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
     expect(existsSync(join(root, STONE_FILE))).toBe(true);
     expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
+  });
+
+  test("rejects every resume operation flag before loading or changing the ledger or invoking resume", async () => {
+    const cases: Array<[Partial<RollCtx["args"]>, string]> = [
+      [{ changelog: true }, "--changelog"],
+      [{ changelog: false }, "--changelog"],
+      [{ createRelease: true }, "--createRelease"],
+      [{ createRelease: false }, "--createRelease"],
+      [{ dryRun: true }, "--dryRun"],
+      [{ noCommit: true }, "--noCommit"],
+      [{ npm: true }, "--npm"],
+      [{ npm: false }, "--npm"],
+      [{ preview: true }, "--preview"],
+      [{ publishOnly: true }, "--publishOnly"],
+      [{ push: true }, "--push"],
+      [{ push: false }, "--push"],
+      [{ tags: true }, "--tags"],
+      [{ tags: false }, "--tags"],
+    ];
+    const activeLedger = writeLedgerSentinel(root);
+    const originalConfig = readFileSync(join(root, ".sisyphus/config.json"), "utf-8");
+    const originalPackage = readFileSync(join(root, PACKAGE_FILE), "utf-8");
+    const originalStone = readFileSync(join(root, STONE_FILE), "utf-8");
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+    const resume = spyOn(ReleaseOrchestrator, "resume");
+
+    try {
+      for (const [args, flag] of cases) {
+        await expect(new RollCommand().execute(makeCtx(config, { ...args, resume: true }))).rejects.toThrow(
+          `--resume cannot be combined with ${flag}`,
+        );
+      }
+
+      expect(resume).not.toHaveBeenCalled();
+      expect(readFileSync(activeLedger, "utf-8")).toBe(LEDGER_SENTINEL);
+      expect(readFileSync(join(root, ".sisyphus/config.json"), "utf-8")).toBe(originalConfig);
+      expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toBe(originalPackage);
+      expect(readFileSync(join(root, STONE_FILE), "utf-8")).toBe(originalStone);
+      expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    } finally {
+      resume.mockRestore();
+    }
+  });
+
+  test("rejects normal-roll-only flags in publish-only mode before checking the ledger", async () => {
+    const cases: Array<[Partial<RollCtx["args"]>, string]> = [
+      [{ changelog: true }, "--changelog"],
+      [{ noCommit: true }, "--noCommit"],
+      [{ preview: true }, "--preview"],
+      [{ push: true }, "--push"],
+    ];
+    const activeLedger = writeLedgerSentinel(root);
+    const assertNoActiveRelease = spyOn(ReleaseOrchestrator, "assertNoActiveRelease");
+
+    try {
+      for (const [args, flag] of cases) {
+        await expect(new RollCommand().execute(makeCtx(config, { ...args, publishOnly: true }))).rejects.toThrow(
+          `--publishOnly cannot be combined with ${flag}`,
+        );
+      }
+
+      expect(assertNoActiveRelease).not.toHaveBeenCalled();
+      expect(readFileSync(activeLedger, "utf-8")).toBe(LEDGER_SENTINEL);
+      expect(existsSync(join(root, STONE_FILE))).toBe(true);
+      expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
+    } finally {
+      assertNoActiveRelease.mockRestore();
+    }
+  });
+
+  test("bare resume still dispatches to the recorded release operation", async () => {
+    const resume = spyOn(ReleaseOrchestrator, "resume").mockResolvedValue({ packages: [] });
+
+    try {
+      await expect(new RollCommand().execute(makeCtx(config, { resume: true }))).resolves.toBeUndefined();
+      expect(resume).toHaveBeenCalledTimes(1);
+    } finally {
+      resume.mockRestore();
+    }
+  });
+
+  test("CLI rejects every resume operation flag before reading or changing an active ledger", async () => {
+    const cases: Array<[string, string]> = [
+      ["--changelog", "--changelog"],
+      ["--no-changelog", "--changelog"],
+      ["--create-release", "--createRelease"],
+      ["--no-create-release", "--createRelease"],
+      ["--dry-run", "--dryRun"],
+      ["--noCommit", "--noCommit"],
+      ["--npm", "--npm"],
+      ["--no-npm", "--npm"],
+      ["--preview", "--preview"],
+      ["--publish-only", "--publishOnly"],
+      ["--push", "--push"],
+      ["--no-push", "--push"],
+      ["--tags", "--tags"],
+      ["--no-tags", "--tags"],
+    ];
+    const activeLedger = writeLedgerSentinel(root);
+    const originalConfig = readFileSync(join(root, ".sisyphus/config.json"), "utf-8");
+    const originalPackage = readFileSync(join(root, PACKAGE_FILE), "utf-8");
+    const originalStone = readFileSync(join(root, STONE_FILE), "utf-8");
+    const cliPath = join(import.meta.dir, "../../src/cli.ts");
+
+    for (const [argument, flag] of cases) {
+      const subprocess = Bun.spawn([process.execPath, cliPath, "roll", "--resume", argument], {
+        cwd: root,
+        stderr: "pipe",
+        stdin: "ignore",
+        stdout: "pipe",
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(subprocess.stdout).text(),
+        new Response(subprocess.stderr).text(),
+        subprocess.exited,
+      ]);
+
+      expect(exitCode).not.toBe(0);
+      expect(`${stdout}\n${stderr}`).toContain(`--resume cannot be combined with ${flag}`);
+      expect(readFileSync(activeLedger, "utf-8")).toBe(LEDGER_SENTINEL);
+      expect(readFileSync(join(root, ".sisyphus/config.json"), "utf-8")).toBe(originalConfig);
+      expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toBe(originalPackage);
+      expect(readFileSync(join(root, STONE_FILE), "utf-8")).toBe(originalStone);
+    }
   });
 
   test("publish-only binds currentRelease packages to the complete archived release plan", async () => {

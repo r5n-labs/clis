@@ -45,6 +45,8 @@ export class RollCommand extends BaseCommand {
   args = rollArgs;
 
   async execute(ctx: RollCtx) {
+    this.validateModeFlags(ctx);
+
     if (ctx.args.resume) {
       await this.executeResume(ctx);
       return;
@@ -299,6 +301,46 @@ export class RollCommand extends BaseCommand {
     }
   }
 
+  private validateModeFlags(ctx: RollCtx) {
+    if (ctx.args.resume) {
+      const incompatibleFlags = [
+        ctx.args.changelog !== undefined ? "--changelog" : undefined,
+        ctx.args.createRelease !== undefined ? "--createRelease" : undefined,
+        ctx.args.dryRun ? "--dryRun" : undefined,
+        ctx.args.noCommit ? "--noCommit" : undefined,
+        ctx.args.npm !== undefined ? "--npm" : undefined,
+        ctx.args.preview ? "--preview" : undefined,
+        ctx.args.publishOnly ? "--publishOnly" : undefined,
+        ctx.args.push !== undefined ? "--push" : undefined,
+        ctx.args.tags !== undefined ? "--tags" : undefined,
+      ].filter((flag): flag is string => flag !== undefined);
+
+      if (incompatibleFlags.length > 0) {
+        throw new Exit(
+          `--resume cannot be combined with ${incompatibleFlags.join(", ")}`,
+          "Resume uses the operation settings recorded in the active release ledger",
+        );
+      }
+      return;
+    }
+
+    if (!ctx.args.publishOnly) return;
+
+    const incompatibleFlags = [
+      ctx.args.changelog !== undefined ? "--changelog" : undefined,
+      ctx.args.noCommit ? "--noCommit" : undefined,
+      ctx.args.preview ? "--preview" : undefined,
+      ctx.args.push !== undefined ? "--push" : undefined,
+    ].filter((flag): flag is string => flag !== undefined);
+
+    if (incompatibleFlags.length > 0) {
+      throw new Exit(
+        `--publishOnly cannot be combined with ${incompatibleFlags.join(", ")}`,
+        "Publish-only supports --createRelease, --dryRun, --npm, --tags, and --yes",
+      );
+    }
+  }
+
   private async executePublishOnly(ctx: RollCtx) {
     await ReleaseOrchestrator.assertNoActiveRelease();
     const currentRelease = ctx.config.get("currentRelease");
@@ -462,8 +504,6 @@ export class RollCommand extends BaseCommand {
   }
 
   private async executeResume(ctx: RollCtx) {
-    if (ctx.args.publishOnly) throw new Exit("--resume cannot be combined with --publishOnly");
-
     const { packages } = await ReleaseOrchestrator.resume(ctx.config);
     note(
       `Released ${color.bold(String(packages.length))} package(s)\n` +
