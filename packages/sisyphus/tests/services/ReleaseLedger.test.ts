@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -18,6 +18,34 @@ import { type CreateReleaseLedgerInput, ReleaseLedger, type ReleaseLedgerData } 
 const PACKAGE_NAME = "@fixture/public";
 const PACKAGE_FILE = "packages/public/package.json";
 const OID = "a".repeat(40);
+const LOCK_HOLDER_SCRIPT = `
+  import { randomUUID } from "node:crypto";
+  import { link, open } from "node:fs/promises";
+  import { hostname } from "node:os";
+  import { join } from "node:path";
+
+  const releaseDirectory = process.argv[1];
+  if (!releaseDirectory) throw new Error("Missing release directory");
+  const ownerId = randomUUID();
+  const ownerPath = join(releaseDirectory, ".write.lock." + ownerId + ".owner");
+  const lockPath = join(releaseDirectory, ".write.lock");
+  const handle = await open(ownerPath, "wx", 0o600);
+  try {
+    await handle.writeFile(JSON.stringify({
+      acquiredAt: new Date().toISOString(),
+      hostname: hostname(),
+      ownerId,
+      pid: process.pid,
+      schemaVersion: 1,
+    }) + "\\n", "utf-8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await link(ownerPath, lockPath);
+  process.stdout.write("ready\\n");
+  await new Promise(() => {});
+`;
 
 const BASE_INPUT: CreateReleaseLedgerInput = {
   options: {
@@ -55,10 +83,48 @@ function input(options: Partial<CreateReleaseLedgerInput["options"]> = {}): Crea
   };
 }
 
+function spawnWriteLockHolder(releaseDirectory: string) {
+  return Bun.spawn([process.execPath, "--eval", LOCK_HOLDER_SCRIPT, releaseDirectory], {
+    stderr: "pipe",
+    stdin: "ignore",
+    stdout: "pipe",
+  });
+}
+
+type WriteLockHolder = ReturnType<typeof spawnWriteLockHolder>;
+
+async function waitForWriteLock(holder: WriteLockHolder): Promise<void> {
+  const reader = holder.stdout.getReader();
+  const result = await reader.read();
+  reader.releaseLock();
+  if (!result.done && new TextDecoder().decode(result.value) === "ready\n") return;
+
+  const stderr = await new Response(holder.stderr).text();
+  throw new Error(`Lock holder failed before becoming ready: ${stderr.trim() || "no error output"}`);
+}
+
+async function stopWriteLockHolder(holder: WriteLockHolder): Promise<void> {
+  if (holder.exitCode === null) holder.kill("SIGKILL");
+  await holder.exited;
+}
+
+function simulateCachedWriteLock(lockPath: string, restoredHostname?: string): void {
+  const metadata = JSON.parse(readFileSync(lockPath, "utf-8")) as { hostname?: unknown; ownerId?: unknown };
+  if (typeof metadata.ownerId !== "string") throw new Error("Expected lock owner ID");
+  if (restoredHostname !== undefined) metadata.hostname = restoredHostname;
+  const content = `${JSON.stringify(metadata)}\n`;
+  writeFileSync(lockPath, content, { mode: 0o600 });
+  const ownerPath = join(dirname(lockPath), `.write.lock.${metadata.ownerId}.owner`);
+  rmSync(ownerPath);
+  writeFileSync(ownerPath, content, { mode: 0o600 });
+}
+
 describe("ReleaseLedger", () => {
   const roots: string[] = [];
+  const lockHolders: WriteLockHolder[] = [];
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(lockHolders.splice(0).map(stopWriteLockHolder));
     for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
   });
 
@@ -114,6 +180,80 @@ describe("ReleaseLedger", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
+  });
+
+  test("recovers subprocess locks left by process death before later writes and removal", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const writeHolder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(writeHolder);
+    await waitForWriteLock(writeHolder);
+    await stopWriteLockHolder(writeHolder);
+    simulateCachedWriteLock(join(ledger.releaseDirectory, ".write.lock"), "restored-ci-runner");
+
+    const resumed = await ReleaseLedger.loadActive(root);
+    if (!resumed) throw new Error("Expected active release ledger");
+    await resumed.setPhase("local-ready");
+    expect(resumed.phase).toBe("local-ready");
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+
+    const removeHolder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(removeHolder);
+    await waitForWriteLock(removeHolder);
+    await stopWriteLockHolder(removeHolder);
+    await resumed.remove();
+
+    expect(existsSync(ledger.activePath)).toBe(false);
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+  });
+
+  test("fails closed while a subprocess lock owner is live", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    const loaded = await ReleaseLedger.loadActive(root);
+    if (!loaded) throw new Error("Expected active release ledger");
+
+    await expect(loaded.save()).rejects.toThrow("lock owner is still live");
+    await expect(loaded.remove()).rejects.toThrow("lock owner is still live");
+    expect(holder.exitCode).toBeNull();
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(true);
+  });
+
+  test("serializes concurrent writers recovering the same dead subprocess lock", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const first = await ReleaseLedger.loadActive(root);
+    const second = await ReleaseLedger.loadActive(root);
+    if (!first || !second) throw new Error("Expected active release ledger handles");
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    await stopWriteLockHolder(holder);
+
+    const results = await Promise.allSettled([first.setPhase("local-ready"), second.setPhase("external")]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+    expect(["local-ready", "external"]).toContain((await ReleaseLedger.loadActive(root))?.phase);
+  });
+
+  test("fails closed without deleting malformed lock metadata", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const lockPath = join(ledger.releaseDirectory, ".write.lock");
+    const malformed = `${randomUUID()}\n`;
+    writeFileSync(lockPath, malformed);
+
+    await expect(ledger.save()).rejects.toThrow("lock metadata is malformed");
+    expect(readFileSync(lockPath, "utf-8")).toBe(malformed);
   });
 
   test("fails closed for corrupt JSON and unknown schema versions", async () => {

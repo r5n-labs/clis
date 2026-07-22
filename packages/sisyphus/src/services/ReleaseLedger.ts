@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as FS_CONSTANTS } from "node:fs";
 import { copyFile, link, lstat, mkdir, open, readFile, realpath, rename, rm, stat, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { StoneJson } from "../domain";
 
@@ -12,6 +13,9 @@ const RELEASE_ID_PATTERN = /^[0-9A-Za-z][0-9A-Za-z_-]*$/;
 const FULL_GIT_OID_PATTERN = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/;
 const INTEGRITY_PATTERN = /^sha512-[0-9A-Za-z+/]{86}==$/;
 const REMOTE_NAME_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/;
+const WRITE_LOCK_OWNER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const WRITE_LOCK_SCHEMA_VERSION = 1 as const;
+const WRITE_LOCK_ACQUIRE_ATTEMPTS = 3;
 
 export type ReleasePhase = (typeof RELEASE_PHASES)[number];
 export type ReleaseOperationState = (typeof OPERATION_STATES)[number];
@@ -122,6 +126,23 @@ type LedgerPaths = {
 };
 
 type JsonObject = Record<string, unknown>;
+
+type WriteLockMetadata = {
+  schemaVersion: typeof WRITE_LOCK_SCHEMA_VERSION;
+  ownerId: string;
+  hostname: string;
+  pid: number;
+  acquiredAt: string;
+};
+
+type LedgerWriteLock = { lockPath: string; metadata: WriteLockMetadata; ownerPath: string };
+
+type StaleWriteLock = {
+  lockPath: string;
+  lockStat: Awaited<ReturnType<typeof lstat>>;
+  metadata: WriteLockMetadata;
+  ownerPath: string;
+};
 
 export class ReleaseLedgerError extends Error {
   readonly _tag = "ReleaseLedgerError";
@@ -541,13 +562,7 @@ export class ReleaseLedger {
 
   async remove(): Promise<void> {
     this.assertActive("remove");
-    const lockPath = join(this.releaseDirectory, ".write.lock");
-    let lockHandle: Awaited<ReturnType<typeof open>>;
-    try {
-      lockHandle = await open(lockPath, "wx", 0o600);
-    } catch (error) {
-      throw new ReleaseLedgerError(`Release ledger is locked by another process: ${errorDetail(error)}`);
-    }
+    const lock = await acquireLedgerWriteLock(this.releaseDirectory);
 
     try {
       await ensureLedgerStorage(this.paths, this.value.id, false);
@@ -569,8 +584,7 @@ export class ReleaseLedger {
     } catch (error) {
       throw new ReleaseLedgerError(`Failed to remove release ${this.value.id}: ${errorDetail(error)}`);
     } finally {
-      await lockHandle.close();
-      await rm(lockPath, { force: true });
+      await releaseLedgerWriteLock(lock);
     }
 
     this.active = false;
@@ -1210,14 +1224,7 @@ async function atomicWriteJson(
 ): Promise<void> {
   const content = `${JSON.stringify(data, null, 2)}\n`;
   const tempPath = join(dirname(path), `.${randomUUID()}.json.tmp`);
-  const lockPath = join(dirname(path), ".write.lock");
-  let lockHandle: Awaited<ReturnType<typeof open>>;
-
-  try {
-    lockHandle = await open(lockPath, "wx", 0o600);
-  } catch (error) {
-    throw new ReleaseLedgerError(`Release ledger is locked by another process: ${errorDetail(error)}`);
-  }
+  const lock = await acquireLedgerWriteLock(dirname(path));
 
   try {
     await assertDirectory(dirname(path), "release directory");
@@ -1254,9 +1261,265 @@ async function atomicWriteJson(
   } catch (error) {
     await cleanupAfterFailure(tempPath, error, `Failed to clean temporary ledger file at ${tempPath}`);
   } finally {
-    await lockHandle.close();
-    await rm(lockPath, { force: true });
+    await releaseLedgerWriteLock(lock);
   }
+}
+
+async function acquireLedgerWriteLock(directory: string): Promise<LedgerWriteLock> {
+  const lockPath = join(directory, ".write.lock");
+
+  for (let attempt = 0; attempt < WRITE_LOCK_ACQUIRE_ATTEMPTS; attempt += 1) {
+    const metadata: WriteLockMetadata = {
+      acquiredAt: new Date().toISOString(),
+      hostname: hostname(),
+      ownerId: randomUUID(),
+      pid: process.pid,
+      schemaVersion: WRITE_LOCK_SCHEMA_VERSION,
+    };
+    const ownerPath = getWriteLockOwnerPath(directory, metadata.ownerId);
+    await writeLockOwner(ownerPath, metadata);
+
+    try {
+      await link(ownerPath, lockPath);
+    } catch (error) {
+      await rm(ownerPath, { force: true });
+      if (!isErrorCode(error, "EEXIST")) {
+        throw new ReleaseLedgerError(`Failed to acquire release ledger lock at ${lockPath}: ${errorDetail(error)}`);
+      }
+      const stale = await inspectStaleWriteLock(lockPath);
+      if (!stale) continue;
+      await recoverStaleWriteLock(stale);
+      continue;
+    }
+
+    const lock = { lockPath, metadata, ownerPath };
+    try {
+      await syncDirectory(directory);
+      return lock;
+    } catch (error) {
+      try {
+        await releaseLedgerWriteLock(lock);
+      } catch (releaseError) {
+        throw new AggregateError([error, releaseError], `Failed to durably acquire release ledger lock at ${lockPath}`);
+      }
+      throw new ReleaseLedgerError(
+        `Failed to durably acquire release ledger lock at ${lockPath}: ${errorDetail(error)}`,
+      );
+    }
+  }
+
+  throw new ReleaseLedgerError("Release ledger is locked by another process: lock changed during acquisition");
+}
+
+async function writeLockOwner(ownerPath: string, metadata: WriteLockMetadata): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+
+  try {
+    handle = await open(ownerPath, "wx", 0o600);
+    await handle.writeFile(`${JSON.stringify(metadata)}\n`, "utf-8");
+    await handle.sync();
+  } catch (error) {
+    await rm(ownerPath, { force: true });
+    throw new ReleaseLedgerError(`Failed to create release ledger lock owner: ${errorDetail(error)}`);
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function inspectStaleWriteLock(lockPath: string): Promise<StaleWriteLock | null> {
+  let lockStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    lockStat = await lstat(lockPath);
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) return null;
+    throw new ReleaseLedgerError(`Failed to inspect release ledger lock at ${lockPath}: ${errorDetail(error)}`);
+  }
+
+  if (!lockStat.isFile() || lockStat.isSymbolicLink()) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock owner is unknown");
+  }
+
+  let metadata: WriteLockMetadata | null = null;
+  try {
+    metadata = parseWriteLockMetadata(JSON.parse(await readFile(lockPath, "utf-8")));
+  } catch {
+    metadata = null;
+  }
+  if (!metadata) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock metadata is malformed");
+  }
+  const ownerPath = getWriteLockOwnerPath(dirname(lockPath), metadata.ownerId);
+  let ownerStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    ownerStat = await lstat(ownerPath);
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) {
+      throw new ReleaseLedgerError("Release ledger is locked by another process: stale lock ownership is incomplete");
+    }
+    throw new ReleaseLedgerError(`Failed to inspect release ledger lock owner: ${errorDetail(error)}`);
+  }
+
+  if (!ownerStat.isFile() || ownerStat.isSymbolicLink()) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: stale lock ownership is invalid");
+  }
+
+  let ownerMetadata: WriteLockMetadata | null = null;
+  try {
+    ownerMetadata = parseWriteLockMetadata(JSON.parse(await readFile(ownerPath, "utf-8")));
+  } catch {
+    ownerMetadata = null;
+  }
+  if (!ownerMetadata || !sameWriteLockMetadata(metadata, ownerMetadata)) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: stale lock ownership is invalid");
+  }
+
+  if (!sameFileIdentity(lockStat, ownerStat)) {
+    return { lockPath, lockStat, metadata, ownerPath };
+  }
+  if (metadata.hostname !== hostname()) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock owner is on an unknown host");
+  }
+
+  const liveness = getProcessLiveness(metadata.pid);
+  if (liveness === "alive") {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock owner is still live");
+  }
+  if (liveness === "unknown") {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock owner liveness is unknown");
+  }
+  return { lockPath, lockStat, metadata, ownerPath };
+}
+
+async function recoverStaleWriteLock(stale: StaleWriteLock): Promise<void> {
+  try {
+    await unlink(stale.ownerPath);
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) return;
+    throw new ReleaseLedgerError(`Failed to claim stale release ledger lock: ${errorDetail(error)}`);
+  }
+
+  let currentStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    currentStat = await lstat(stale.lockPath);
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) return;
+    throw new ReleaseLedgerError(`Failed to verify stale release ledger lock: ${errorDetail(error)}`);
+  }
+
+  if (!sameFileIdentity(stale.lockStat, currentStat)) return;
+
+  try {
+    await unlink(stale.lockPath);
+    await syncDirectory(dirname(stale.lockPath));
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) return;
+    throw new ReleaseLedgerError(`Failed to recover stale release ledger lock: ${errorDetail(error)}`);
+  }
+}
+
+async function releaseLedgerWriteLock(lock: LedgerWriteLock): Promise<void> {
+  let lockStat: Awaited<ReturnType<typeof lstat>>;
+  let ownerStat: Awaited<ReturnType<typeof lstat>>;
+
+  try {
+    [lockStat, ownerStat] = await Promise.all([lstat(lock.lockPath), lstat(lock.ownerPath)]);
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) {
+      await rm(lock.ownerPath, { force: true });
+      throw new ReleaseLedgerError("Failed to release ledger write lock: ownership record is missing");
+    }
+    throw new ReleaseLedgerError(`Failed to inspect release ledger lock during release: ${errorDetail(error)}`);
+  }
+
+  if (!sameFileIdentity(lockStat, ownerStat)) {
+    await rm(lock.ownerPath, { force: true });
+    throw new ReleaseLedgerError("Failed to release ledger write lock: ownership changed");
+  }
+
+  let currentMetadata: WriteLockMetadata | null = null;
+  try {
+    currentMetadata = parseWriteLockMetadata(JSON.parse(await readFile(lock.lockPath, "utf-8")));
+  } catch {
+    currentMetadata = null;
+  }
+  if (currentMetadata?.ownerId !== lock.metadata.ownerId) {
+    throw new ReleaseLedgerError("Failed to release ledger write lock: owner identity changed");
+  }
+
+  try {
+    await unlink(lock.lockPath);
+    await unlink(lock.ownerPath);
+    await syncDirectory(dirname(lock.lockPath));
+  } catch (error) {
+    throw new ReleaseLedgerError(`Failed to release ledger write lock: ${errorDetail(error)}`);
+  }
+}
+
+function parseWriteLockMetadata(value: unknown): WriteLockMetadata | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const object = value as Record<string, unknown>;
+  const keys = Object.keys(object);
+  if (
+    keys.length !== 5 ||
+    !keys.every((key) => ["acquiredAt", "hostname", "ownerId", "pid", "schemaVersion"].includes(key)) ||
+    object.schemaVersion !== WRITE_LOCK_SCHEMA_VERSION ||
+    typeof object.ownerId !== "string" ||
+    !WRITE_LOCK_OWNER_ID_PATTERN.test(object.ownerId) ||
+    typeof object.hostname !== "string" ||
+    !object.hostname ||
+    typeof object.pid !== "number" ||
+    !Number.isSafeInteger(object.pid) ||
+    object.pid <= 0 ||
+    typeof object.acquiredAt !== "string" ||
+    !isCanonicalTimestamp(object.acquiredAt)
+  ) {
+    return null;
+  }
+  return {
+    acquiredAt: object.acquiredAt,
+    hostname: object.hostname,
+    ownerId: object.ownerId,
+    pid: object.pid,
+    schemaVersion: WRITE_LOCK_SCHEMA_VERSION,
+  };
+}
+
+function getWriteLockOwnerPath(directory: string, ownerId: string): string {
+  if (!WRITE_LOCK_OWNER_ID_PATTERN.test(ownerId)) {
+    throw new ReleaseLedgerError("Release ledger is locked by another process: lock owner identity is malformed");
+  }
+  return join(directory, `.write.lock.${ownerId}.owner`);
+}
+
+function getProcessLiveness(pid: number): "alive" | "dead" | "unknown" {
+  try {
+    process.kill(pid, 0);
+    return "alive";
+  } catch (error) {
+    return isErrorCode(error, "ESRCH") ? "dead" : "unknown";
+  }
+}
+
+function sameFileIdentity(
+  first: Awaited<ReturnType<typeof lstat>>,
+  second: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+  return first.dev === second.dev && first.ino === second.ino;
+}
+
+function sameWriteLockMetadata(first: WriteLockMetadata, second: WriteLockMetadata): boolean {
+  return (
+    first.schemaVersion === second.schemaVersion &&
+    first.ownerId === second.ownerId &&
+    first.hostname === second.hostname &&
+    first.pid === second.pid &&
+    first.acquiredAt === second.acquiredAt
+  );
+}
+
+function isCanonicalTimestamp(value: string): boolean {
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
 }
 
 async function cleanupAfterFailure(path: string, error: unknown, message: string): Promise<never> {
