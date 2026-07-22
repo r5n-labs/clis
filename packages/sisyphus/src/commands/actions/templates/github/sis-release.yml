@@ -32,6 +32,9 @@ jobs:
           key: sisyphus-release-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: sisyphus-release-${{ runner.os }}-${{ github.sha }}-
 
+      - name: Remove cached release lock
+        run: rm -f .git/sisyphus/release/.write.lock .git/sisyphus/release/.write.lock.*.owner
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24

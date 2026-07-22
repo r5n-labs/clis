@@ -10,6 +10,7 @@ release:
       - .git/sisyphus/release/
   before_script:
     - apk add --no-cache git nodejs npm
+    - rm -f .git/sisyphus/release/.write.lock .git/sisyphus/release/.write.lock.*.owner
     - npm install --global npm@11.5.1
     - npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
   rules:
