@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const TEMPLATE_ROOT = join(import.meta.dir, "../../../src/commands/actions/templates");
+const REPOSITORY_RELEASE_WORKFLOW = join(import.meta.dir, "../../../../../.github/workflows/release.yml");
 
 describe("release workflow templates", () => {
   test("GitHub provisions npm 11 and npm authentication", async () => {
@@ -28,5 +29,13 @@ describe("release workflow templates", () => {
     expect(template).toContain(".git/sisyphus/release/");
     expect(template).toContain("sis roll --resume");
     expect(template).toContain("resource_group: sisyphus-release");
+  });
+
+  test("repository release workflow keeps the push remote credential-free", async () => {
+    const workflow = await readFile(REPOSITORY_RELEASE_WORKFLOW, "utf-8");
+
+    expect(workflow).toContain("token: $" + "{{ secrets.GITHUB_TOKEN }}");
+    expect(workflow).not.toContain("x-access-token");
+    expect(workflow).not.toContain("git remote set-url");
   });
 });

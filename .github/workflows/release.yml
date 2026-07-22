@@ -67,7 +67,6 @@ jobs:
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
           npm --version
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           bun release:roll
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
