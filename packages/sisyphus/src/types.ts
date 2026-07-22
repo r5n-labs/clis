@@ -6,7 +6,13 @@ export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolea
 
 export type PackageRelease = { oldVersion: string; newVersion: string };
 
-export type CurrentRelease = { packages: Record<string, PackageRelease>; stoneIds: string[]; timestamp: string };
+export type CurrentRelease = {
+  packages: Record<string, PackageRelease>;
+  planHash: string;
+  sourceHash: string;
+  stoneIds: string[];
+  timestamp: string;
+};
 
 export type ChangelogSections = {
   breaking: string;

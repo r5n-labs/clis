@@ -69,7 +69,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     },
   },
 
-  commit: { author: "r5n-bot", message: "chore(release): {message}" },
+  commit: { author: "r5n-bot", email: "r5n-bot@users.noreply.github.com", message: "chore(release): {message}" },
 
   commits: { skip: { authors: ["r5n-bot[bot]"], messagePatterns: ["^chore\\(release\\):", "^chore: add stone"] } },
 

@@ -1,8 +1,17 @@
 release:
   stage: sisyphus
   image: oven/bun:alpine
+  resource_group: sisyphus-release
+  cache:
+    key: "sisyphus-release-$CI_COMMIT_SHA"
+    policy: pull-push
+    when: always
+    paths:
+      - .git/sisyphus/release/
   before_script:
-    - apk add --no-cache git
+    - apk add --no-cache git nodejs npm
+    - npm install --global npm@11.5.1
+    - npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
   rules:
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
@@ -10,4 +19,5 @@ release:
   script:
     - git fetch --unshallow || true
     - bun install
-    - bunx @r5n/sisyphus roll --publish-only --yes
+    - bun add --global @r5n/sisyphus
+    - if [ -f .git/sisyphus/release/active.json ]; then sis roll --resume; else sis roll --publish-only --yes; fi

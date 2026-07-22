@@ -23,6 +23,8 @@ export type CreateLabelOptions = { description?: string; color?: string };
 
 export type CreateReleaseOptions = { tag: string; title: string; notes: string };
 
+export type GitRelease = { draft: boolean; tag: string; title: string; notes: string };
+
 export type Provider = "github" | "gitlab" | "bitbucket";
 
 export type RemoteInfo = { provider: Provider; owner: string; repo: string };
@@ -54,6 +56,7 @@ export abstract class GitProvider {
 
   abstract ensureLabelExists(name: string, options?: CreateLabelOptions): Promise<void>;
 
+  abstract getRelease(tag: string): Promise<GitRelease | null>;
   abstract createRelease(options: CreateReleaseOptions): Promise<void>;
   abstract deleteRelease(tag: string): Promise<void>;
 }

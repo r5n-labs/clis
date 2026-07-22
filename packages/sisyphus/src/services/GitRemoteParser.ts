@@ -9,6 +9,13 @@ const PROVIDER_DOMAIN: Record<Provider, string> = {
 
 type RemoteInfoWithCommitUrl = RemoteInfo & { commitUrl: (hash: string) => string };
 
+export function createCommitUrl(info: RemoteInfo): (hash: string) => string {
+  const domain = PROVIDER_DOMAIN[info.provider];
+  const commitPath = COMMIT_PATH[info.provider];
+  const baseUrl = `https://${domain}/${info.owner}/${info.repo}`;
+  return (hash: string) => `${baseUrl}/${commitPath}/${hash}`;
+}
+
 export class GitRemoteParser {
   private cached: RemoteInfoWithCommitUrl | null | undefined = undefined;
 
@@ -27,11 +34,7 @@ export class GitRemoteParser {
       return null;
     }
 
-    const domain = PROVIDER_DOMAIN[info.provider];
-    const commitPath = COMMIT_PATH[info.provider];
-    const baseUrl = `https://${domain}/${info.owner}/${info.repo}`;
-
-    this.cached = { ...info, commitUrl: (hash: string) => `${baseUrl}/${commitPath}/${hash}` };
+    this.cached = { ...info, commitUrl: createCommitUrl(info) };
     return this.cached;
   }
 }

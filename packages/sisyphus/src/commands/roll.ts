@@ -2,7 +2,14 @@ import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { Package, Stone } from "../domain";
-import { ChangelogGenerator, ReleaseOrchestrator, StoneManager, WorkspaceScanner } from "../services";
+import {
+  ChangelogGenerator,
+  hashReleasePlan,
+  hashReleaseSource,
+  ReleaseOrchestrator,
+  StoneManager,
+  WorkspaceScanner,
+} from "../services";
 
 const rollArgs = args({
   changelog: { alias: "c", description: "Generate changelogs", type: "boolean" },
@@ -13,6 +20,7 @@ const rollArgs = args({
   preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
   publishOnly: { default: false, description: "Publish from currentRelease (no file changes)", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
+  resume: { default: false, description: "Resume an incomplete release", type: "boolean" },
   tags: { alias: "t", description: "Create git tags", type: "boolean" },
   yes: { alias: "y", default: false, description: "Skip confirmation prompts", type: "boolean" },
 });
@@ -37,11 +45,17 @@ export class RollCommand extends BaseCommand {
   args = rollArgs;
 
   async execute(ctx: RollCtx) {
+    if (ctx.args.resume) {
+      await this.executeResume(ctx);
+      return;
+    }
+
     if (ctx.args.publishOnly) {
       await this.executePublishOnly(ctx);
       return;
     }
 
+    await ReleaseOrchestrator.assertNoActiveRelease();
     const options = this.resolveOptions(ctx);
 
     const manager = new StoneManager(ctx.config);
@@ -113,7 +127,7 @@ export class RollCommand extends BaseCommand {
     const changelog = ctx.config.get("changelog");
     const commit = !ctx.args.noCommit;
 
-    return {
+    const options = {
       changelog: ctx.args.changelog ?? changelog.generate,
       commit,
       createRelease: commit ? (ctx.args.createRelease ?? release.createRelease) : false,
@@ -122,6 +136,21 @@ export class RollCommand extends BaseCommand {
       push: commit ? (ctx.args.push ?? release.push) : false,
       tags: commit ? (ctx.args.tags ?? release.tags) : false,
     };
+
+    if (options.createRelease && (!options.tags || !options.push)) {
+      throw new Exit(
+        "Provider releases require both git tags and a remote push",
+        "Enable --tags and --push so the provider cannot create an implicit tag",
+      );
+    }
+    if (!options.commit && options.npm) {
+      throw new Exit(
+        "Npm publication requires a release commit",
+        "Remove --noCommit so package artifacts are bound to committed source",
+      );
+    }
+
+    return options;
   }
 
   private printPreview(stone: Stone, packages: Package[], options: RollOptions) {
@@ -158,11 +187,15 @@ export class RollCommand extends BaseCommand {
     options: RollOptions,
   ) {
     const orchestrator = new ReleaseOrchestrator(ctx.config, options);
-    await orchestrator.preflight(packages);
+    const previousLastStone = { ...ctx.config.get("lastStone") };
+    const preReleaseHead = await this.getCurrentCommit();
+    await orchestrator.preflight(packages, originalStones);
 
     const s = spinner();
 
     try {
+      await orchestrator.initializeExternalRelease(packages, originalStones, false);
+
       s.start("Updating package versions...");
       await orchestrator.updatePackageVersions(packages);
       s.stop("Package versions updated");
@@ -177,16 +210,31 @@ export class RollCommand extends BaseCommand {
 
       if (options.commit) {
         s.start("Creating release commit...");
-        await orchestrator.createCommit(stone, packages);
+        ctx.config.set("lastStone", { commit: preReleaseHead, date: new Date().toISOString() });
+        await orchestrator.createCommit(stone, packages, originalStones);
         s.stop("Release commit created");
       }
-
-      ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
 
       if (options.tags) {
         s.start("Creating git tags...");
         await orchestrator.createGitTags(packages);
         s.stop("Git tags created");
+      }
+
+      await orchestrator.finalizeExternalRelease(packages, originalStones);
+
+      if (options.npm) {
+        s.start("Preparing NPM packages...");
+        await orchestrator.prepareNpmPublish(packages);
+        s.stop("NPM packages prepared");
+      }
+
+      await orchestrator.markExternalReleaseReady();
+
+      if (options.push) {
+        s.start("Pushing to remote...");
+        await orchestrator.pushToRemote();
+        s.stop("Pushed to remote");
       }
 
       if (options.npm) {
@@ -195,17 +243,13 @@ export class RollCommand extends BaseCommand {
         s.stop("Published to NPM");
       }
 
-      if (options.push) {
-        s.start("Pushing to remote...");
-        await orchestrator.pushToRemote();
-        s.stop("Pushed to remote");
-      }
-
       if (options.createRelease) {
         s.start("Creating release...");
         await orchestrator.createGitRelease(originalStones, packages);
         s.stop("Release created");
       }
+
+      await orchestrator.completeRelease();
 
       note(
         `Released ${color.bold(String(packages.length))} package(s)\n` +
@@ -213,12 +257,19 @@ export class RollCommand extends BaseCommand {
         color.green("Release complete"),
       );
     } catch (error) {
-      s.error("Release failed, rolling back...");
+      if (orchestrator.hasCrossedIrreversibleBoundary()) {
+        s.stop("Release incomplete, local state preserved");
+        throw orchestrator.createIncompleteReleaseError(error);
+      }
+
+      s.stop("Release failed, rolling back...");
       try {
-        await orchestrator.rollback();
+        await orchestrator.rollback(false);
       } finally {
+        ctx.config.set("lastStone", previousLastStone);
         await this.restoreStones(ctx, originalStones);
       }
+      await orchestrator.removeReleaseLedger();
       throw error;
     }
   }
@@ -249,10 +300,37 @@ export class RollCommand extends BaseCommand {
   }
 
   private async executePublishOnly(ctx: RollCtx) {
+    await ReleaseOrchestrator.assertNoActiveRelease();
     const currentRelease = ctx.config.get("currentRelease");
 
     if (!currentRelease) {
       throw new Exit("No currentRelease found in config", "Run `sis actions release-pr` first to prepare a release");
+    }
+
+    const sourceHash = await hashReleaseSource(ctx.config.get("sisyphusDir"));
+    if (sourceHash !== currentRelease.sourceHash) {
+      throw new Exit(
+        "Current checkout does not match the prepared release source",
+        "Recreate the release PR before publishing",
+      );
+    }
+
+    const manager = new StoneManager(ctx.config);
+    const releaseStones = await manager.getReleasedStones(currentRelease.timestamp, currentRelease.stoneIds);
+    if (releaseStones.length === 0) {
+      throw new Exit("No archived stones found for currentRelease", "Recreate the release PR before publishing");
+    }
+    const planHash = hashReleasePlan(
+      {
+        packages: currentRelease.packages,
+        sourceHash: currentRelease.sourceHash,
+        stoneIds: currentRelease.stoneIds,
+        timestamp: currentRelease.timestamp,
+      },
+      releaseStones.map((stone) => stone.toJson()),
+    );
+    if (planHash !== currentRelease.planHash) {
+      throw new Exit("Prepared release plan has changed", "Recreate the release PR before publishing");
     }
 
     const packageEntries = Object.entries(currentRelease.packages);
@@ -265,14 +343,18 @@ export class RollCommand extends BaseCommand {
 
     for (const [name, { oldVersion, newVersion }] of packageEntries) {
       const pkg = allPackages.get(name);
-      if (pkg) {
-        packagesToPublish.push(pkg.withVersions(oldVersion, newVersion));
+      if (!pkg) {
+        throw new Exit(`Package ${name} from currentRelease is missing from the workspace`);
       }
+      if (pkg.version !== newVersion) {
+        throw new Exit(
+          `Package ${name} is at ${pkg.version}, but currentRelease expects ${newVersion}`,
+          "Check out the exact release commit before publishing",
+        );
+      }
+      packagesToPublish.push(pkg.withVersions(oldVersion, newVersion));
     }
-
-    if (packagesToPublish.length === 0) {
-      throw new Exit("No matching packages found", "Packages in currentRelease don't exist in workspace");
-    }
+    this.validateArchivedPackagePlan(releaseStones, currentRelease.packages);
 
     log.info(color.bold("Publish-only mode"));
     log.info(color.dim(`Timestamp: ${currentRelease.timestamp}`));
@@ -293,6 +375,13 @@ export class RollCommand extends BaseCommand {
       tags: ctx.args.tags ?? release.tags,
     };
 
+    if (options.createRelease && !options.tags) {
+      throw new Exit(
+        "Provider releases require pushed git tags",
+        "Enable --tags so the provider cannot create an implicit tag",
+      );
+    }
+
     if (options.dryRun) {
       log.info(color.yellow("[dry-run] Would publish packages"));
       return;
@@ -303,15 +392,10 @@ export class RollCommand extends BaseCommand {
       if (!confirmed) return;
     }
 
-    await this.executePublish(ctx, packagesToPublish, currentRelease, options);
+    await this.executePublish(ctx, packagesToPublish, releaseStones, options);
   }
 
-  private async executePublish(
-    ctx: RollCtx,
-    packages: Package[],
-    currentRelease: { stoneIds: string[]; timestamp: string },
-    options: PublishOnlyOptions,
-  ) {
+  private async executePublish(ctx: RollCtx, packages: Package[], releaseStones: Stone[], options: PublishOnlyOptions) {
     const orchestrator = new ReleaseOrchestrator(ctx.config, {
       changelog: false,
       createRelease: options.createRelease,
@@ -321,11 +405,27 @@ export class RollCommand extends BaseCommand {
       tags: options.tags,
     });
     const s = spinner();
-
     try {
+      await orchestrator.initializeExternalRelease(packages, releaseStones, true);
+
       if (options.tags) {
-        s.start("Creating and pushing git tags...");
+        s.start("Creating git tags...");
         await orchestrator.createGitTags(packages);
+        s.stop("Git tags created");
+      }
+
+      await orchestrator.finalizeExternalRelease(packages, releaseStones);
+
+      if (options.npm) {
+        s.start("Preparing NPM packages...");
+        await orchestrator.prepareNpmPublish(packages);
+        s.stop("NPM packages prepared");
+      }
+
+      await orchestrator.markExternalReleaseReady();
+
+      if (options.tags) {
+        s.start("Pushing git tags...");
         await orchestrator.pushTags();
         s.stop("Git tags pushed");
       }
@@ -338,14 +438,11 @@ export class RollCommand extends BaseCommand {
 
       if (options.createRelease) {
         s.start("Creating release...");
-        const manager = new StoneManager(ctx.config);
-        const stones = await manager.getReleasedStones(currentRelease.timestamp);
-        const releaseStones = stones.length > 0 ? stones : [this.createFallbackStone(packages)];
         await orchestrator.createGitRelease(releaseStones, packages);
         s.stop("Release created");
       }
 
-      ctx.config.set("lastStone", { commit: await this.getCurrentCommit(), date: new Date().toISOString() });
+      await orchestrator.completeRelease();
 
       note(
         `Published ${color.bold(String(packages.length))} package(s)\n` +
@@ -353,13 +450,56 @@ export class RollCommand extends BaseCommand {
         color.green("Publish complete"),
       );
     } catch (error) {
-      s.error("Publish failed");
+      if (orchestrator.hasCrossedIrreversibleBoundary()) {
+        s.stop("Publish incomplete, local state preserved");
+        throw orchestrator.createIncompleteReleaseError(error);
+      }
+
+      s.stop("Publish failed");
+      await orchestrator.rollback();
       throw error;
     }
   }
 
-  private createFallbackStone(packages: Package[]): Stone {
-    const message = `Release ${packages.map((p) => `${p.name}@${p.newVersion ?? p.version}`).join(", ")}`;
-    return Stone.create({ message }, 0);
+  private async executeResume(ctx: RollCtx) {
+    if (ctx.args.publishOnly) throw new Exit("--resume cannot be combined with --publishOnly");
+
+    const { packages } = await ReleaseOrchestrator.resume(ctx.config);
+    note(
+      `Released ${color.bold(String(packages.length))} package(s)\n` +
+        `Run ${color.green(`${CLI_BIN} check`)} to verify`,
+      color.green("Release resumed"),
+    );
+  }
+
+  private validateArchivedPackagePlan(
+    stones: Stone[],
+    releases: Record<string, { oldVersion: string; newVersion: string }>,
+  ) {
+    const mergedStone = Stone.mergeAll(stones);
+    const releaseNames = Object.keys(releases).sort();
+    const stoneNames = [...new Set(mergedStone.allPackages)].sort();
+    if (JSON.stringify(releaseNames) !== JSON.stringify(stoneNames)) {
+      throw new Exit(
+        "Archived stones do not match currentRelease packages",
+        "Recreate the release PR before publishing",
+      );
+    }
+
+    const packages = new Map(
+      Object.entries(releases).map(([name, release]) => [
+        name,
+        new Package({ file: `${name}/package.json`, name, version: release.oldVersion }),
+      ]),
+    );
+    const expected = Package.applyStone(mergedStone, packages);
+    for (const pkg of expected) {
+      if (pkg.newVersion !== releases[pkg.name]?.newVersion) {
+        throw new Exit(
+          `Archived stones do not produce ${pkg.name}@${releases[pkg.name]?.newVersion ?? "missing"}`,
+          "Recreate the release PR before publishing",
+        );
+      }
+    }
   }
 }

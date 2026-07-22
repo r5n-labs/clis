@@ -9,6 +9,7 @@ export { GitHubProvider } from "./GitHubProvider";
 export { GitLabProvider } from "./GitLabProvider";
 export {
   GitProvider,
+  type GitRelease,
   type MergeMethod,
   type Provider,
   type PrUrlInfo,
@@ -16,16 +17,12 @@ export {
   type RemoteInfo,
 } from "./GitProvider";
 
-const GITHUB_PATTERN = /github\.com[:/]([^/]+)\/([^/.]+)/;
-const GITLAB_PATTERN = /gitlab\.com[:/]([^/]+)\/([^/.]+)/;
-const BITBUCKET_PATTERN = /bitbucket\.org[:/]([^/]+)\/([^/.]+)/;
-
 const GITHUB_PR_URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
 const GITLAB_MR_URL_PATTERN = /gitlab\.com\/([^/]+)\/([^/]+)\/-\/merge_requests\/(\d+)/;
 const BITBUCKET_PR_URL_PATTERN = /bitbucket\.org\/([^/]+)\/([^/]+)\/pull-requests\/(\d+)/;
 
-export async function createGitProvider() {
-  const info = await detectRemoteInfo();
+export async function createGitProvider(remoteInfo?: RemoteInfo) {
+  const info = remoteInfo ?? (await detectRemoteInfo());
 
   if (!info) {
     throw new Exit("Could not detect git provider", "Make sure you have a git remote configured (origin)");
@@ -73,22 +70,39 @@ export async function getRemoteUrl(): Promise<string | null> {
 }
 
 export function parseRemoteUrl(url: string): RemoteInfo | null {
-  const patterns: [RegExp, Provider][] = [
-    [GITHUB_PATTERN, "github"],
-    [GITLAB_PATTERN, "gitlab"],
-    [BITBUCKET_PATTERN, "bitbucket"],
-  ];
+  const parsed = parseRemoteLocation(url);
+  if (!parsed) return null;
+  const provider = providerFromHostname(parsed.hostname);
+  if (!provider) return null;
 
-  for (const [pattern, provider] of patterns) {
-    const match = url.match(pattern);
-    if (!match) continue;
+  const segments = parsed.path
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter(Boolean);
+  const repo = segments.pop();
+  if (!repo || segments.length === 0) return null;
+  if (provider !== "gitlab" && segments.length !== 1) return null;
 
-    const [, owner, repo] = match;
-    if (owner && repo) {
-      return { owner, provider, repo };
-    }
+  return { owner: segments.join("/"), provider, repo };
+}
+
+function parseRemoteLocation(url: string): { hostname: string; path: string } | null {
+  try {
+    const parsed = new URL(url);
+    return { hostname: parsed.hostname.toLowerCase(), path: parsed.pathname };
+  } catch {
+    const match = url.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/);
+    const hostname = match?.[1];
+    const path = match?.[2];
+    return hostname && path ? { hostname: hostname.toLowerCase(), path } : null;
   }
+}
 
+function providerFromHostname(hostname: string): Provider | null {
+  if (hostname === "github.com") return "github";
+  if (hostname === "gitlab.com") return "gitlab";
+  if (hostname === "bitbucket.org") return "bitbucket";
   return null;
 }
 

@@ -6,12 +6,17 @@ on:
     types: [closed]
     branches: [main]
 
+concurrency:
+  group: sisyphus-release
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'sisyphus-release'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
       packages: write
     steps:
       - uses: actions/checkout@v7
@@ -20,11 +25,41 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Restore release state
+        uses: actions/cache/restore@v5
+        with:
+          path: .git/sisyphus/release
+          key: sisyphus-release-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sisyphus-release-${{ runner.os }}-${{ github.sha }}-
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install npm 11
+        run: npm install --global npm@11.5.1
+
       - name: Install dependencies
         run: bun install
 
+      - name: Install Sisyphus
+        run: bun add --global @r5n/sisyphus
+
       - name: Publish release
-        run: bunx @r5n/sisyphus roll --publish-only --yes
+        run: |
+          if [ -f .git/sisyphus/release/active.json ]; then
+            sis roll --resume
+          else
+            sis roll --publish-only --yes
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Save release state
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .git/sisyphus/release
+          key: sisyphus-release-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

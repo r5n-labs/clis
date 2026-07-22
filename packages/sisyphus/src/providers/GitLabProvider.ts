@@ -6,6 +6,7 @@ import {
   type CreateReleaseOptions,
   type FindPrOptions,
   GitProvider,
+  type GitRelease,
   type PullRequest,
   type RemoteInfo,
   type UpdatePrOptions,
@@ -26,7 +27,10 @@ type GitLabMrResponse = {
 
 type GitLabChangesResponse = { changes: { new_path: string }[] };
 
+type GitLabReleaseResponse = { tag_name: string; name: string; description: string | null };
+
 const DEFAULT_API_URL = "https://gitlab.com/api/v4";
+const HTTP_NOT_FOUND = 404;
 
 export class GitLabProvider extends GitProvider {
   readonly name = "gitlab" as const;
@@ -156,6 +160,20 @@ export class GitLabProvider extends GitProvider {
     } catch {}
   }
 
+  async getRelease(tag: string): Promise<GitRelease | null> {
+    const data = await this.api<GitLabReleaseResponse>(
+      `/projects/${this.projectPath}/releases/${encodeURIComponent(tag)}`,
+      undefined,
+      true,
+    );
+
+    if (data === undefined) return null;
+    if (!isGitLabReleaseResponse(data)) {
+      throw new Error(`GitLab release response for ${tag} did not contain tag_name, name, and description`);
+    }
+    return { draft: false, notes: data.description ?? "", tag: data.tag_name, title: data.name };
+  }
+
   async createRelease(options: CreateReleaseOptions): Promise<void> {
     await this.api(`/projects/${this.projectPath}/releases`, {
       body: JSON.stringify({ description: options.notes, name: options.title, tag_name: options.tag }),
@@ -186,11 +204,15 @@ export class GitLabProvider extends GitProvider {
     );
   }
 
-  private async api<T>(path: string, options?: RequestInit): Promise<T> {
+  private async api<T>(path: string, options?: RequestInit): Promise<T>;
+  private async api<T>(path: string, options: RequestInit | undefined, allowNotFound: true): Promise<T | undefined>;
+  private async api<T>(path: string, options?: RequestInit, allowNotFound = false): Promise<T | undefined> {
     const response = await fetch(`${this.apiUrl}${path}`, {
       ...options,
       headers: { "Content-Type": "application/json", ...this.authHeader, ...options?.headers },
     });
+
+    if (allowNotFound && response.status === HTTP_NOT_FOUND) return undefined;
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -214,4 +236,14 @@ export class GitLabProvider extends GitProvider {
       url: data.web_url,
     };
   }
+}
+
+function isGitLabReleaseResponse(value: unknown): value is GitLabReleaseResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const release = value as Record<string, unknown>;
+  return (
+    typeof release.tag_name === "string" &&
+    typeof release.name === "string" &&
+    (typeof release.description === "string" || release.description === null)
+  );
 }
