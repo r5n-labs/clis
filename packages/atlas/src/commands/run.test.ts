@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { ConfigManager } from "@r5n/cli-core";
 import type { AtlasConfig } from "../types";
 import { buildRunEnvironment, RunCommand } from "./run";
+
+const ATLAS_ROOT = join(import.meta.dir, "../..");
+const CHILD_KEEPALIVE_INTERVAL_MS = 1_000;
+const FILE_POLL_INTERVAL_MS = 10;
+const SIGNAL_EXIT_CODE = 42;
+const TEST_TIMEOUT_MS = 5_000;
 
 let tmpRoot: string;
 
@@ -37,7 +43,7 @@ class FakeConfigManager {
 
 type RunCtx = Parameters<RunCommand["execute"]>[0];
 
-function ctx(args: { command: string[]; cwd: string; profile?: string }): RunCtx {
+function ctx(args: { command: string[]; cwd?: string; profile?: string }): RunCtx {
   return {
     args: { cwd: args.cwd, profile: args.profile },
     cli: {} as never,
@@ -45,6 +51,45 @@ function ctx(args: { command: string[]; cwd: string; profile?: string }): RunCtx
     interactive: false,
     positionals: { command: args.command },
   } as unknown as RunCtx;
+}
+
+function spawnAtlas(args: string[]) {
+  return Bun.spawn([process.execPath, "src/cli.ts", ...args], {
+    cwd: ATLAS_ROOT,
+    stderr: "ignore",
+    stdin: "ignore",
+    stdout: "ignore",
+  });
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForFile(path: string): Promise<void> {
+  const deadline = Date.now() + TEST_TIMEOUT_MS;
+  while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
+    await Bun.sleep(FILE_POLL_INTERVAL_MS);
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Timed out waiting for process exit")), TEST_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
 
 describe("buildRunEnvironment", () => {
@@ -61,14 +106,129 @@ describe("buildRunEnvironment", () => {
 });
 
 describe("RunCommand", () => {
-  test("spawns the command in the requested cwd", async () => {
+  test("normalizes a relative requested cwd before spawning the command", async () => {
     const project = join(tmpRoot, "repo");
     const output = join(tmpRoot, "pwd.txt");
     mkdirSync(project, { recursive: true });
     writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+    const requestedCwd = relative(process.cwd(), project);
+    const sigintListeners = process.listenerCount("SIGINT");
+    const sigtermListeners = process.listenerCount("SIGTERM");
 
-    await new RunCommand().execute(ctx({ command: ["sh", "-c", `pwd > ${output}`], cwd: project }));
+    await new RunCommand().execute(
+      ctx({
+        command: [process.execPath, "-e", `await Bun.write(${JSON.stringify(output)}, process.cwd())`],
+        cwd: requestedCwd,
+      }),
+    );
 
     expect(realpathSync(readFileSync(output, "utf8").trim())).toBe(realpathSync(project));
+    expect(process.listenerCount("SIGINT")).toBe(sigintListeners);
+    expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners);
   });
+
+  test("uses configured default profiles when profile is omitted", async () => {
+    const project = join(tmpRoot, "repo");
+    const output = join(tmpRoot, "profile.txt");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { profiles: ["app:default"] },
+      profiles: { "app:default": { vars: { ATLAS_DEFAULT_PROFILE: "applied" } } },
+    });
+
+    await new RunCommand().execute(
+      ctx({
+        command: [
+          process.execPath,
+          "-e",
+          `await Bun.write(${JSON.stringify(output)}, process.env.ATLAS_DEFAULT_PROFILE ?? "missing")`,
+        ],
+        cwd: project,
+      }),
+    );
+
+    expect(readFileSync(output, "utf8")).toBe("applied");
+  });
+
+  test.each(["", "   ", ",", " , , "])("rejects an explicitly empty profile value %j", async (profile) => {
+    const project = join(tmpRoot, "repo");
+    const output = join(tmpRoot, "spawned.txt");
+    mkdirSync(join(project, ".atlas"), { recursive: true });
+    writeFileSync(join(project, ".atlas", "config.json"), "{", "utf8");
+
+    const execution = new RunCommand().execute(
+      ctx({
+        command: [process.execPath, "-e", `await Bun.write(${JSON.stringify(output)}, "spawned")`],
+        cwd: project,
+        profile,
+      }),
+    );
+
+    await expect(execution).rejects.toThrow("--profile must include at least one profile");
+    expect(existsSync(output)).toBe(false);
+  });
+
+  test.each(["", "   "])("rejects an explicitly blank cwd %j before falling back or spawning", async (cwd) => {
+    const output = join(tmpRoot, "spawned.txt");
+    const execution = new RunCommand().execute(
+      ctx({ command: [process.execPath, "-e", `await Bun.write(${JSON.stringify(output)}, "spawned")`], cwd }),
+    );
+
+    await expect(execution).rejects.toThrow("--cwd must not be empty");
+    expect(existsSync(output)).toBe(false);
+  });
+
+  test("returns nonzero from the CLI for explicitly empty option values", async () => {
+    const command = ["--", process.execPath, "-e", ""];
+    const profile = spawnAtlas(["run", "--profile= , , ", ...command]);
+    const cwd = spawnAtlas(["run", "--cwd=   ", ...command]);
+
+    const [profileExitCode, cwdExitCode] = await Promise.all([profile.exited, cwd.exited]);
+
+    expect(profileExitCode).toBe(1);
+    expect(cwdExitCode).toBe(1);
+  });
+
+  test.each(["SIGTERM", "SIGINT"] as const)(
+    "forwards %s to the direct child and preserves its exit code",
+    async (signal) => {
+      const project = join(tmpRoot, "repo");
+      const ready = join(tmpRoot, "ready.txt");
+      const forwarded = join(tmpRoot, "forwarded.txt");
+      mkdirSync(project, { recursive: true });
+      writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+      const childScript = [
+        'import { writeFileSync } from "node:fs";',
+        `process.on(${JSON.stringify(signal)}, () => {`,
+        `  writeFileSync(${JSON.stringify(forwarded)}, ${JSON.stringify(signal)});`,
+        `  process.exit(${SIGNAL_EXIT_CODE});`,
+        "});",
+        `writeFileSync(${JSON.stringify(ready)}, String(process.pid));`,
+        `setInterval(() => {}, ${CHILD_KEEPALIVE_INTERVAL_MS});`,
+      ].join("\n");
+      const atlas = spawnAtlas(["run", "--cwd", project, "--", process.execPath, "-e", childScript]);
+      let childPid: number | undefined;
+      let lifecycleCompleted = false;
+
+      try {
+        await waitForFile(ready);
+        const reportedChildPid = Number(readFileSync(ready, "utf8"));
+        childPid = reportedChildPid;
+
+        atlas.kill(signal);
+        const exitCode = await withTimeout(atlas.exited);
+
+        expect(exitCode).toBe(SIGNAL_EXIT_CODE);
+        expect(readFileSync(forwarded, "utf8")).toBe(signal);
+        expect(() => process.kill(reportedChildPid, 0)).toThrow();
+        lifecycleCompleted = true;
+      } finally {
+        if (!lifecycleCompleted) {
+          if (childPid !== undefined && isProcessAlive(childPid)) process.kill(childPid, "SIGKILL");
+          if (atlas.exitCode === null) atlas.kill("SIGKILL");
+          await withTimeout(atlas.exited).catch(() => undefined);
+        }
+      }
+    },
+    TEST_TIMEOUT_MS * 2,
+  );
 });

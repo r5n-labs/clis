@@ -1,10 +1,26 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { type FileHandle, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
 import type { AtlasConfig } from "../types";
 import { ExportCommand } from "./export";
+
+const PRIVATE_FILE_MODE = 0o600;
+const PUBLIC_FILE_MODE = 0o644;
+const PERMISSIONS_MASK = 0o777;
+const RESTRICTIVE_UMASK = 0o777;
 
 let tmpRoot: string;
 
@@ -76,6 +92,121 @@ describe("ExportCommand", () => {
 
     await expect(new ExportCommand().execute(ctx({ cwd: project }))).rejects.toThrow(Exit);
     expect(readFileSync(join(project, ".env.generated"), "utf8")).toBe("EXISTING=1\n");
+  });
+
+  test("allows only one concurrent no-force export to create the output file", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+
+    const outcomes = await Promise.allSettled([
+      new ExportCommand().execute(ctx({ cwd: project })),
+      new ExportCommand().execute(ctx({ cwd: project })),
+    ]);
+    const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled");
+    const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toBeInstanceOf(Exit);
+    expect(readFileSync(outputPath, "utf8")).toBe("APP=web\n");
+  });
+
+  test("creates new no-force exports with exact private permissions under a restrictive umask", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+    const previousUmask = process.umask(RESTRICTIVE_UMASK);
+
+    try {
+      await new ExportCommand().execute(ctx({ cwd: project }));
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    expect(statSync(outputPath).mode & PERMISSIONS_MASK).toBe(PRIVATE_FILE_MODE);
+  });
+
+  test("creates new force exports with exact private permissions under a restrictive umask", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+    const previousUmask = process.umask(RESTRICTIVE_UMASK);
+
+    try {
+      await new ExportCommand().execute(ctx({ cwd: project, force: true }));
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    expect(readFileSync(outputPath, "utf8")).toBe("APP=web\n");
+    expect(statSync(outputPath).mode & PERMISSIONS_MASK).toBe(PRIVATE_FILE_MODE);
+  });
+
+  test("tightens permissions when force-overwriting an existing export", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+    writeFileSync(outputPath, "EXISTING=1\n", "utf8");
+    chmodSync(outputPath, PUBLIC_FILE_MODE);
+
+    await new ExportCommand().execute(ctx({ cwd: project, force: true }));
+
+    expect(readFileSync(outputPath, "utf8")).toBe("APP=web\n");
+    expect(statSync(outputPath).mode & PERMISSIONS_MASK).toBe(PRIVATE_FILE_MODE);
+  });
+
+  test("preserves existing content when force chmod fails before truncation", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    const existingContent = "EXISTING=1\n";
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+    writeFileSync(outputPath, existingContent, "utf8");
+    const probeHandle = await open(outputPath, "r+");
+    const fileHandlePrototype = Object.getPrototypeOf(probeHandle) as { chmod: FileHandle["chmod"] };
+    await probeHandle.close();
+    const chmodSpy = spyOn(fileHandlePrototype, "chmod").mockRejectedValue(new Error("chmod failed"));
+
+    try {
+      await expect(new ExportCommand().execute(ctx({ cwd: project, force: true }))).rejects.toThrow("chmod failed");
+    } finally {
+      chmodSpy.mockRestore();
+    }
+
+    expect(readFileSync(outputPath, "utf8")).toBe(existingContent);
+  });
+
+  test("force replaces an output symlink without modifying its target", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    const targetPath = join(tmpRoot, "target.env");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+    writeFileSync(targetPath, "TARGET=preserved\n", "utf8");
+    symlinkSync(targetPath, outputPath);
+
+    await new ExportCommand().execute(ctx({ cwd: project, force: true }));
+
+    expect(lstatSync(outputPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(outputPath, "utf8")).toBe("APP=web\n");
+    expect(readFileSync(targetPath, "utf8")).toBe("TARGET=preserved\n");
   });
 
   test("uses explicit profiles and output path when provided", async () => {

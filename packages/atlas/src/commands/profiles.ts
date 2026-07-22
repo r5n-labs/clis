@@ -56,10 +56,18 @@ export class ProfilesShowCommand extends BaseCommand {
 
   async execute(ctx: ShowCtx): Promise<void> {
     const loaded = loadAtlasConfig({ cwd: ctx.args.cwd ?? process.cwd() });
-    const profile = loaded.config.profiles[ctx.positionals.profile];
+    const name = ctx.positionals.profile;
+    const profiles = loaded.config.profiles;
+    const profile = Object.hasOwn(profiles, name) ? profiles[name] : undefined;
 
     if (!profile) {
-      throw new Exit(`Unknown Atlas profile: ${ctx.positionals.profile}`, "Run 'atlas profiles list'");
+      const message = `Unknown Atlas profile: ${name}`;
+      if (ctx.args.json) {
+        process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      throw new Exit(message, "Run 'atlas profiles list'");
     }
 
     if (ctx.args.json) {
@@ -67,6 +75,6 @@ export class ProfilesShowCommand extends BaseCommand {
       return;
     }
 
-    log.info(`${color.bold(ctx.positionals.profile)}\n${JSON.stringify(profile, null, 2)}`);
+    log.info(`${color.bold(name)}\n${JSON.stringify(profile, null, 2)}`);
   }
 }

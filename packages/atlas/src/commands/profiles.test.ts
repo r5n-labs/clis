@@ -82,6 +82,38 @@ describe("ProfilesCommand JSON output", () => {
 
     expect(JSON.parse(output)).toEqual({ description: "Web app", vars: { APP: "web" } });
   });
+
+  test("profiles show rejects inherited Object.prototype names", async () => {
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+
+    for (const profile of ["__proto__", "constructor", "toString"]) {
+      await expect(new ProfilesShowCommand().execute(showCtx({ cwd: project, profile }))).rejects.toThrow(
+        `Unknown Atlas profile: ${profile}`,
+      );
+    }
+  });
+
+  test("unknown profiles show JSON writes one error to stderr and exits nonzero", async () => {
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+    const cliPath = join(import.meta.dir, "..", "cli.ts");
+    const subprocess = Bun.spawn({
+      cmd: [process.execPath, "--bun", cliPath, "profiles", "show", "missing", "--json", "--cwd", project],
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      subprocess.exited,
+      new Response(subprocess.stdout).text(),
+      new Response(subprocess.stderr).text(),
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toBe(`${JSON.stringify({ error: "Unknown Atlas profile: missing" })}\n`);
+  });
 });
 
 async function captureStdout(run: () => Promise<void>): Promise<string> {

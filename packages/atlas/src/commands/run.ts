@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { args, Exit, positionals } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig, resolveAtlasEnv } from "../services/config";
@@ -30,11 +31,32 @@ export class RunCommand extends BaseCommand {
       throw new Exit("Command is required", "Usage: atlas run --profile app:web -- <command...>");
     }
 
-    const cwd = ctx.args.cwd ?? process.cwd();
-    const env = buildRunEnvironment({ cwd, env: process.env, profiles: splitCsv(ctx.args.profile) });
+    if (ctx.args.cwd !== undefined && ctx.args.cwd.trim().length === 0) {
+      throw new Error("--cwd must not be empty");
+    }
+
+    const profiles = ctx.args.profile === undefined ? undefined : splitCsv(ctx.args.profile);
+    if (profiles?.length === 0) {
+      throw new Error("--profile must include at least one profile");
+    }
+
+    const cwd = resolve(ctx.args.cwd ?? process.cwd());
+    const env = buildRunEnvironment({ cwd, env: process.env, profiles });
 
     const proc = Bun.spawn(command, { cwd, env, stderr: "inherit", stdin: "inherit", stdout: "inherit" });
-    const exitCode = await proc.exited;
+    const forwardSigint = (): void => proc.kill("SIGINT");
+    const forwardSigterm = (): void => proc.kill("SIGTERM");
+    process.on("SIGINT", forwardSigint);
+    process.on("SIGTERM", forwardSigterm);
+
+    let exitCode: number;
+    try {
+      exitCode = await proc.exited;
+    } finally {
+      process.off("SIGINT", forwardSigint);
+      process.off("SIGTERM", forwardSigterm);
+    }
+
     if (exitCode !== 0) process.exit(exitCode);
   }
 }

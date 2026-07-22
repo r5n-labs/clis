@@ -24,6 +24,28 @@ function writeText(path: string, body: string): void {
   writeFileSync(path, body, "utf8");
 }
 
+function getErrorMessage(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  throw new Error("Expected operation to throw");
+}
+
+function configWithProfileName(name: string): unknown {
+  const profiles = Object.create(null) as Record<string, unknown>;
+  profiles[name] = { vars: { SAFE: "yes" } };
+  return { profiles };
+}
+
+function envWithOwnSource(source: string, value: string): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  Object.defineProperty(env, source, { configurable: true, enumerable: true, value, writable: true });
+  return env;
+}
+
 describe("discoverAtlasConfig", () => {
   test("finds global config and nearest project config from nested cwd", () => {
     const home = join(tmpRoot, "home");
@@ -106,6 +128,149 @@ describe("loadAtlasConfig", () => {
 
     expect(() => loadAtlasConfig({ cwd: project, home })).toThrow("Invalid JSON");
   });
+
+  const malformedConfigCases: ReadonlyArray<readonly [string, unknown, string]> = [
+    ["top-level array", [], "config must be an object"],
+    ["non-string schema", { $schema: 42 }, "$schema must be a string"],
+    ["defaults array", { defaults: [], profiles: {} }, "defaults must be an object"],
+    [
+      "non-string default profile",
+      { defaults: { profiles: ["valid", 42] }, profiles: {} },
+      "defaults.profiles[1] must be a string",
+    ],
+    ["null profiles", { profiles: null }, "profiles must be an object"],
+    ["profiles array", { profiles: [] }, "profiles must be an object"],
+    ["profile array", { profiles: { web: [] } }, 'profiles["web"] must be an object'],
+    [
+      "non-string description",
+      { profiles: { web: { description: false } } },
+      'profiles["web"].description must be a string',
+    ],
+    [
+      "env files object",
+      { profiles: { web: { envFiles: { file: ".env" } } } },
+      'profiles["web"].envFiles must be an array',
+    ],
+    [
+      "non-string env file",
+      { profiles: { web: { envFiles: [".env", 42] } } },
+      'profiles["web"].envFiles[1] must be a string',
+    ],
+    [
+      "non-string parent profile",
+      { profiles: { web: { extends: [false] } } },
+      'profiles["web"].extends[0] must be a string',
+    ],
+    ["vars array", { profiles: { web: { vars: [] } } }, 'profiles["web"].vars must be an object'],
+    [
+      "non-string var",
+      { profiles: { web: { vars: { PORT: 3000 } } } },
+      'profiles["web"].vars["PORT"] must be a string',
+    ],
+    ["secrets array", { profiles: { web: { secrets: [] } } }, 'profiles["web"].secrets must be an object'],
+    [
+      "secret ref array",
+      { profiles: { web: { secrets: { TOKEN: [] } } } },
+      'profiles["web"].secrets["TOKEN"] must be an object',
+    ],
+    [
+      "non-string secret source",
+      { profiles: { web: { secrets: { TOKEN: { env: { sensitive: "do-not-echo" } } } } } },
+      'profiles["web"].secrets["TOKEN"].env must be a string',
+    ],
+    [
+      "non-boolean secret option",
+      { profiles: { web: { secrets: { TOKEN: { optional: "false" } } } } },
+      'profiles["web"].secrets["TOKEN"].optional must be a boolean',
+    ],
+  ];
+
+  test.each(malformedConfigCases)("rejects %s with a value-free field path", (_name, config, expectedReason) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    const configPath = join(project, ".atlas", "config.json");
+    writeJson(configPath, config);
+
+    const message = getErrorMessage(() => loadAtlasConfig({ cwd: project, home }));
+
+    expect(message).toBe(`Invalid Atlas config at ${configPath}: ${expectedReason}`);
+    expect(message).not.toContain("banditype");
+    expect(message).not.toContain("do-not-echo");
+  });
+
+  test("defaults profiles only when the profiles section is absent", () => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), { defaults: { exportFile: ".env.generated" } });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+
+    expect(Object.keys(loaded.config.profiles)).toEqual([]);
+    expect(loaded.config.defaults?.exportFile).toBe(".env.generated");
+  });
+
+  test("rejects an invalid profile without discarding valid sibling profiles", () => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    const configPath = join(project, ".atlas", "config.json");
+    writeJson(configPath, { profiles: { broken: { vars: { PORT: 3000 } }, valid: { vars: { APP: "web" } } } });
+
+    expect(getErrorMessage(() => loadAtlasConfig({ cwd: project, home }))).toBe(
+      `Invalid Atlas config at ${configPath}: profiles["broken"].vars["PORT"] must be a string`,
+    );
+  });
+
+  const invalidEnvKeyCases: ReadonlyArray<readonly [string, unknown, string, string]> = [
+    [
+      "vars",
+      { profiles: { web: { vars: { "BAD-KEY": "private-var-value" } } } },
+      'profiles["web"].vars["BAD-KEY"]',
+      "private-var-value",
+    ],
+    [
+      "secrets",
+      { profiles: { web: { secrets: { "1TOKEN": { env: "PRIVATE_SECRET_SOURCE" } } } } },
+      'profiles["web"].secrets["1TOKEN"]',
+      "PRIVATE_SECRET_SOURCE",
+    ],
+    [
+      "secret sources",
+      { profiles: { web: { secrets: { TOKEN: { env: "PRIVATE-SECRET-SOURCE" } } } } },
+      'profiles["web"].secrets["TOKEN"].env',
+      "PRIVATE-SECRET-SOURCE",
+    ],
+  ];
+
+  test.each(
+    invalidEnvKeyCases,
+  )("rejects invalid environment variable keys in %s", (_section, config, fieldPath, rejectedValue) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    const configPath = join(project, ".atlas", "config.json");
+    writeJson(configPath, config);
+
+    const message = getErrorMessage(() => loadAtlasConfig({ cwd: project, home }));
+
+    expect(message).toBe(
+      `Invalid Atlas config at ${configPath}: ${fieldPath} must be a valid environment variable name matching [A-Za-z_][A-Za-z0-9_]*`,
+    );
+    expect(message).not.toContain(rejectedValue);
+  });
+
+  test.each([
+    "constructor",
+    "toString",
+    "__proto__",
+  ])("rejects configured prototype-sensitive profile name %s", (profileName) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    const configPath = join(project, ".atlas", "config.json");
+    writeJson(configPath, configWithProfileName(profileName));
+
+    expect(getErrorMessage(() => loadAtlasConfig({ cwd: project, home }))).toBe(
+      `Invalid Atlas config at ${configPath}: profiles[${JSON.stringify(profileName)}] must not use a prototype-sensitive profile name`,
+    );
+  });
 });
 
 describe("resolveAtlasEnv", () => {
@@ -169,6 +334,83 @@ describe("resolveAtlasEnv", () => {
 
     expect(resolved.env.API_KEY).toBe("from-env");
     expect(resolved.env.RAW_CERT).toBe(" certificate body \n");
+  });
+
+  test("preserves defined empty and whitespace-only env secret values", () => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      profiles: { secret: { secrets: { EMPTY: { env: "EMPTY_SOURCE" }, WHITESPACE: { env: "WHITESPACE_SOURCE" } } } },
+    });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const resolved = resolveAtlasEnv(loaded, {
+      env: { EMPTY_SOURCE: "", WHITESPACE_SOURCE: "   " },
+      profiles: ["secret"],
+    });
+
+    expect(resolved.env.EMPTY).toBe("");
+    expect(resolved.env.WHITESPACE).toBe("   ");
+  });
+
+  test.each(["constructor", "toString", "__proto__"])("treats inherited env secret source %s as absent", (source) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      profiles: { secret: { secrets: { TOKEN: { env: source, optional: true } } } },
+    });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const resolved = resolveAtlasEnv(loaded, { env: {}, profiles: ["secret"] });
+
+    expect(Object.hasOwn(resolved.env, "TOKEN")).toBeFalse();
+  });
+
+  test.each(["constructor", "toString", "__proto__"])("resolves own empty env secret source %s", (source) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      profiles: { secret: { secrets: { TOKEN: { env: source } } } },
+    });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const resolved = resolveAtlasEnv(loaded, { env: envWithOwnSource(source, ""), profiles: ["secret"] });
+
+    expect(resolved.env.TOKEN).toBe("");
+  });
+
+  test.each([
+    "constructor",
+    "toString",
+    "__proto__",
+  ])("does not resolve absent inherited profile name %s for run/export selections or defaults", (profileName) => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const loadedWithDefault = {
+      ...loaded,
+      config: { ...loaded.config, defaults: { ...loaded.config.defaults, profiles: [profileName] } },
+    };
+
+    expect(() => resolveAtlasEnv(loaded, { profiles: [profileName] })).toThrow(`Unknown Atlas profile: ${profileName}`);
+    expect(() => resolveAtlasEnv(loadedWithDefault)).toThrow(`Unknown Atlas profile: ${profileName}`);
+  });
+
+  test("applies inherited profiles once and does not reapply duplicate requested roots", () => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      profiles: { base: { vars: { BASE: "yes" } }, web: { extends: ["base"], vars: { APP: "web" } } },
+    });
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const resolved = resolveAtlasEnv(loaded, { profiles: ["web", "base", "web"] });
+
+    expect(resolved.profiles).toEqual(["base", "web"]);
+    expect(resolved.env.BASE).toBe("yes");
+    expect(resolved.env.APP).toBe("web");
   });
 
   test("throws on missing required profiles, missing required secrets, and profile cycles", () => {

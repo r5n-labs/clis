@@ -1,9 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
-import { array, boolean, object, optional, record, string } from "banditypes";
+import { array, boolean, object, optional, string } from "banditypes";
 import { ATLAS_CONFIG_FILE, ATLAS_DIR, DEFAULT_ATLAS_CONFIG, DEFAULT_EXPORT_FILE } from "../constants";
-import type { AtlasConfig, LoadedAtlasConfig, ProfileConfig, ResolvedAtlasEnv, SecretRef } from "../types";
+import type {
+  AtlasConfig,
+  AtlasDefaults,
+  LoadedAtlasConfig,
+  ProfileConfig,
+  ResolvedAtlasEnv,
+  SecretRef,
+} from "../types";
 import { resolvePath } from "../utils";
 import { parseDotenv } from "./dotenv";
 
@@ -13,26 +20,18 @@ type ResolveOptions = { env?: Record<string, string | undefined>; profiles?: str
 
 type RawConfigLoad = { config: AtlasConfig; path: string; rootDir: string } | undefined;
 
-const secretRefSchema = object<SecretRef>({
-  env: string().or(optional()),
-  file: string().or(optional()),
-  optional: boolean().or(optional()),
-  trim: boolean().or(optional()),
-});
+type UnknownRecord = Record<string, unknown>;
 
-const profileSchema = object<ProfileConfig>({
-  description: string().or(optional()),
-  envFiles: array(string()).or(optional()),
-  extends: array(string()).or(optional()),
-  secrets: record(secretRefSchema).or(optional()),
-  vars: record(string()).or(optional()),
-});
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_KEY_EXPECTATION = "must be a valid environment variable name matching [A-Za-z_][A-Za-z0-9_]*";
+const PROTOTYPE_SENSITIVE_PROFILE_NAMES = new Set(Object.getOwnPropertyNames(Object.prototype));
+const optionalBooleanSchema = boolean().or(optional());
+const optionalStringSchema = string().or(optional());
+const stringSchema = string();
 
-const atlasConfigSchema = object<AtlasConfig>({
-  $schema: string().or(optional()),
-  defaults: object({ exportFile: string().or(optional()), profiles: array(string()).or(optional()) }).or(optional()),
-  profiles: record(profileSchema).or(() => ({})),
-});
+class AtlasConfigValidationError extends Error {
+  readonly _tag = "AtlasConfigValidationError";
+}
 
 export function discoverAtlasConfig(options: DiscoveryOptions = {}) {
   const cwd = resolve(options.cwd ?? process.cwd());
@@ -50,8 +49,8 @@ export function loadAtlasConfig(options: DiscoveryOptions = {}): LoadedAtlasConf
   const global = loadConfig(discovered.globalPath, discovered.home);
   const project = loadConfig(discovered.projectPath, discovered.projectRoot);
 
-  const profileSources: Record<string, string> = {};
-  const profiles: Record<string, ProfileConfig> = {};
+  const profileSources = createRecord<string>();
+  const profiles = createRecord<ProfileConfig>();
 
   for (const item of [global, project]) {
     if (!item) continue;
@@ -80,13 +79,17 @@ export function loadAtlasConfig(options: DiscoveryOptions = {}): LoadedAtlasConf
 
 export function resolveAtlasEnv(loaded: LoadedAtlasConfig, options: ResolveOptions = {}): ResolvedAtlasEnv {
   const requestedProfiles = [...(loaded.config.defaults?.profiles ?? []), ...(options.profiles ?? [])];
-  const env: Record<string, string> = {};
+  const env = createRecord<string>();
   const applied: string[] = [];
   const appliedSet = new Set<string>();
   const sourceEnv = options.env ?? process.env;
 
   function applyProfile(name: string, stack: string[]): void {
     if (appliedSet.has(name)) return;
+
+    if (!Object.hasOwn(loaded.config.profiles, name)) {
+      throw new Error(`Unknown Atlas profile: ${name}`);
+    }
 
     const profile = loaded.config.profiles[name];
     if (!profile) {
@@ -101,7 +104,8 @@ export function resolveAtlasEnv(loaded: LoadedAtlasConfig, options: ResolveOptio
       applyProfile(parent, [...stack, name]);
     }
 
-    const baseDir = loaded.profileSources[name] ?? loaded.projectRoot ?? loaded.cwd;
+    const profileSource = Object.hasOwn(loaded.profileSources, name) ? loaded.profileSources[name] : undefined;
+    const baseDir = profileSource ?? loaded.projectRoot ?? loaded.cwd;
 
     for (const envFile of profile.envFiles ?? []) {
       Object.assign(env, readEnvFile(resolvePath(envFile, baseDir)));
@@ -149,14 +153,169 @@ function loadConfig(path: string | undefined, rootDir: string | undefined): RawC
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
     const reason = error instanceof SyntaxError ? "Invalid JSON" : "Failed to read";
-    throw new Error(`${reason} in Atlas config ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${reason} in Atlas config ${path}`);
   }
 
   try {
-    return { config: atlasConfigSchema(parsed), path, rootDir };
+    return { config: parseAtlasConfig(parsed), path, rootDir };
   } catch (error) {
-    throw new Error(`Invalid Atlas config at ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = error instanceof AtlasConfigValidationError ? error.message : "config failed validation";
+    throw new Error(`Invalid Atlas config at ${path}: ${reason}`);
   }
+}
+
+function parseAtlasConfig(value: unknown): AtlasConfig {
+  const config = parseObject(value, "config");
+
+  return object<AtlasConfig>({
+    $schema: (field) => parseOptionalString(field, "$schema"),
+    defaults: (field) => parseDefaults(field, "defaults"),
+    profiles: (field) => parseProfiles(field, "profiles"),
+  })(config);
+}
+
+function parseDefaults(value: unknown, path: string): AtlasDefaults | undefined {
+  if (value === undefined) return undefined;
+
+  const defaults = parseObject(value, path);
+  return object<AtlasDefaults>({
+    exportFile: (field) => parseOptionalString(field, `${path}.exportFile`),
+    profiles: (field) => parseOptionalStringArray(field, `${path}.profiles`),
+  })(defaults);
+}
+
+function parseProfiles(value: unknown, path: string): Record<string, ProfileConfig> {
+  if (value === undefined) return createRecord<ProfileConfig>();
+
+  const rawProfiles = parseObject(value, path);
+  const profiles = createRecord<ProfileConfig>();
+
+  for (const name of Object.keys(rawProfiles)) {
+    const profilePath = appendPath(path, name);
+    if (PROTOTYPE_SENSITIVE_PROFILE_NAMES.has(name)) {
+      throw new AtlasConfigValidationError(`${profilePath} must not use a prototype-sensitive profile name`);
+    }
+    profiles[name] = parseProfile(rawProfiles[name], profilePath);
+  }
+
+  return profiles;
+}
+
+function parseProfile(value: unknown, path: string): ProfileConfig {
+  const profile = parseObject(value, path);
+
+  return object<ProfileConfig>({
+    description: (field) => parseOptionalString(field, `${path}.description`),
+    envFiles: (field) => parseOptionalStringArray(field, `${path}.envFiles`),
+    extends: (field) => parseOptionalStringArray(field, `${path}.extends`),
+    secrets: (field) => parseSecrets(field, `${path}.secrets`),
+    vars: (field) => parseVars(field, `${path}.vars`),
+  })(profile);
+}
+
+function parseVars(value: unknown, path: string): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+
+  const rawVars = parseObject(value, path);
+  const vars = createRecord<string>();
+
+  for (const key of Object.keys(rawVars)) {
+    const keyPath = appendPath(path, key);
+    parseEnvKey(key, keyPath);
+    vars[key] = parseWithSchema(stringSchema, rawVars[key], keyPath, "must be a string");
+  }
+
+  return vars;
+}
+
+function parseSecrets(value: unknown, path: string): Record<string, SecretRef> | undefined {
+  if (value === undefined) return undefined;
+
+  const rawSecrets = parseObject(value, path);
+  const secrets = createRecord<SecretRef>();
+
+  for (const key of Object.keys(rawSecrets)) {
+    const keyPath = appendPath(path, key);
+    parseEnvKey(key, keyPath);
+    secrets[key] = parseSecretRef(rawSecrets[key], keyPath);
+  }
+
+  return secrets;
+}
+
+function parseSecretRef(value: unknown, path: string): SecretRef {
+  const ref = parseObject(value, path);
+
+  return object<SecretRef>({
+    env: (field) => parseOptionalEnvKey(field, `${path}.env`),
+    file: (field) => parseOptionalString(field, `${path}.file`),
+    optional: (field) => parseOptionalBoolean(field, `${path}.optional`),
+    trim: (field) => parseOptionalBoolean(field, `${path}.trim`),
+  })(ref);
+}
+
+function parseOptionalStringArray(value: unknown, path: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new AtlasConfigValidationError(`${path} must be an array`);
+  }
+
+  let index = 0;
+  return array((item) => {
+    const itemPath = `${path}[${index}]`;
+    index += 1;
+    return parseWithSchema(stringSchema, item, itemPath, "must be a string");
+  })(value);
+}
+
+function parseOptionalString(value: unknown, path: string): string | undefined {
+  return parseWithSchema(optionalStringSchema, value, path, "must be a string");
+}
+
+function parseOptionalEnvKey(value: unknown, path: string): string | undefined {
+  const key = parseOptionalString(value, path);
+  if (key === undefined) return undefined;
+  parseEnvKey(key, path);
+  return key;
+}
+
+function parseOptionalBoolean(value: unknown, path: string): boolean | undefined {
+  return parseWithSchema(optionalBooleanSchema, value, path, "must be a boolean");
+}
+
+function parseObject(value: unknown, path: string): UnknownRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new AtlasConfigValidationError(`${path} must be an object`);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new AtlasConfigValidationError(`${path} must be an object`);
+  }
+
+  return value as UnknownRecord;
+}
+
+function parseEnvKey(key: string, path: string): void {
+  if (!ENV_KEY_PATTERN.test(key)) {
+    throw new AtlasConfigValidationError(`${path} ${ENV_KEY_EXPECTATION}`);
+  }
+}
+
+function parseWithSchema<T>(schema: (value: unknown) => T, value: unknown, path: string, expectation: string): T {
+  try {
+    return schema(value);
+  } catch {
+    throw new AtlasConfigValidationError(`${path} ${expectation}`);
+  }
+}
+
+function appendPath(path: string, key: string): string {
+  return `${path}[${JSON.stringify(key)}]`;
+}
+
+function createRecord<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
 }
 
 function readEnvFile(path: string): Record<string, string> {
@@ -173,7 +332,7 @@ function resolveSecret(
   env: Record<string, string | undefined>,
 ): string | undefined {
   if (ref.env) {
-    const value = env[ref.env];
+    const value = Object.hasOwn(env, ref.env) ? env[ref.env] : undefined;
     if (value !== undefined) return value;
     if (ref.optional) return undefined;
     throw new Error(`Missing required secret ${key}: env ${ref.env} is not set`);
