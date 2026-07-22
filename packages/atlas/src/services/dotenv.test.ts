@@ -34,7 +34,7 @@ PLAIN=ok
     const parsed = parseDotenv("__proto__=value");
 
     expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
-    expect(parsed.__proto__).toBe("value");
+    expect(Reflect.get(parsed, "__proto__")).toBe("value");
   });
 
   test("parses quoted values before stripping inline comments", () => {

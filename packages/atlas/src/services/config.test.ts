@@ -241,36 +241,36 @@ describe("loadAtlasConfig", () => {
     ],
   ];
 
-  test.each(
-    invalidEnvKeyCases,
-  )("rejects invalid environment variable keys in %s", (_section, config, fieldPath, rejectedValue) => {
-    const home = join(tmpRoot, "home");
-    const project = join(tmpRoot, "repo");
-    const configPath = join(project, ".atlas", "config.json");
-    writeJson(configPath, config);
+  test.each(invalidEnvKeyCases)(
+    "rejects invalid environment variable keys in %s",
+    (_section, config, fieldPath, rejectedValue) => {
+      const home = join(tmpRoot, "home");
+      const project = join(tmpRoot, "repo");
+      const configPath = join(project, ".atlas", "config.json");
+      writeJson(configPath, config);
 
-    const message = getErrorMessage(() => loadAtlasConfig({ cwd: project, home }));
+      const message = getErrorMessage(() => loadAtlasConfig({ cwd: project, home }));
 
-    expect(message).toBe(
-      `Invalid Atlas config at ${configPath}: ${fieldPath} must be a valid environment variable name matching [A-Za-z_][A-Za-z0-9_]*`,
-    );
-    expect(message).not.toContain(rejectedValue);
-  });
+      expect(message).toBe(
+        `Invalid Atlas config at ${configPath}: ${fieldPath} must be a valid environment variable name matching [A-Za-z_][A-Za-z0-9_]*`,
+      );
+      expect(message).not.toContain(rejectedValue);
+    },
+  );
 
-  test.each([
-    "constructor",
-    "toString",
-    "__proto__",
-  ])("rejects configured prototype-sensitive profile name %s", (profileName) => {
-    const home = join(tmpRoot, "home");
-    const project = join(tmpRoot, "repo");
-    const configPath = join(project, ".atlas", "config.json");
-    writeJson(configPath, configWithProfileName(profileName));
+  test.each(["constructor", "toString", "__proto__"])(
+    "rejects configured prototype-sensitive profile name %s",
+    (profileName) => {
+      const home = join(tmpRoot, "home");
+      const project = join(tmpRoot, "repo");
+      const configPath = join(project, ".atlas", "config.json");
+      writeJson(configPath, configWithProfileName(profileName));
 
-    expect(getErrorMessage(() => loadAtlasConfig({ cwd: project, home }))).toBe(
-      `Invalid Atlas config at ${configPath}: profiles[${JSON.stringify(profileName)}] must not use a prototype-sensitive profile name`,
-    );
-  });
+      expect(getErrorMessage(() => loadAtlasConfig({ cwd: project, home }))).toBe(
+        `Invalid Atlas config at ${configPath}: profiles[${JSON.stringify(profileName)}] must not use a prototype-sensitive profile name`,
+      );
+    },
+  );
 });
 
 describe("resolveAtlasEnv", () => {
@@ -379,24 +379,25 @@ describe("resolveAtlasEnv", () => {
     expect(resolved.env.TOKEN).toBe("");
   });
 
-  test.each([
-    "constructor",
-    "toString",
-    "__proto__",
-  ])("does not resolve absent inherited profile name %s for run/export selections or defaults", (profileName) => {
-    const home = join(tmpRoot, "home");
-    const project = join(tmpRoot, "repo");
-    writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+  test.each(["constructor", "toString", "__proto__"])(
+    "does not resolve absent inherited profile name %s for run/export selections or defaults",
+    (profileName) => {
+      const home = join(tmpRoot, "home");
+      const project = join(tmpRoot, "repo");
+      writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
 
-    const loaded = loadAtlasConfig({ cwd: project, home });
-    const loadedWithDefault = {
-      ...loaded,
-      config: { ...loaded.config, defaults: { ...loaded.config.defaults, profiles: [profileName] } },
-    };
+      const loaded = loadAtlasConfig({ cwd: project, home });
+      const loadedWithDefault = {
+        ...loaded,
+        config: { ...loaded.config, defaults: { ...loaded.config.defaults, profiles: [profileName] } },
+      };
 
-    expect(() => resolveAtlasEnv(loaded, { profiles: [profileName] })).toThrow(`Unknown Atlas profile: ${profileName}`);
-    expect(() => resolveAtlasEnv(loadedWithDefault)).toThrow(`Unknown Atlas profile: ${profileName}`);
-  });
+      expect(() => resolveAtlasEnv(loaded, { profiles: [profileName] })).toThrow(
+        `Unknown Atlas profile: ${profileName}`,
+      );
+      expect(() => resolveAtlasEnv(loadedWithDefault)).toThrow(`Unknown Atlas profile: ${profileName}`);
+    },
+  );
 
   test("applies inherited profiles once and does not reapply duplicate requested roots", () => {
     const home = join(tmpRoot, "home");
