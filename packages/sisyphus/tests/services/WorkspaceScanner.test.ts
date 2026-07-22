@@ -56,4 +56,14 @@ describe("WorkspaceScanner.scan()", () => {
     expect([...packageNames]).toEqual(["@fixture/app"]);
     expect(packages.has("@fixture/lib")).toBe(true);
   });
+
+  test("filter narrows a single-package workspace without dropping package resolution", async () => {
+    root = createWorkspaceFixture([]);
+    process.chdir(root);
+
+    const result = await WorkspaceScanner.scan({ filter: "missing", single: true });
+
+    expect(result.packageNames).toEqual([]);
+    expect(result.packages.has("fixture-root")).toBe(true);
+  });
 });

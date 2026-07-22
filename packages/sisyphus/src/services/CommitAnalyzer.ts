@@ -74,8 +74,13 @@ export class CommitAnalyzer {
   }
 
   private async groupByPackage(commits: Commit[], options: AnalyzeOptions): Promise<CommitGroup[]> {
-    const { packages } = await WorkspaceScanner.scan({ filter: options.filter, single: options.single });
-    const packagePaths = buildPackagePathMap(packages);
+    const { packages, packageNames } = await WorkspaceScanner.scan({ filter: options.filter, single: options.single });
+    const filteredPackages = new Map<string, Package>();
+    for (const packageName of packageNames) {
+      const pkg = packages.get(packageName);
+      if (pkg) filteredPackages.set(packageName, pkg);
+    }
+    const packagePaths = buildPackagePathMap(filteredPackages);
     const typeGroups = new Map<string, CommitGroup>();
 
     for (const commit of commits) {
