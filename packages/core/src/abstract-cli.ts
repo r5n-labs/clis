@@ -16,6 +16,8 @@ const DEFAULT_METADATA: Required<Omit<CliMetadata, "bin" | "version" | "descript
   promptMessage: "What would you like to do?",
 };
 
+const MAX_ERROR_CAUSE_DEPTH = 4;
+
 export abstract class AbstractCLI {
   protected commands: Map<string, AbstractCommand<any>> = new Map();
   protected metadata: CliMetadata;
@@ -56,14 +58,18 @@ export abstract class AbstractCLI {
   }
 
   async run(argv: string[] = process.argv.slice(2)) {
-    const { command, flags, restArgs } = parseGlobalArgs(argv, this.globalArgs);
+    try {
+      const { command, flags, restArgs } = parseGlobalArgs(argv, this.globalArgs);
 
-    if (flags.version && !command) return console.log(this.help.version());
-    if (flags.interactive && !command) return this.runInteractive();
-    if (!command) return console.log(this.help.global());
-    if (command === "help") return this.printHelpFor(restArgs[0]);
+      if (flags.version && !command) return console.log(this.help.version());
+      if (flags.interactive && !command) return this.runInteractive();
+      if (!command) return console.log(this.help.global());
+      if (command === "help") return this.printHelpFor(restArgs[0]);
 
-    await this.runDirect(command, restArgs, !!flags.help);
+      await this.runDirect(command, restArgs, !!flags.help);
+    } catch (error) {
+      this.handleError(error);
+    }
   }
 
   private printHelpFor(name?: string) {
@@ -145,15 +151,31 @@ export abstract class AbstractCLI {
     if (error instanceof Exit) {
       log.warn(color.yellow(error.message));
       if (error.hint) log.info(color.dim(error.hint));
-      process.exit(0);
+      this.logErrorCauses(error);
+      process.exit(error.exitCode);
     }
 
     if (error instanceof Error) {
       log.error(color.red(error.message));
+      this.logErrorCauses(error);
       process.exit(1);
     }
 
     console.error(color.red("Error:"), error);
     process.exit(1);
+  }
+
+  private logErrorCauses(error: Error, depth = 0): void {
+    if (depth >= MAX_ERROR_CAUSE_DEPTH) return;
+
+    const nested = [
+      ...(error instanceof AggregateError ? error.errors : []),
+      ...(error.cause !== undefined ? [error.cause] : []),
+    ];
+    for (const item of nested) {
+      log.info(color.dim(`caused by: ${item instanceof Error ? item.message : String(item)}`));
+      if (item instanceof Exit && item.hint) log.info(color.dim(`  ${item.hint}`));
+      if (item instanceof Error) this.logErrorCauses(item, depth + 1);
+    }
   }
 }
