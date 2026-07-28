@@ -2,7 +2,15 @@ import { args, color, Exit, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
-import { ChangelogGenerator, CommitAnalyzer, PackageUpdater, StoneManager, WorkspaceScanner } from "../../services";
+import {
+  ChangelogGenerator,
+  CommitAnalyzer,
+  hashReleasePlan,
+  hashReleaseSource,
+  PackageUpdater,
+  StoneManager,
+  WorkspaceScanner,
+} from "../../services";
 import type { PackageRelease } from "../../types";
 
 const RELEASE_BRANCH = "sisyphus/release";
@@ -261,7 +269,15 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const timestamp = await manager.archive(stones);
 
     const packageVersions = this.buildPackageVersions(packages);
-    ctx.config.set("currentRelease", { packages: packageVersions, stoneIds: stones.map((s) => s.id), timestamp });
+    const sourceHash = await hashReleaseSource(ctx.config.get("sisyphusDir"));
+    const plan = { packages: packageVersions, sourceHash, stoneIds: stones.map((stone) => stone.id), timestamp };
+    ctx.config.set("currentRelease", {
+      ...plan,
+      planHash: hashReleasePlan(
+        plan,
+        stones.map((stone) => stone.toJson()),
+      ),
+    });
 
     await this.updateLastStone(ctx, stones);
 

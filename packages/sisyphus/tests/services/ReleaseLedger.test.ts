@@ -1,0 +1,601 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { hostname, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import {
+  type CreateReleaseLedgerInput,
+  ReleaseLedger,
+  type ReleaseLedgerData,
+} from "../../src/services/release-ledger";
+
+const PACKAGE_NAME = "@fixture/public";
+const PACKAGE_FILE = "packages/public/package.json";
+const OID = "a".repeat(40);
+const TREE_OID = "b".repeat(40);
+const PROC_STAT_START_TIME_INDEX = 19;
+const LOCK_HOLDER_SCRIPT = `
+  import { randomUUID } from "node:crypto";
+  import { link, open, readFile } from "node:fs/promises";
+  import { hostname } from "node:os";
+  import { join } from "node:path";
+
+  const releaseDirectory = process.argv[1];
+  if (!releaseDirectory) throw new Error("Missing release directory");
+  const ownerId = randomUUID();
+  const ownerPath = join(releaseDirectory, ".write.lock." + ownerId + ".owner");
+  const lockPath = join(releaseDirectory, ".write.lock");
+  let processStartedAt;
+  if (process.platform === "linux") {
+    const bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf-8")).trim();
+    const stat = await readFile("/proc/" + process.pid + "/stat", "utf-8");
+    const commandEnd = stat.lastIndexOf(")");
+    const startTime = commandEnd < 0 ? undefined : stat.slice(commandEnd + 1).trim().split(/\\s+/)[${PROC_STAT_START_TIME_INDEX}];
+    processStartedAt = bootId && startTime ? "linux:" + bootId + ":" + startTime : "";
+  } else {
+    const startedAt = Bun.spawnSync({
+      cmd: ["ps", "-o", "lstart=", "-p", String(process.pid)],
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+      stderr: "pipe",
+      stdout: "pipe",
+    }).stdout.toString().trim().replace(/\\s+/g, " ");
+    processStartedAt = startedAt ? "ps:" + startedAt : "";
+  }
+  if (!processStartedAt) throw new Error("Missing process start identity");
+  const handle = await open(ownerPath, "wx", 0o600);
+  try {
+    await handle.writeFile(JSON.stringify({
+      acquiredAt: new Date().toISOString(),
+      hostname: hostname(),
+      ownerId,
+      pid: process.pid,
+      processStartedAt,
+      schemaVersion: 2,
+    }) + "\\n", "utf-8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await link(ownerPath, lockPath);
+  process.stdout.write("ready\\n");
+  await new Promise(() => {});
+`;
+
+const BASE_INPUT: CreateReleaseLedgerInput = {
+  options: {
+    changelog: true,
+    createRelease: false,
+    dryRun: false,
+    npm: false,
+    npmTag: "latest",
+    publishOnly: false,
+    push: false,
+    tags: true,
+  },
+  packages: [{ file: PACKAGE_FILE, isPrivate: false, name: PACKAGE_NAME, newVersion: "1.0.1", oldVersion: "1.0.0" }],
+  stones: [{ id: "0001-release", message: "ship it", patch: [PACKAGE_NAME] }],
+};
+
+async function createRepository(): Promise<string> {
+  const root = mkdtempSync(join(tmpdir(), "sisyphus-ledger-"));
+  mkdirSync(join(root, dirname(PACKAGE_FILE)), { recursive: true });
+  writeFileSync(join(root, PACKAGE_FILE), `${JSON.stringify({ name: PACKAGE_NAME, version: "1.0.0" }, null, 2)}\n`);
+  await Bun.$`git init -q -b main`.cwd(root).quiet();
+  await Bun.$`git config user.email ledger@test.local`.cwd(root).quiet();
+  await Bun.$`git config user.name "Ledger Test"`.cwd(root).quiet();
+  await Bun.$`git add -A`.cwd(root).quiet();
+  await Bun.$`git commit -q -m init`.cwd(root).quiet();
+  return root;
+}
+
+function input(options: Partial<CreateReleaseLedgerInput["options"]> = {}): CreateReleaseLedgerInput {
+  return {
+    ...BASE_INPUT,
+    options: { ...BASE_INPUT.options, ...options },
+    packages: BASE_INPUT.packages.map((pkg) => ({ ...pkg })),
+    stones: BASE_INPUT.stones.map((stone) => ({ ...stone })),
+  };
+}
+
+function spawnWriteLockHolder(releaseDirectory: string, env: Record<string, string> = {}) {
+  return Bun.spawn([process.execPath, "--eval", LOCK_HOLDER_SCRIPT, releaseDirectory], {
+    env: { ...process.env, ...env },
+    stderr: "pipe",
+    stdin: "ignore",
+    stdout: "pipe",
+  });
+}
+
+type WriteLockHolder = ReturnType<typeof spawnWriteLockHolder>;
+
+async function waitForWriteLock(holder: WriteLockHolder): Promise<void> {
+  const reader = holder.stdout.getReader();
+  const result = await reader.read();
+  reader.releaseLock();
+  if (!result.done && new TextDecoder().decode(result.value) === "ready\n") return;
+
+  const stderr = await new Response(holder.stderr).text();
+  throw new Error(`Lock holder failed before becoming ready: ${stderr.trim() || "no error output"}`);
+}
+
+async function stopWriteLockHolder(holder: WriteLockHolder): Promise<void> {
+  if (holder.exitCode === null) holder.kill("SIGKILL");
+  await holder.exited;
+}
+
+function simulateCachedWriteLock(lockPath: string, restoredHostname?: string): void {
+  const metadata = JSON.parse(readFileSync(lockPath, "utf-8")) as { hostname?: unknown; ownerId?: unknown };
+  if (typeof metadata.ownerId !== "string") throw new Error("Expected lock owner ID");
+  if (restoredHostname !== undefined) metadata.hostname = restoredHostname;
+  const content = `${JSON.stringify(metadata)}\n`;
+  writeFileSync(lockPath, content, { mode: 0o600 });
+  const ownerPath = join(dirname(lockPath), `.write.lock.${metadata.ownerId}.owner`);
+  rmSync(ownerPath);
+  writeFileSync(ownerPath, content, { mode: 0o600 });
+}
+
+function installWriteLock(
+  releaseDirectory: string,
+  metadata: Record<string, unknown>,
+): { lockPath: string; ownerPath: string } {
+  const ownerId = metadata.ownerId;
+  if (typeof ownerId !== "string") throw new Error("Expected lock owner ID");
+  const ownerPath = join(releaseDirectory, `.write.lock.${ownerId}.owner`);
+  const lockPath = join(releaseDirectory, ".write.lock");
+  writeFileSync(ownerPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+  linkSync(ownerPath, lockPath);
+  return { lockPath, ownerPath };
+}
+
+function staleCurrentProcessLock(releaseDirectory: string): { lockPath: string; ownerPath: string } {
+  const processStartedAt =
+    process.platform === "linux"
+      ? "linux:00000000-0000-4000-8000-000000000000:0"
+      : process.platform === "win32"
+        ? "windows:0"
+        : "ps:stale-process-identity";
+  return installWriteLock(releaseDirectory, {
+    acquiredAt: new Date().toISOString(),
+    hostname: hostname(),
+    ownerId: randomUUID(),
+    pid: process.pid,
+    processStartedAt,
+    schemaVersion: 2,
+  });
+}
+
+describe("ReleaseLedger", () => {
+  const roots: string[] = [];
+  const lockHolders: WriteLockHolder[] = [];
+
+  afterEach(async () => {
+    await Promise.all(lockHolders.splice(0).map(stopWriteLockHolder));
+    for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+  });
+
+  test("stores and loads active state outside the worktree without dirtying git status", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const nested = join(root, "packages/public");
+
+    const ledger = await ReleaseLedger.create(input(), nested);
+    const loaded = await ReleaseLedger.loadActive(nested);
+
+    expect(realpathSync(ledger.releaseDirectory)).toBe(realpathSync(join(root, ".git", "sisyphus", "release")));
+    expect(ledger.activePath).toBe(join(ledger.releaseDirectory, "active.json"));
+    expect(loaded?.data).toEqual(ledger.data);
+    expect((await Bun.$`git status --porcelain`.cwd(root).quiet()).stdout.toString()).toBe("");
+    expect(readFileSync(ledger.activePath, "utf-8").endsWith("\n")).toBe(true);
+  });
+
+  test("uses the worktree-specific git path", async () => {
+    const root = await createRepository();
+    const worktree = mkdtempSync(join(tmpdir(), "sisyphus-ledger-worktree-"));
+    rmSync(worktree, { recursive: true });
+    roots.push(root, worktree);
+    await Bun.$`git worktree add -q -b ledger-worktree ${worktree}`.cwd(root).quiet();
+    mkdirSync(join(worktree, "nested"));
+
+    const ledger = await ReleaseLedger.create(input(), join(worktree, "nested"));
+    const gitPath = (await Bun.$`git rev-parse --git-path sisyphus/release`.cwd(worktree).quiet()).stdout
+      .toString()
+      .trim();
+
+    expect(ledger.releaseDirectory).toBe(resolve(worktree, gitPath));
+    expect((await Bun.$`git status --porcelain`.cwd(worktree).quiet()).stdout.toString()).toBe("");
+  });
+
+  test("rejects an active ledger collision", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    await ReleaseLedger.create(input(), root);
+
+    await expect(ReleaseLedger.create(input(), root)).rejects.toThrow("active ledger already exists");
+  });
+
+  test("allows only one concurrent ledger creator", async () => {
+    const root = await createRepository();
+    roots.push(root);
+
+    const results = await Promise.allSettled([
+      ReleaseLedger.create(input(), root),
+      ReleaseLedger.create(input(), root),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
+  });
+
+  test("records the base tree when creating a publish-only ledger", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const expectedTree = (await Bun.$`git rev-parse HEAD^{tree}`.cwd(root).quiet()).stdout.toString().trim();
+
+    const ledger = await ReleaseLedger.create(input({ publishOnly: true }), root);
+
+    expect(ledger.data.expectedReleaseTree).toBe(expectedTree);
+    expect((await ReleaseLedger.loadActive(root))?.data.expectedReleaseTree).toBe(expectedTree);
+  });
+
+  test("sets the expected release tree once before the release commit", async () => {
+    const root = await createRepository();
+    const committedRoot = await createRepository();
+    roots.push(root, committedRoot);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const committedLedger = await ReleaseLedger.create(input(), committedRoot);
+
+    await ledger.setExpectedReleaseTree(TREE_OID);
+    await ledger.setExpectedReleaseTree(TREE_OID);
+
+    expect(ledger.data.expectedReleaseTree).toBe(TREE_OID);
+    expect((await ReleaseLedger.loadActive(root))?.data.expectedReleaseTree).toBe(TREE_OID);
+    await expect(ledger.setExpectedReleaseTree(OID)).rejects.toThrow("Cannot replace expected release tree");
+
+    await expect(committedLedger.setReleaseCommit(OID)).rejects.toThrow(
+      "Cannot set release commit before the expected release tree",
+    );
+    await committedLedger.setExpectedReleaseTree(TREE_OID);
+    await committedLedger.setReleaseCommit(OID);
+    expect(committedLedger.data.releaseCommit).toBe(OID);
+  });
+
+  test("recovers subprocess locks left by process death before later writes and removal", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const writeHolder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(writeHolder);
+    await waitForWriteLock(writeHolder);
+    await stopWriteLockHolder(writeHolder);
+    simulateCachedWriteLock(join(ledger.releaseDirectory, ".write.lock"), "restored-ci-runner");
+
+    const resumed = await ReleaseLedger.loadActive(root);
+    if (!resumed) throw new Error("Expected active release ledger");
+    await resumed.setExpectedReleaseTree(TREE_OID);
+    await resumed.setPhase("local-ready");
+    expect(resumed.phase).toBe("local-ready");
+    expect(resumed.data.expectedReleaseTree).toBe(TREE_OID);
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+
+    const removeHolder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(removeHolder);
+    await waitForWriteLock(removeHolder);
+    await stopWriteLockHolder(removeHolder);
+    await resumed.remove();
+
+    expect(existsSync(ledger.activePath)).toBe(false);
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+  });
+
+  test("fails closed while a subprocess lock owner is live", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    const loaded = await ReleaseLedger.loadActive(root);
+    if (!loaded) throw new Error("Expected active release ledger");
+
+    await expect(loaded.setPhase("local-ready")).rejects.toThrow("lock owner is still live");
+    await expect(loaded.remove()).rejects.toThrow("lock owner is still live");
+    expect(holder.exitCode).toBeNull();
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(true);
+  });
+
+  test("fails closed for a live lock owner across timezone environments", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory, { TZ: "UTC" });
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+
+    try {
+      await expect(ledger.setPhase("local-ready")).rejects.toThrow("lock owner is still live");
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+
+    expect(holder.exitCode).toBeNull();
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(true);
+  });
+
+  test("serializes concurrent writers recovering the same dead subprocess lock", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const first = await ReleaseLedger.loadActive(root);
+    const second = await ReleaseLedger.loadActive(root);
+    if (!first || !second) throw new Error("Expected active release ledger handles");
+    const holder = spawnWriteLockHolder(ledger.releaseDirectory);
+    lockHolders.push(holder);
+    await waitForWriteLock(holder);
+    await stopWriteLockHolder(holder);
+
+    const results = await Promise.allSettled([first.setPhase("local-ready"), second.setPhase("external")]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
+    expect(["local-ready", "external"]).toContain((await ReleaseLedger.loadActive(root))?.phase);
+  });
+
+  test("recovers a stale lock when its PID belongs to a newer process", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = staleCurrentProcessLock(ledger.releaseDirectory);
+
+    await ledger.setExpectedReleaseTree(TREE_OID);
+
+    expect(existsSync(lockPath)).toBe(false);
+    expect(existsSync(ownerPath)).toBe(false);
+    expect(ledger.data.expectedReleaseTree).toBe(TREE_OID);
+  });
+
+  test("fails closed when stale lock recovery was interrupted after claiming", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = staleCurrentProcessLock(ledger.releaseDirectory);
+    const claimPath = ownerPath.replace(/\.owner$/, ".claim");
+    renameSync(ownerPath, claimPath);
+
+    await expect(ledger.setExpectedReleaseTree(TREE_OID)).rejects.toThrow("stale lock recovery is incomplete");
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(existsSync(ownerPath)).toBe(false);
+    expect(existsSync(claimPath)).toBe(true);
+  });
+
+  test("fails closed without deleting a legacy lock that lacks process identity", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const { lockPath, ownerPath } = installWriteLock(ledger.releaseDirectory, {
+      acquiredAt: new Date().toISOString(),
+      hostname: hostname(),
+      ownerId: randomUUID(),
+      pid: process.pid,
+      schemaVersion: 1,
+    });
+
+    await expect(ledger.setPhase("local-ready")).rejects.toThrow("lock metadata is malformed");
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(existsSync(ownerPath)).toBe(true);
+  });
+
+  test("fails closed without deleting malformed lock metadata", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    const lockPath = join(ledger.releaseDirectory, ".write.lock");
+    const malformed = `${randomUUID()}\n`;
+    writeFileSync(lockPath, malformed);
+
+    await expect(ledger.setPhase("local-ready")).rejects.toThrow("lock metadata is malformed");
+    expect(readFileSync(lockPath, "utf-8")).toBe(malformed);
+  });
+
+  test("fails closed for corrupt JSON and unknown schema versions", async () => {
+    const corruptRoot = await createRepository();
+    const schemaRoot = await createRepository();
+    roots.push(corruptRoot, schemaRoot);
+    const corrupt = await ReleaseLedger.create(input(), corruptRoot);
+    const unknown = await ReleaseLedger.create(input(), schemaRoot);
+    writeFileSync(corrupt.activePath, "not json\n");
+    writeFileSync(unknown.activePath, `${JSON.stringify({ ...unknown.data, schemaVersion: 2 }, null, 2)}\n`);
+
+    await expect(ReleaseLedger.loadActive(corruptRoot)).rejects.toThrow("Failed to parse active release ledger");
+    await expect(ReleaseLedger.loadActive(schemaRoot)).rejects.toThrow("unsupported schema version 2");
+  });
+
+  test("enforces operation transitions and refuses cleanup after external progress", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ createRelease: true, npm: true, push: true }), root);
+    const source = join(root, "public.tgz");
+    writeFileSync(source, "artifact");
+    await ledger.setArtifact(PACKAGE_NAME, source);
+    await ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.npmjs.org/");
+    await ledger.configurePush("origin", { canonicalUrl: "https://github.com/fixture/repo.git" }, [
+      { destination: "refs/heads/main", oid: OID, source: "refs/heads/main" },
+    ]);
+    await ledger.configureProviderRelease(PACKAGE_NAME, {
+      notes: "Release notes",
+      tag: `${PACKAGE_NAME}@1.0.1`,
+      title: `${PACKAGE_NAME} v1.0.1`,
+    });
+
+    await expect(ledger.markNpm(PACKAGE_NAME, "completed")).rejects.toThrow("transition from pending to completed");
+    await ledger.markNpm(PACKAGE_NAME, "started");
+    const startedAt = ledger.data.operations.npm[PACKAGE_NAME]?.startedAt;
+    await ledger.markNpm(PACKAGE_NAME, "started");
+    expect(ledger.data.operations.npm[PACKAGE_NAME]?.startedAt).toBe(startedAt);
+    await ledger.markNpm(PACKAGE_NAME, "completed");
+    await expect(ledger.markNpm(PACKAGE_NAME, "started")).rejects.toThrow("transition from completed to started");
+    expect(ledger.hasExternalProgress()).toBe(true);
+    await expect(ledger.remove()).rejects.toThrow("external operation has started");
+    expect(existsSync(ledger.activePath)).toBe(true);
+  });
+
+  test("rejects credential-bearing registry query strings and fragments", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ npm: true }), root);
+
+    await expect(ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.example/?token=secret")).rejects.toThrow(
+      "credential-free",
+    );
+    await expect(ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.example/#secret")).rejects.toThrow(
+      "credential-free",
+    );
+  });
+
+  test("copies package artifacts durably and records their sha512 SRI", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ npm: true }), root);
+    const source = join(root, "public.tgz");
+    const content = Buffer.from("immutable package artifact");
+    writeFileSync(source, content);
+
+    const artifact = await ledger.setArtifact(PACKAGE_NAME, source);
+    writeFileSync(source, "changed source");
+
+    expect(artifact.path.startsWith("artifacts/")).toBe(true);
+    expect(readFileSync(ledger.resolveArtifactPath(PACKAGE_NAME))).toEqual(content);
+    expect(artifact.integrity).toBe(`sha512-${createHash("sha512").update(content).digest("base64")}`);
+    expect((await ReleaseLedger.loadActive(root))?.data.artifacts[PACKAGE_NAME]).toEqual(artifact);
+  });
+
+  test("a stale writer cannot replace a durable artifact before failing CAS", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const first = await ReleaseLedger.create(input({ npm: true }), root);
+    const stale = await ReleaseLedger.loadActive(root);
+    if (!stale) throw new Error("Expected active release ledger");
+    const sourceA = join(root, "a.tgz");
+    const sourceB = join(root, "b.tgz");
+    writeFileSync(sourceA, "artifact-a");
+    writeFileSync(sourceB, "artifact-b");
+
+    const artifactA = await first.setArtifact(PACKAGE_NAME, sourceA);
+    await expect(stale.setArtifact(PACKAGE_NAME, sourceB)).rejects.toThrow("different durable artifact");
+
+    expect((await ReleaseLedger.loadActive(root))?.data.artifacts[PACKAGE_NAME]).toEqual(artifactA);
+    expect(readFileSync(first.resolveArtifactPath(PACKAGE_NAME), "utf-8")).toBe("artifact-a");
+  });
+
+  test("a stale handle cannot remove a ledger after external progress starts", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const current = await ReleaseLedger.create(input({ npm: true }), root);
+    const stale = await ReleaseLedger.loadActive(root);
+    if (!stale) throw new Error("Expected active release ledger");
+    const source = join(root, "artifact.tgz");
+    writeFileSync(source, "artifact");
+    await current.setArtifact(PACKAGE_NAME, source);
+    await current.setNpmRegistry(PACKAGE_NAME, "https://registry.npmjs.org/");
+    await current.markNpm(PACKAGE_NAME, "started");
+
+    await expect(stale.remove()).rejects.toThrow("changed in another process");
+
+    const active = await ReleaseLedger.loadActive(root);
+    expect(active?.data.operations.npm[PACKAGE_NAME]?.state).toBe("started");
+    expect(active?.data.artifacts[PACKAGE_NAME]).toBeDefined();
+  });
+
+  test("rejects package traversal and artifact metadata outside its durable directory", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ npm: true }), root);
+    const source = join(root, "public.tgz");
+    writeFileSync(source, "artifact");
+    await expect(ledger.setArtifact("../public", source)).rejects.toThrow("Unknown release package");
+    await ledger.setArtifact(PACKAGE_NAME, source);
+
+    const corrupted: ReleaseLedgerData = ledger.data;
+    const metadata = corrupted.artifacts[PACKAGE_NAME];
+    if (!metadata) throw new Error("Expected artifact metadata");
+    metadata.path = join(root, "escaped.tgz");
+    writeFileSync(metadata.path, "artifact");
+    writeFileSync(ledger.activePath, `${JSON.stringify(corrupted, null, 2)}\n`);
+
+    await expect(ReleaseLedger.loadActive(root)).rejects.toThrow("must be relative to the release directory");
+  });
+
+  test("refuses an artifacts-directory symlink before copying data", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ npm: true }), root);
+    const outside = join(root, "outside");
+    const source = join(root, "public.tgz");
+    mkdirSync(outside);
+    writeFileSync(source, "artifact");
+    rmSync(ledger.artifactsDirectory, { recursive: true });
+    symlinkSync(outside, ledger.artifactsDirectory, "dir");
+
+    await expect(ledger.setArtifact(PACKAGE_NAME, source)).rejects.toThrow("expected a real directory");
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
+  test("self-heals a missing empty artifacts directory on resume and removal", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input(), root);
+    rmSync(ledger.artifactsDirectory, { recursive: true });
+
+    const resumed = await ReleaseLedger.loadActive(root);
+    if (!resumed) throw new Error("Expected active release ledger");
+    expect(existsSync(ledger.artifactsDirectory)).toBe(true);
+    await resumed.remove();
+
+    expect(existsSync(ledger.activePath)).toBe(false);
+    expect(existsSync(ledger.artifactsDirectory)).toBe(false);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test("atomically moves completed state to history and keeps durable artifacts", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const ledger = await ReleaseLedger.create(input({ npm: true }), root);
+    const source = join(root, "public.tgz");
+    writeFileSync(source, "artifact");
+    await ledger.setArtifact(PACKAGE_NAME, source);
+    await ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.npmjs.org/");
+    await ledger.markNpm(PACKAGE_NAME, "started");
+    await ledger.markNpm(PACKAGE_NAME, "completed");
+    await ledger.setExpectedReleaseTree(TREE_OID);
+    await ledger.setReleaseCommit(OID);
+    await ledger.markTagsReady();
+
+    const historyPath = await ledger.complete();
+    const history = JSON.parse(readFileSync(historyPath, "utf-8")) as ReleaseLedgerData;
+
+    expect(existsSync(ledger.activePath)).toBe(false);
+    expect(history.phase).toBe("completed");
+    expect(history.id).toBe(ledger.id);
+    expect(existsSync(ledger.resolveArtifactPath(PACKAGE_NAME))).toBe(true);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+    expect(readFileSync(historyPath, "utf-8").endsWith("\n")).toBe(true);
+  });
+});
