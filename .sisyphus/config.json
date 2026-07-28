@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/cli/sisyphus/schema.json",
+  "$schema": "https://raw.githubusercontent.com/r5n-labs/clis/refs/heads/develop/packages/sisyphus/schema.json",
   "changelog": {
     "append": true,
     "filename": "CHANGELOG.md",
@@ -25,27 +25,17 @@
   },
   "commit": {
     "author": "Sisyphus",
-    "message": "release(🎉): {message}",
-    "email": "237849083+r5n-bot@users.noreply.github.com"
+    "email": "237849083+r5n-bot@users.noreply.github.com",
+    "message": "release(🎉): {message}"
   },
   "commits": {
     "skip": {
-      "authors": [
-        "r5n-bot[bot]",
-        "Sisyphus",
-        "r5n-bot"
-      ],
-      "messagePatterns": [
-        "^chore\\(release\\):",
-        "^chore: add stone"
-      ]
+      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
+      "messagePatterns": ["^chore\\(release\\):", "^chore: add stone"]
     }
   },
   "ignore": [],
-  "lastStone": {
-    "commit": "cdab9566a132b81d7cd93a47f2bbd238f1b13d47",
-    "date": "2026-07-19T22:37:09.991Z"
-  },
+  "lastStone": { "commit": "cdab9566a132b81d7cd93a47f2bbd238f1b13d47", "date": "2026-07-19T22:37:09.991Z" },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -59,34 +49,15 @@
       "fix": "patch"
     },
     "skip": {
-      "authors": [
-        "r5n-bot[bot]",
-        "Sisyphus",
-        "r5n-bot"
-      ],
-      "labels": [
-        "sisyphus-release",
-        "skip-stone"
-      ],
-      "titlePatterns": [
-        "^chore\\(release\\):"
-      ]
+      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
+      "labels": ["sisyphus-release", "skip-stone"],
+      "titlePatterns": ["^chore\\(release\\):"]
     }
   },
-  "release": {
-    "createRelease": false,
-    "npm": true,
-    "push": true,
-    "tags": true,
-    "commitAndPush": true,
-    "github": true
-  },
-  "scripts": {
-    "post": {},
-    "pre": {}
-  },
+  "release": { "createRelease": false, "npm": true, "push": true, "tags": true },
+  "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": ["0001-4be6244d"],
   "tag": "latest"
 }
