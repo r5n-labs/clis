@@ -15,10 +15,7 @@
     "clean": "bun --filter '*' clean; rm -rf node_modules; bun install",
     "deps": "bun update -r -i --latest",
     "lint": "bun biome check --write --unsafe",
-    "old-sisyphus:local": "bun --bun packages/old-sisyphus/src/cli.ts",
-    "package:dryRun": "bun --filter '*' package:dryRun",
     "package:prepare": "bun --filter '*' package:prepare",
-    "package:release": "bun --filter '*' package:release",
     "release:check": "bun sis check",
     "release:roll": "bun sis roll",
     "release:version": "bun sis version",
@@ -26,10 +23,10 @@
     "sis:dbg": "bun --inspect-brk packages/sisyphus/src/cli.ts",
     "hydra": "bun --bun packages/hydra/src/cli.ts",
     "hydra:dbg": "bun --inspect-brk packages/hydra/src/cli.ts",
+    "atlas": "bun --bun packages/atlas/src/cli.ts",
+    "atlas:dbg": "bun --inspect-brk packages/atlas/src/cli.ts",
     "test": "bun test",
-    "type-check": "bun --elide-lines=0 --filter '*' type-check",
-    "type-check:ci": "bun --filter '*' type-check",
-    "type-check:go": "bun --elide-lines=0 --filter '*' type-check:go"
+    "type-check": "bun --elide-lines=0 --filter '*' type-check"
   },
   "version": "0.0.0",
   "workspaces": { "packages": ["packages/*", "tools"] }

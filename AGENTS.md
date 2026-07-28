@@ -7,8 +7,7 @@
 | Build all | `bun run build` |
 | Build single package | `bun --filter @r5n/sisyphus build` |
 | Lint & format | `bun lint` |
-| Type check (verbose) | `bun type-check:go` |
-| Type check (CI) | `bun type-check:ci` |
+| Type check | `bun type-check` |
 | Run all tests | `bun test` |
 | Run single test file | `bun test packages/path/to/file.test.ts` |
 | Run tests by pattern | `bun test -t "pattern"` |

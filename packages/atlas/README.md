@@ -1,11 +1,102 @@
 # Atlas
 
-Env/config profile CLI for sharing configuration across machines and tools.
+Profile-based env composition for apps and environments.
 
-**Not released yet.** The package is being rebuilt as a profile-based env composition tool — define named profiles (inheritance, dotenv files, literal vars, secret references), then inject them into processes (`atlas run`) or render them to files (`atlas export`). The rewrite lands via [PR #12](https://github.com/r5n-labs/clis/pull/12); a multi-target `apply` and file-watching sync are planned follow-ups.
+Atlas is a small dotenv-style CLI for projects that need more than one `.env` file. It combines named profiles such as `team`, `app:web`, `env:dev`, or `machine:runner`, then either runs a command with the resolved env or exports a dotenv file.
 
-Until the first release the package is marked `private` and the code on this branch is a placeholder.
+**Not released yet.** The implementation is available from this monorepo while the package remains private.
+
+## Quick Start
+
+```bash
+bun atlas init
+```
+
+Create `.atlas/config.json`:
+
+```json
+{
+  "defaults": { "profiles": ["team", "app:web"], "exportFile": ".env.generated" },
+  "profiles": {
+    "team": {
+      "vars": { "ORG": "r5n" }
+    },
+    "app:web": {
+      "envFiles": [".env.shared"],
+      "vars": { "APP": "web" }
+    },
+    "env:dev": {
+      "vars": { "NODE_ENV": "development" },
+      "secrets": {
+        "API_TOKEN": { "env": "WEB_API_TOKEN" }
+      }
+    }
+  }
+}
+```
+
+Run a command:
+
+```bash
+atlas run --profile env:dev -- bun dev
+```
+
+Flags meant for the child command must come after `--`; `atlas run` rejects flags it does not recognise.
+
+Export a dotenv file:
+
+```bash
+atlas export --profile env:dev
+atlas export --profile app:web,env:prod --out .env.production --force
+```
+
+## Config Model
+
+Atlas reads two optional config layers:
+
+- `~/.atlas/config.json` for global defaults and shared profiles
+- the nearest `.atlas/config.json` from the current directory upward for project profiles
+
+Project defaults override global scalar defaults, project profiles override global profiles with the same name, and default profile lists are appended in global-then-project order.
+
+Profiles can contain:
+
+- `extends` — parent profiles applied first
+- `envFiles` — dotenv files relative to the config root
+- `vars` — literal non-secret values
+- `secrets` — runtime references to process env vars or local files
+
+Secrets are references, not stored secret values:
+
+```json
+{
+  "profiles": {
+    "env:prod": {
+      "secrets": {
+        "DATABASE_URL": { "env": "PROD_DATABASE_URL" },
+        "PRIVATE_KEY": { "file": ".secrets/private-key.pem", "trim": false }
+      }
+    }
+  }
+}
+```
+
+## Trust Model
+
+Atlas discovers the nearest project `.atlas/config.json` upward from the current directory and applies it without confirmation. Secret `file` references can read arbitrary paths, so review a repository's `.atlas/config.json` before running `atlas` inside it. A trust prompt for newly discovered project configs is a planned follow-up.
+
+`atlas export` refuses values that cannot round-trip through both Atlas and Bun's dotenv grammar (for example values mixing quotes with `#`, or ending in unbalanced backslash or `\$` sequences) instead of writing a file that would parse back differently.
+
+## Commands
+
+```bash
+atlas init [--global] [--force]
+atlas profiles list
+atlas profiles show <profile>
+atlas run --profile app:web,env:dev -- <command...>
+atlas export --profile app:web,env:dev [--out .env] [--stdout] [--force]
+```
 
 ## License
 
-Apache 2.0 — see [LICENSE](../../LICENSE)
+Apache 2.0 — see [LICENSE](./LICENSE)
