@@ -65,3 +65,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
           NPM_CONFIG_PROVENANCE: "false"
+          NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"

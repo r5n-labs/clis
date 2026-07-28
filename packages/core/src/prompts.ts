@@ -57,12 +57,12 @@ export async function text(params: Parameters<typeof clack.text>[0]): Promise<st
 
 export async function select<T>(params: Parameters<typeof clack.select<T>>[0]): Promise<T> {
   logHint(hints.select);
-  return unwrap(await clack.select(params));
+  return unwrap(await clack.select({ showInstructions: false, ...params }));
 }
 
 export async function multiselect<T>(params: Parameters<typeof clack.multiselect<T>>[0]): Promise<T[]> {
   logHint(hints.multiselect);
-  return unwrap(await clack.multiselect(params));
+  return unwrap(await clack.multiselect({ showInstructions: false, ...params }));
 }
 
 export { cancel, group, intro, log, note, outro, spinner } from "@clack/prompts";

@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/sisyphus",
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "repository": { "type": "git", "url": "git+https://github.com/r5n-labs/clis.git" },
   "scripts": {
     "build": "rm -rf dist && bun build.ts",
