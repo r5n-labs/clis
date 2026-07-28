@@ -99,7 +99,7 @@ const LEFTHOOK_CONTENT = `pre-commit:
 
     typecheck:
       glob: "*.{ts,tsx}"
-      run: bun type-check:ci
+      run: bun type-check
       fail_text: "TypeScript errors found. Fix them before committing."
 
 skip_output:
@@ -190,7 +190,7 @@ async function runSetupCommands() {
       description: "Install devDependencies",
     },
     lint: { command: "bun biome check --write --unsafe", description: "Run linting with --unsafe for initial setup" },
-    typecheck: { command: "bun type-check:ci", description: "Run type-checking for initial setup" },
+    typecheck: { command: "bun type-check", description: "Run type-checking for initial setup" },
   };
 
   for (const [key, { command, description }] of Object.entries(commands)) {
@@ -217,7 +217,6 @@ async function main() {
     postinstall: "bun lefthook install; bun lint:ws",
     test: "bun test",
     "type-check": "bun --elide-lines=0 --filter '*' type-check",
-    "type-check:ci": "bun --filter '*' type-check",
   };
 
   const updatedPackageJson = {
