@@ -1,7 +1,0 @@
-{
-  "description": "Release commits now require a valid commit.email whenever commit.author is set; rolls fail early with 'Invalid release commit author' instead of git's pattern-search fallback. Configs written by older 'sis init' inherit the default email automatically; set both keys, or clear both, to control the release identity.",
-  "id": "0001-4be6244d",
-  "message": "feat: harden profile and release workflows",
-  "minor": ["@r5n/atlas", "@r5n/sisyphus"],
-  "patch": ["@r5n/cli-core", "@r5n/hydra"]
-}

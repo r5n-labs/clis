@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-28 - @r5n/atlas@0.4.0, @r5n/sisyphus@0.9.0, @r5n/cli-core@0.4.2, @r5n/hydra@0.9.2
+
+**Packages**
+- ✨ `@r5n/atlas` 0.3.0 → 0.4.0
+- ✨ `@r5n/sisyphus` 0.8.2 → 0.9.0
+- 🐛 `@r5n/cli-core` 0.4.1 → 0.4.2
+- 🐛 `@r5n/hydra` 0.9.1 → 0.9.2
+
+### 🪨 feat: harden profile and release workflows
+**Packages:** `@r5n/atlas` · `@r5n/sisyphus` · `@r5n/cli-core` · `@r5n/hydra`
+
+<details>
+<summary>Description</summary>
+
+  Release commits now require a valid commit.email whenever commit.author is set; rolls fail early with 'Invalid release commit author' instead of git's pattern-search fallback. Configs written by older 'sis init' inherit the default email automatically; set both keys, or clear both, to control the release identity.
+</details>
+
 ## 2026-07-20 - @r5n/sisyphus@0.8.2
 
 **Packages**

@@ -1,5 +1,15 @@
 # @r5n/sisyphus
 
+## ✨ 0.9.0 (2026-07-28)
+
+### 🪨 feat: harden profile and release workflows
+
+<details>
+<summary>Description</summary>
+
+  Release commits now require a valid commit.email whenever commit.author is set; rolls fail early with 'Invalid release commit author' instead of git's pattern-search fallback. Configs written by older 'sis init' inherit the default email automatically; set both keys, or clear both, to control the release identity.
+</details>
+
 ## 🐛 0.8.2 (2026-07-20)
 
 ### 🪨 Update GitHub Actions to Node 24
