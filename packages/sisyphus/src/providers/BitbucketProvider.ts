@@ -5,6 +5,7 @@ import {
   type CreateReleaseOptions,
   type FindPrOptions,
   GitProvider,
+  type GitRelease,
   type PullRequest,
   type UpdatePrOptions,
 } from "./GitProvider";
@@ -53,6 +54,10 @@ export class BitbucketProvider extends GitProvider {
   }
 
   async ensureLabelExists(_name: string, _options?: CreateLabelOptions): Promise<void> {
+    this.notImplemented();
+  }
+
+  async getRelease(_tag: string): Promise<GitRelease | null> {
     this.notImplemented();
   }
 

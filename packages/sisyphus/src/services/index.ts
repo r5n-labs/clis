@@ -6,6 +6,8 @@ export * from "./PackageUpdater";
 export * from "./PublishManifest";
 export * from "./PullRequestAnalyzer";
 export * from "./ReleaseOrchestrator";
+export * from "./ReleaseSource";
+export * from "./release-ledger";
 export * from "./StoneManager";
 export * from "./VersionCalculator";
 export * from "./WorkspaceScanner";
