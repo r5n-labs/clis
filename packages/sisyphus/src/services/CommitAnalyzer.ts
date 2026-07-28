@@ -1,6 +1,14 @@
 import { type ConfigManager, color, log } from "@r5n/cli-core";
 import { COMMIT_TYPE_ORDER, COMMIT_TYPE_ORDER_FALLBACK, SISYPHUS_DEFAULT_CONFIG } from "../constants";
-import { BumpType, Commit, type CommitInfo, OTHER_COMMIT_TYPE, type Package, type StoneData } from "../domain";
+import {
+  BumpType,
+  Commit,
+  type CommitInfo,
+  nonEmpty,
+  OTHER_COMMIT_TYPE,
+  type Package,
+  type StoneData,
+} from "../domain";
 import type { CommitsSkipConfig, SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages, findDependencyPackages } from "../utils";
 import { StoneManager } from "./StoneManager";
@@ -35,17 +43,12 @@ export class CommitAnalyzer {
     let commits = await this.getCommitsSinceLastRelease();
     if (commits.length === 0) return [];
 
-    const trackedHashes = await this.stoneManager.getAllTrackedCommitHashes();
-    if (trackedHashes.size > 0) {
-      commits = commits.filter((c) => !trackedHashes.has(c.shortHash));
-      if (commits.length === 0) return [];
-    }
-
     const skipConfig = this.config.get("commits")?.skip ?? SISYPHUS_DEFAULT_CONFIG.commits.skip;
     commits = commits.filter((c) => !this.shouldSkipCommit(c, skipConfig));
     if (commits.length === 0) return [];
 
-    return this.groupByPackage(commits, options);
+    const trackedPackages = await this.stoneManager.getTrackedCommitPackages();
+    return this.groupByPackage(commits, options, trackedPackages);
   }
 
   private shouldSkipCommit(commit: Commit, skip: CommitsSkipConfig): boolean {
@@ -62,10 +65,6 @@ export class CommitAnalyzer {
     return false;
   }
 
-  get commitCount(): Promise<number> {
-    return this.getCommitsSinceLastRelease().then((c) => c.length);
-  }
-
   private async getCommitsSinceLastRelease(): Promise<Commit[]> {
     const lastStone = this.config.get("lastStone");
     const lastCommit = lastStone?.commit || undefined;
@@ -73,13 +72,22 @@ export class CommitAnalyzer {
     return Commit.since(lastCommit);
   }
 
-  private async groupByPackage(commits: Commit[], options: AnalyzeOptions): Promise<CommitGroup[]> {
-    const { packages } = await WorkspaceScanner.scan({ filter: options.filter, single: options.single });
-    const packagePaths = buildPackagePathMap(packages);
+  private async groupByPackage(
+    commits: Commit[],
+    options: AnalyzeOptions,
+    trackedPackages: Map<string, Set<string>>,
+  ): Promise<CommitGroup[]> {
+    const { packages, packageNames } = await WorkspaceScanner.scan({ filter: options.filter, single: options.single });
+    const names = new Set(packageNames);
+    const filteredPackages = new Map([...packages].filter(([name]) => names.has(name)));
+    const packagePaths = buildPackagePathMap(filteredPackages);
     const typeGroups = new Map<string, CommitGroup>();
 
     for (const commit of commits) {
       const affectedPackages = findAffectedPackages(commit.files, packagePaths);
+      for (const covered of trackedPackages.get(commit.shortHash) ?? []) {
+        affectedPackages.delete(covered);
+      }
       if (affectedPackages.size === 0) continue;
 
       const bump = commit.breaking ? BumpType.Major : COMMIT_TYPE_TO_BUMP[commit.type] || BumpType.Patch;
@@ -100,7 +108,6 @@ export class CommitAnalyzer {
     }
 
     return Array.from(typeGroups.entries())
-      .filter(([, g]) => g.packages.size > 0)
       .sort(
         ([a], [b]) =>
           (COMMIT_TYPE_ORDER[a] ?? COMMIT_TYPE_ORDER_FALLBACK) - (COMMIT_TYPE_ORDER[b] ?? COMMIT_TYPE_ORDER_FALLBACK),
@@ -116,13 +123,11 @@ export class CommitAnalyzer {
 
   static buildStoneData(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
     const pkgNames = Array.from(group.packages);
-    const commits = group.commits.length > 0 ? group.commits : undefined;
-    const deps = findDependencyPackages(pkgNames, packages);
 
     return {
       [group.bump]: pkgNames,
-      commits,
-      dependency: deps.length > 0 ? deps : undefined,
+      commits: nonEmpty(group.commits),
+      dependency: nonEmpty(findDependencyPackages(pkgNames, packages)),
       message: group.message,
       tag,
     };

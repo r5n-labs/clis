@@ -85,7 +85,9 @@ export class ChangelogGenerator {
 
   private async prependToChangelog(path: string, entry: string, defaultTitle: string) {
     const existing = await this.readExisting(path);
-    this.originals.set(path, existing);
+    if (!this.originals.has(path)) {
+      this.originals.set(path, existing);
+    }
 
     const title = existing ? this.extractTitle(existing) : `# ${defaultTitle}`;
     const rest = existing ? this.extractRest(existing) : "";

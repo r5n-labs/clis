@@ -10,7 +10,7 @@ export class WorkspaceScanner {
     const { filter, single } = options;
 
     if (single) {
-      return WorkspaceScanner.scanRootPackage();
+      return WorkspaceScanner.scanRootPackage(filter);
     }
 
     const workspaces = await WorkspaceScanner.getWorkspaces();
@@ -48,14 +48,14 @@ export class WorkspaceScanner {
     return names.filter((name) => name.includes(filter));
   }
 
-  private static async scanRootPackage(): Promise<ScanResult> {
+  private static async scanRootPackage(filter?: string): Promise<ScanResult> {
     const json: PackageJson = await Bun.file("package.json").json();
     const pkg = Package.fromJson(json, "package.json");
 
     const packages = new Map<string, Package>();
     packages.set(pkg.name, pkg);
 
-    return { packageNames: [pkg.name], packages };
+    return { packageNames: WorkspaceScanner.filterNames([pkg.name], filter), packages };
   }
 
   private static async scanWorkspaces(workspaces: string[]): Promise<Map<string, Package>> {

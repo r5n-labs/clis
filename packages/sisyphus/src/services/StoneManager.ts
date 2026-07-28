@@ -1,10 +1,13 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { type ConfigManager, color, log } from "@r5n/cli-core";
+import { dirname, join, resolve } from "node:path";
+import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
 import { DEFAULT_CONFIG_DIR, DEFAULT_RELEASED_DIR, DEFAULT_STONES_DIR } from "../constants";
 import { Stone, type StoneData, type StoneJson } from "../domain";
 import type { SisyphusConfig } from "../types";
+
+const STONE_ID_PATTERN = /^[0-9A-Za-z][0-9A-Za-z_-]*$/;
+const RELEASE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 export class StoneManager {
   constructor(private config: ConfigManager<SisyphusConfig>) {}
@@ -38,8 +41,8 @@ export class StoneManager {
 
     const files = await readdir(this.stonesPath);
     return files
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.replace(".json", ""))
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => this.toStoneId(file))
       .sort();
   }
 
@@ -50,17 +53,12 @@ export class StoneManager {
       return null;
     }
 
-    try {
-      const content = await readFile(filePath, "utf-8");
-      const json: StoneJson = JSON.parse(content);
-      return Stone.fromJson(json);
-    } catch {
-      return null;
+    const content = await readFile(filePath, "utf-8");
+    const json: StoneJson = JSON.parse(content);
+    if (json.id !== id) {
+      throw new Error(`Stone file ID mismatch: expected "${id}", found "${String(json.id)}"`);
     }
-  }
-
-  async exists(id: string): Promise<boolean> {
-    return existsSync(this.getFilePath(id));
+    return Stone.fromJson(json);
   }
 
   async save(stone: Stone): Promise<void> {
@@ -102,11 +100,6 @@ export class StoneManager {
     return stone;
   }
 
-  async count(): Promise<number> {
-    const ids = await this.listIds();
-    return ids.length;
-  }
-
   async archive(stones: Stone[]): Promise<string> {
     if (stones.length === 0) return "";
 
@@ -128,21 +121,32 @@ export class StoneManager {
     return timestamp;
   }
 
-  async getReleasedStones(timestamp: string): Promise<Stone[]> {
-    const archiveDir = join(this.releasedPath, timestamp);
+  async getReleasedStones(timestamp: string, expectedIds?: readonly string[]): Promise<Stone[]> {
+    const archiveDir = this.getArchivePath(timestamp);
     if (!existsSync(archiveDir)) return [];
 
     const files = await readdir(archiveDir);
+    const jsonFiles = files.filter((file) => file.endsWith(".json")).sort();
+    const expectedFiles = expectedIds?.map((id) => `${this.validateId(id)}.json`).sort();
+    if (expectedFiles && JSON.stringify(jsonFiles) !== JSON.stringify(expectedFiles)) {
+      throw new Error(
+        `Released stone archive ${timestamp} does not match currentRelease: expected ${expectedFiles.join(", ") || "no stones"}, found ${jsonFiles.join(", ") || "no stones"}`,
+      );
+    }
+
     const stones: Stone[] = [];
 
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue;
-
+    for (const file of jsonFiles) {
       try {
+        const fileId = this.validateId(file.slice(0, -".json".length));
         const content = await readFile(join(archiveDir, file), "utf-8");
         const json: StoneJson = JSON.parse(content);
+        if (json.id !== fileId) {
+          throw new Error(`Stone file ID mismatch: expected "${fileId}", found "${String(json.id)}"`);
+        }
         stones.push(Stone.fromJson(json));
       } catch (error) {
+        if (expectedIds) throw error;
         log.warn(color.dim(`Failed to parse stone "${file}": ${error}`));
       }
     }
@@ -154,28 +158,81 @@ export class StoneManager {
     if (!existsSync(this.releasedPath)) return [];
 
     const entries = await readdir(this.releasedPath, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    return entries
+      .filter((entry) => entry.isDirectory() && RELEASE_TIMESTAMP_PATTERN.test(entry.name))
+      .map((entry) => entry.name);
   }
 
-  async getAllTrackedCommitHashes(): Promise<Set<string>> {
+  async getTrackedCommitPackages(): Promise<Map<string, Set<string>>> {
     const pending = await this.list();
-    const hashes = pending.flatMap((stone) => stone.commits ?? []).map((commit) => commit.hash);
-    return new Set(hashes);
-  }
+    const tracked = new Map<string, Set<string>>();
 
-  async listAllStones(): Promise<Stone[]> {
-    const pending = await this.list();
-    const timestamps = await this.listReleasedTimestamps();
-    const released = await Promise.all(timestamps.map((t) => this.getReleasedStones(t)));
-    return [...pending, ...released.flat()];
+    for (const commit of pending.flatMap((stone) => stone.commits ?? [])) {
+      const covered = tracked.get(commit.hash) ?? new Set<string>();
+      for (const name of commit.packages) {
+        covered.add(name);
+      }
+      tracked.set(commit.hash, covered);
+    }
+
+    return tracked;
   }
 
   getFilePath(id: string): string {
-    return join(this.stonesPath, `${id}.json`);
+    const validId = this.validateId(id);
+    return this.resolveChildPath(
+      this.stonesPath,
+      `${validId}.json`,
+      `Stone path must be a direct child of the stones directory: ${id}`,
+    );
+  }
+
+  getFilePaths(stones: readonly Stone[]): string[] {
+    return stones.map((stone) => this.getFilePath(stone.id));
   }
 
   private createTimestamp(): string {
     return new Date().toISOString().replace(/[:.]/g, "-");
+  }
+
+  private getArchivePath(timestamp: string): string {
+    if (!RELEASE_TIMESTAMP_PATTERN.test(timestamp)) {
+      throw new Error(`Invalid released stone timestamp "${timestamp}"`);
+    }
+
+    return this.resolveChildPath(
+      this.releasedPath,
+      timestamp,
+      `Released stone archive must be a direct child of the released directory: ${timestamp}`,
+    );
+  }
+
+  private resolveChildPath(parentDir: string, name: string, message: string): string {
+    const parent = resolve(parentDir);
+    const childPath = resolve(parent, name);
+
+    if (dirname(childPath) !== parent) {
+      throw new Error(message);
+    }
+
+    return childPath;
+  }
+
+  private validateId(id: string): string {
+    if (!STONE_ID_PATTERN.test(id)) {
+      throw new Error(`Invalid stone ID "${id}"`);
+    }
+    return id;
+  }
+
+  private toStoneId(file: string): string {
+    const id = file.slice(0, -".json".length);
+    if (STONE_ID_PATTERN.test(id)) return id;
+
+    throw new Exit(
+      `Invalid stone ID "${id}" from stone file ${file} in ${this.stonesPath}`,
+      "Remove or rename the file; stone files must match <seq>-<hash>.json",
+    );
   }
 
   private async ensureStorageExists(): Promise<void> {
