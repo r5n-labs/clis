@@ -1,0 +1,28 @@
+{
+  "commits": [
+    {
+      "body": "Applies every actionable finding from the post-merge reviews of the\n#29-#34 stack.\n\nsisyphus:\n- release-pr stages release-owned files before hashing, so newly created\n  changelogs hash as tracked and publish-only no longer wedges on the\n  recorded sourceHash; the committed tree carries the exact hashed state.\n- sis version routes on a real TTY, so flag-only invocations fail fast in\n  CI instead of opening the package multiselect, and a terminal session\n  prompts for a missing message; sis pr intersects each commit's coverage\n  with the selected packages so narrowed stones no longer consume other\n  packages' commits; corrupt stone files fail with the file path named;\n  snapshot labels render the pinned version; schema drops nested required\n  arrays that contradicted deep-merged partial configs; roll snapshots\n  the config via ConfigManager.path; --abort documented.\n- Templates: ledger cache re-keyed sha-free so workflow_dispatch recovery\n  restores the ledger and resumes; checkout pins the merge commit; ledger\n  paths resolved via git rev-parse; GitLab keeps non-443 ports and fails\n  loudly on a missing NPM_TOKEN. The repo workflow resumes an active\n  ledger instead of dying at the active-release guard.\n\ncore: the run() catch now covers the interactive path; interactive-menu\nExits render cause chains via a shared helper; repeated flags report the\ncanonical long name; Exit's default exit code and cause rendering are\ndocumented.\n\natlas: multiline single-quoted and backtick dotenv values parse with Bun\nparity; env-file parse errors name the file; run rejects swallowed global\nflags with the passthrough hint; export validates --profile like run and\nrefuses --stdout with --out; deliberate parser divergences documented.\n\ntools: failure reports include captured stderr/stdout; the manifest is\nrestored even when re-reading it fails; concurrent-change aborts name the\nrecovery command; a failed restore also removes the packed artifact; dead\ntag option deleted; tools joins the type-check fan-out with its own\ntsconfig; argument parsing gains tests and fixtures ignore global git\nsigning config.\n\nFull suite: 640 tests pass (was 590), type-check clean across all five\nworkspaces, builds pass.",
+      "hash": "3c1c836",
+      "message": "close post-release review findings across core, atlas, tools, and sisyphus",
+      "packages": [
+        "@r5n/atlas",
+        "@r5n/cli-core",
+        "@r5n/sisyphus",
+        "@r5n/tools"
+      ],
+      "subject": "fix: close post-release review findings across core, atlas, tools, and sisyphus",
+      "type": "fix"
+    }
+  ],
+  "dependency": [
+    "@r5n/hydra"
+  ],
+  "id": "0001-8229d4b5",
+  "message": "Bug fixes",
+  "patch": [
+    "@r5n/atlas",
+    "@r5n/cli-core",
+    "@r5n/sisyphus",
+    "@r5n/tools"
+  ]
+}
