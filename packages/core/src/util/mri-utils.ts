@@ -15,6 +15,8 @@ export type GlobalParseResult = { command: string | undefined; flags: ParsedArgs
 
 export type CommandParseResult = { args: ParsedArgs; rawPositionals: string[] };
 
+const SHORT_FLAG_LENGTH = 1;
+
 export function toKebabCase(str: string): string {
   return str.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
 }
@@ -39,13 +41,22 @@ export function buildMriOptions(argDefs: Record<string, ArgDefinition>): MriOpti
   return opts;
 }
 
+function resolveFlagToken(key: string, argDefs: Record<string, ArgDefinition>): string {
+  if (key in argDefs) return `--${toKebabCase(key)}`;
+
+  const canonical = Object.entries(argDefs).find(([, def]) => def.alias === key)?.[0];
+  if (canonical) return `--${toKebabCase(canonical)}`;
+
+  return key.length === SHORT_FLAG_LENGTH ? `-${key}` : `--${toKebabCase(key)}`;
+}
+
 export function convertNumbers(
   args: Record<string, string | boolean>,
   argDefs: Record<string, ArgDefinition>,
 ): ParsedArgs {
   for (const [key, value] of Object.entries(args)) {
     if (Array.isArray(value)) {
-      throw new Exit(`--${toKebabCase(key)} can only be provided once`);
+      throw new Exit(`${resolveFlagToken(key, argDefs)} can only be provided once`);
     }
   }
 
@@ -75,7 +86,10 @@ export function parseGlobalArgs(argv: string[], globalArgs: Record<string, ArgDe
   const cmdIndex = command ? argv.indexOf(command) : -1;
 
   const { _, ...stringFlags } = parsed;
-  const flags = convertNumbers(stringFlags as Record<string, string | boolean>, globalArgs);
+  const globalFlags = Object.fromEntries(
+    Object.entries(stringFlags).filter(([key]) => key in globalArgs || key in opts.alias),
+  );
+  const flags = convertNumbers(globalFlags as Record<string, string | boolean>, globalArgs);
 
   return { command, flags, restArgs: cmdIndex >= 0 ? argv.slice(cmdIndex + 1) : [] };
 }

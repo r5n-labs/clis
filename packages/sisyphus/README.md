@@ -99,6 +99,7 @@ sisyphus roll --resume
 - `--preview` — write changelogs, show them, then offer to revert
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
 - `--resume` — reconcile and continue the active incomplete release
+- `--abort` — abandon the incomplete release if nothing external has started; releases with external progress must use `--resume`
 - `-d, --dryRun`, `-y, --yes`
 
 Provider releases require tags to be pushed to the same repository first, so normal releases must enable `--tags --push --createRelease`; publish-only releases require `--tags --createRelease` and push those exact tags before creating releases.

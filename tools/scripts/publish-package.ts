@@ -8,13 +8,13 @@ const DRY_RUN_FLAG = "--dry-run";
 const FAILURE_EXIT_CODE = 1;
 const USAGE = `Usage: bun ./publish-package.ts ./packages/hydra [${DRY_RUN_FLAG}]`;
 
-type PublishArguments = { dryRun: boolean; packageDir: string };
+export type PublishArguments = { dryRun: boolean; packageDir: string };
 
 function failArgumentParsing(message: string): never {
   throw new Error(`${message}. ${USAGE}`);
 }
 
-function parseArguments(argv: readonly string[]): PublishArguments {
+export function parseArguments(argv: readonly string[]): PublishArguments {
   let dryRun = false;
   let packageDir: string | undefined;
 
@@ -40,8 +40,20 @@ function getExitCode(error: unknown): number {
     : FAILURE_EXIT_CODE;
 }
 
+function readCapturedOutput(error: unknown, stream: "stderr" | "stdout"): string {
+  if (typeof error !== "object" || error === null || !(stream in error)) return "";
+  const value = (error as Record<string, unknown>)[stream];
+  if (typeof value === "string") return value.trim();
+  if (value instanceof Uint8Array) return new TextDecoder().decode(value).trim();
+  return "";
+}
+
 function reportFailure(error: unknown): void {
   console.error(error instanceof Error ? error.message : String(error));
+  for (const stream of ["stderr", "stdout"] as const) {
+    const output = readCapturedOutput(error, stream);
+    if (output) console.error(output);
+  }
   if (error instanceof AggregateError) for (const inner of error.errors) reportFailure(inner);
 }
 

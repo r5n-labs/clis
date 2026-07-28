@@ -27,10 +27,10 @@ export class VersionCalculator {
     return VersionCalculator.bumpBase(baseVersion, bump);
   }
 
-  static formatLabel(name: string, version: string, bump: BumpType, tag?: string): string {
-    const newVersion = VersionCalculator.bump(version, bump, tag);
+  static formatLabel(name: string, version: string, bump: BumpType, tag?: string, newVersion?: string): string {
+    const nextVersion = newVersion ?? VersionCalculator.bump(version, bump, tag);
     const emoji = BUMP_EMOJI[bump];
-    return `${name}@${version} => ${newVersion} ${emoji}`;
+    return `${name}@${version} => ${nextVersion} ${emoji}`;
   }
 
   private static formatSnapshot(tag?: string): string {

@@ -9,6 +9,20 @@ import { findDependencyPackages } from "../utils";
 
 const DESCRIPTION_PREVIEW_LENGTH = 100;
 
+export function intersectCommitPackages(
+  commits: readonly CommitInfo[] | undefined,
+  selected: readonly string[],
+): readonly CommitInfo[] | undefined {
+  if (!commits) return undefined;
+
+  const selectedSet = new Set(selected);
+  const narrowed = commits
+    .map((commit) => ({ ...commit, packages: commit.packages.filter((name) => selectedSet.has(name)) }))
+    .filter((commit) => commit.packages.length > 0);
+
+  return narrowed.length > 0 ? narrowed : undefined;
+}
+
 const prArgs = args({
   bump: { alias: "b", description: "Explicit bump type (major/minor/patch)", type: "string" },
   dryRun: { alias: "d", default: false, description: "Preview without writing", type: "boolean" },
@@ -214,7 +228,7 @@ export class PrCommand extends BaseCommand {
     commits: readonly CommitInfo[] | undefined;
   }): StoneData {
     const { allPackages, bump, commits, description, message, packages } = options;
-    const data: StoneData = { commits, description, message };
+    const data: StoneData = { commits: intersectCommitPackages(commits, packages), description, message };
 
     if (bump === BumpType.Major) data.major = packages;
     else if (bump === BumpType.Minor) data.minor = packages;

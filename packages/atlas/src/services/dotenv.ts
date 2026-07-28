@@ -3,6 +3,9 @@ export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ESCAPE_PAIR_SIZE = 2;
 const FIRST_VALUE_CHARACTER_INDEX = 1;
 const NOT_FOUND_INDEX = -1;
+const QUOTE_CHARACTERS = ['"', "'", "`"] as const;
+
+type QuoteCharacter = (typeof QUOTE_CHARACTERS)[number];
 
 type MultilineValue = { endIndex: number; value: string };
 
@@ -28,7 +31,7 @@ export function parseDotenv(input: string): Record<string, string> {
     }
 
     const value = body.slice(equalsIndex + 1).trim();
-    const multiline = readMultilineDoubleQuotedValue(value, rawLine, lines, index);
+    const multiline = readMultilineQuotedValue(value, rawLine, lines, index);
     if (multiline) {
       env[key] = multiline.value;
       index = multiline.endIndex;
@@ -62,50 +65,53 @@ export function serializeDotenv(env: Record<string, string>): string {
     .concat("\n");
 }
 
-function readMultilineDoubleQuotedValue(
+function readMultilineQuotedValue(
   value: string,
   rawLine: string,
   lines: string[],
   lineIndex: number,
 ): MultilineValue | undefined {
-  if (!value.startsWith('"')) return undefined;
-  if (findUnescapedQuote(value, '"', FIRST_VALUE_CHARACTER_INDEX) !== NOT_FOUND_INDEX) return undefined;
+  const quote = toQuoteCharacter(value[0]);
+  if (quote === undefined) return undefined;
+  if (findUnescapedQuote(value, quote, FIRST_VALUE_CHARACTER_INDEX) !== NOT_FOUND_INDEX) return undefined;
 
-  const openingQuoteIndex = rawLine.indexOf('"');
+  const openingQuoteIndex = rawLine.indexOf(quote);
   const fragments = [rawLine.slice(openingQuoteIndex + FIRST_VALUE_CHARACTER_INDEX)];
 
   for (let index = lineIndex + 1; index < lines.length; index += 1) {
     const fragment = lines[index] ?? "";
-    const closingQuoteIndex = findUnescapedQuote(fragment, '"', 0);
+    const closingQuoteIndex = findUnescapedQuote(fragment, quote, 0);
     if (closingQuoteIndex === NOT_FOUND_INDEX) {
       fragments.push(fragment);
       continue;
     }
 
     fragments.push(fragment.slice(0, closingQuoteIndex));
-    return { endIndex: index, value: decodeDoubleQuotedValue(fragments.join("\n")) };
+    return { endIndex: index, value: decodeQuotedValue(fragments.join("\n"), quote) };
   }
 
   return undefined;
 }
 
 function parseValue(value: string): string {
-  if (value.startsWith('"')) {
-    const quoted = readQuotedValue(value, '"');
-    if (quoted !== undefined) {
-      return decodeDoubleQuotedValue(quoted);
-    }
-  }
-
-  if (value.startsWith("'")) {
-    const quoted = readQuotedValue(value, "'");
-    if (quoted !== undefined) return decodeDollarEscapes(quoted);
+  const quote = toQuoteCharacter(value[0]);
+  if (quote !== undefined) {
+    const quoted = readQuotedValue(value, quote);
+    if (quoted !== undefined) return decodeQuotedValue(quoted, quote);
   }
 
   return decodeDollarEscapes(stripInlineComment(value).trimEnd());
 }
 
-function readQuotedValue(value: string, quote: '"' | "'"): string | undefined {
+function toQuoteCharacter(character: string | undefined): QuoteCharacter | undefined {
+  return QUOTE_CHARACTERS.find((quote) => quote === character);
+}
+
+function decodeQuotedValue(value: string, quote: QuoteCharacter): string {
+  return quote === '"' ? decodeDoubleQuotedValue(value) : decodeDollarEscapes(value);
+}
+
+function readQuotedValue(value: string, quote: QuoteCharacter): string | undefined {
   const endIndex = findUnescapedQuote(value, quote, FIRST_VALUE_CHARACTER_INDEX);
   if (endIndex === NOT_FOUND_INDEX) return undefined;
 
@@ -115,17 +121,12 @@ function readQuotedValue(value: string, quote: '"' | "'"): string | undefined {
   return value.slice(FIRST_VALUE_CHARACTER_INDEX, endIndex);
 }
 
-function findUnescapedQuote(value: string, quote: '"' | "'", fromIndex: number): number {
+function findUnescapedQuote(value: string, quote: QuoteCharacter, fromIndex: number): number {
   for (let index = fromIndex; index < value.length; index += 1) {
-    if (value[index] === quote && !isEscapedQuote(value, index, quote)) return index;
+    if (value[index] === quote && !hasOddBackslashRunBefore(value, index)) return index;
   }
 
   return NOT_FOUND_INDEX;
-}
-
-function isEscapedQuote(value: string, index: number, quote: '"' | "'"): boolean {
-  if (quote === "'") return false;
-  return hasOddBackslashRunBefore(value, index);
 }
 
 function hasOddBackslashRunBefore(value: string, index: number): boolean {
@@ -217,7 +218,7 @@ function formatValue(value: string, key: string): string {
 function canUseUnquotedValue(value: string): boolean {
   if (value.includes("\n") || value.includes("\r") || value.includes("#")) return false;
   if (value.trim() !== value) return false;
-  return !value.startsWith('"') && !value.startsWith("'") && !value.startsWith("`");
+  return toQuoteCharacter(value[0]) === undefined;
 }
 
 function escapeDollarExpansions(value: string): string {

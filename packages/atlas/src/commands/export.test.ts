@@ -236,6 +236,36 @@ describe("ExportCommand", () => {
     expect(existsSync(join(project, "out.env"))).toBe(false);
   });
 
+  test.each(["", "   ", ",", " , , "])("rejects an explicitly empty profile value %j", async (profile) => {
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+
+    await expect(new ExportCommand().execute(ctx({ cwd: project, profile }))).rejects.toThrow(
+      "--profile must include at least one profile",
+    );
+    expect(existsSync(join(project, ".env.generated"))).toBe(false);
+  });
+
+  test("rejects --stdout combined with an explicit --out", async () => {
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { profiles: ["app:web"] },
+      profiles: { "app:web": { vars: { APP: "web" } } },
+    });
+
+    const error = await new ExportCommand().execute(ctx({ cwd: project, out: ".env.prod", stdout: true })).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(Exit);
+    expect((error as Exit).message).toBe("--stdout cannot be combined with --out");
+    expect(existsSync(join(project, ".env.prod"))).toBe(false);
+  });
+
   test("writes raw dotenv content to stdout", async () => {
     const project = join(tmpRoot, "repo");
     writeJson(join(project, ".atlas", "config.json"), {

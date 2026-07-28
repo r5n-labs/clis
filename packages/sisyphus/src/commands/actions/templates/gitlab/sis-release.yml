@@ -12,13 +12,18 @@ release:
     - apk add --no-cache git nodejs npm
     - rm -f .git/sisyphus/release/.write.lock .git/sisyphus/release/.write.lock.*.owner .git/sisyphus/release/.write.lock.*.claim
     - npm install --global npm@11.5.1
-    - npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+    - |
+      if [ -n "$NPM_TOKEN" ]; then
+        npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+      else
+        echo "NPM_TOKEN is not set; npm publishing will fail without registry authentication" >&2
+      fi
     # release.tags / release.push need a push credential: CI_JOB_TOKEN cannot push, and Sisyphus
     # rejects the token-embedded checkout URL. Set SIS_PUSH_TOKEN (project access token with
     # write_repository scope) as a masked CI/CD variable to enable tag and branch pushes.
     - |
       if [ -n "$SIS_PUSH_TOKEN" ]; then
-        git remote set-url origin "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+        git remote set-url origin "${CI_SERVER_URL}/${CI_PROJECT_PATH}.git"
         git config credential.helper '!f() { echo "username=oauth2"; echo "password=${SIS_PUSH_TOKEN}"; }; f'
       fi
   rules:

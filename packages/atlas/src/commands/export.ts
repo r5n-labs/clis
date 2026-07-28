@@ -5,9 +5,10 @@ import { args, color, Exit, log } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig, resolveAtlasEnv } from "../services/config";
 import { serializeDotenv } from "../services/dotenv";
-import { resolvePath, splitCsv } from "../utils";
+import { parseProfileOption, resolvePath } from "../utils";
 
 const PRIVATE_FILE_MODE = 0o600;
+const PROFILE_USAGE = "Usage: atlas export --profile <name,...>";
 
 const exportArgs = args({
   cwd: { description: "Working directory override", type: "string" },
@@ -25,16 +26,25 @@ export class ExportCommand extends BaseCommand {
   args = exportArgs;
 
   async execute(ctx: ExportCtx): Promise<void> {
+    if (ctx.args.stdout && ctx.args.out !== undefined) {
+      throw new Exit(
+        "--stdout cannot be combined with --out",
+        "Use --stdout to print, or --out <path> to write a file",
+      );
+    }
+
+    const profiles = parseProfileOption(ctx.args.profile, PROFILE_USAGE);
     const cwd = ctx.args.cwd ?? process.cwd();
     const loaded = loadAtlasConfig({ cwd });
-    const resolved = resolveAtlasEnv(loaded, { profiles: splitCsv(ctx.args.profile) });
+    const resolved = resolveAtlasEnv(loaded, { profiles });
     const body = serializeDotenv(resolved.env);
-    const outputPath = ctx.args.out ? resolvePath(ctx.args.out, loaded.cwd) : resolved.exportFile;
 
     if (ctx.args.stdout) {
       process.stdout.write(body);
       return;
     }
+
+    const outputPath = ctx.args.out ? resolvePath(ctx.args.out, loaded.cwd) : resolved.exportFile;
 
     await mkdir(dirname(outputPath), { recursive: true });
     await writeOutput(outputPath, body, ctx.args.force);

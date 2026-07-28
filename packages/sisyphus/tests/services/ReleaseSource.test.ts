@@ -37,6 +37,31 @@ describe("hashReleaseSource", () => {
     expect(await hashReleaseSource(".sisyphus")).not.toBe(initial);
   });
 
+  test("hashes new files as tracked once staged, matching the committed state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sisyphus-staged-source-"));
+    roots.push(root);
+    mkdirSync(join(root, ".sisyphus"), { recursive: true });
+    writeFileSync(join(root, "source.ts"), "export const value = 1;\n");
+    await Bun.$`git init -q -b main`.cwd(root).quiet();
+    await Bun.$`git config user.email release@test.local`.cwd(root).quiet();
+    await Bun.$`git config user.name "Sisyphus Release Test"`.cwd(root).quiet();
+    await Bun.$`git add -A`.cwd(root).quiet();
+    await Bun.$`git commit -q -m init`.cwd(root).quiet();
+    process.chdir(root);
+
+    writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n");
+    const untrackedHash = await hashReleaseSource(".sisyphus");
+
+    await Bun.$`git add CHANGELOG.md`.cwd(root).quiet();
+    const stagedHash = await hashReleaseSource(".sisyphus");
+
+    await Bun.$`git commit -q -m release`.cwd(root).quiet();
+    const committedHash = await hashReleaseSource(".sisyphus");
+
+    expect(stagedHash).not.toBe(untrackedHash);
+    expect(committedHash).toBe(stagedHash);
+  });
+
   test("hashes tracked symlink targets without following them", async () => {
     const root = mkdtempSync(join(tmpdir(), "sisyphus-symlink-source-"));
     roots.push(root);

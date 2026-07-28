@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
+import { version } from "../../package.json";
 import type { AtlasConfig } from "../types";
 import { buildRunEnvironment, RunCommand } from "./run";
 
@@ -60,6 +61,18 @@ function spawnAtlas(args: string[]) {
     stdin: "ignore",
     stdout: "ignore",
   });
+}
+
+async function runAtlas(args: string[]): Promise<{ exitCode: number; stdout: string }> {
+  const child = Bun.spawn([process.execPath, "src/cli.ts", ...args], {
+    cwd: ATLAS_ROOT,
+    stderr: "ignore",
+    stdin: "ignore",
+    stdout: "pipe",
+  });
+  const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+
+  return { exitCode, stdout };
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -212,6 +225,54 @@ describe("RunCommand", () => {
     const child = spawnAtlas(["run", "--watch", "--", process.execPath, "-e", ""]);
 
     expect(await child.exited).toBe(1);
+  });
+
+  test.each([
+    ["version", "Unknown option: --version"],
+    ["v", "Unknown option: -v"],
+    ["interactive", "Unknown option: --interactive"],
+    ["i", "Unknown option: -i"],
+  ])("rejects the global %s flag consumed from the child argv instead of dropping it", async (flag, message) => {
+    const output = join(tmpRoot, "spawned.txt");
+    const execution = new RunCommand().execute(
+      ctx({
+        command: [process.execPath, "-e", `await Bun.write(${JSON.stringify(output)}, "spawned")`],
+        extraArgs: { [flag]: true },
+      }),
+    );
+
+    const error = await execution.then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(Exit);
+    expect((error as Exit).message).toBe(message);
+    expect((error as Exit).hint).toContain("after --");
+    expect(existsSync(output)).toBe(false);
+  });
+
+  test("returns nonzero from the CLI when a global flag precedes the child command", async () => {
+    const child = spawnAtlas(["run", "echo", "a", "--version", "b"]);
+
+    expect(await child.exited).toBe(1);
+  });
+
+  test("keeps the global version flag working without positionals", async () => {
+    const { exitCode, stdout } = await runAtlas(["-v"]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(version);
+  });
+
+  test("passes child flags through unchanged after the -- delimiter", async () => {
+    const project = join(tmpRoot, "repo");
+    writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
+
+    const { exitCode, stdout } = await runAtlas(["run", "--cwd", project, "--", "echo", "a", "--version", "b"]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout.trim()).toBe("a --version b");
   });
 
   test.each(["SIGTERM", "SIGINT"] as const)(

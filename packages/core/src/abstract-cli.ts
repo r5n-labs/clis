@@ -5,7 +5,7 @@ import type { ConfigManager } from "./config-manager";
 import { Exit } from "./exit";
 import { intro, log, outro } from "./prompts";
 import type { CliMetadata } from "./types";
-import { color, HelpFormatter, handleUnknownItem, parseGlobalArgs } from "./util";
+import { color, HelpFormatter, handleUnknownItem, logErrorCauses, parseGlobalArgs } from "./util";
 
 const DEFAULT_METADATA: Required<Omit<CliMetadata, "bin" | "version" | "description" | "onError">> = {
   clearOnStart: true,
@@ -15,8 +15,6 @@ const DEFAULT_METADATA: Required<Omit<CliMetadata, "bin" | "version" | "descript
   name: "CLI",
   promptMessage: "What would you like to do?",
 };
-
-const MAX_ERROR_CAUSE_DEPTH = 4;
 
 export abstract class AbstractCLI {
   protected commands: Map<string, AbstractCommand<any>> = new Map();
@@ -62,7 +60,7 @@ export abstract class AbstractCLI {
       const { command, flags, restArgs } = parseGlobalArgs(argv, this.globalArgs);
 
       if (flags.version && !command) return console.log(this.help.version());
-      if (flags.interactive && !command) return this.runInteractive();
+      if (flags.interactive && !command) return await this.runInteractive();
       if (!command) return console.log(this.help.global());
       if (command === "help") return this.printHelpFor(restArgs[0]);
 
@@ -151,31 +149,17 @@ export abstract class AbstractCLI {
     if (error instanceof Exit) {
       log.warn(color.yellow(error.message));
       if (error.hint) log.info(color.dim(error.hint));
-      this.logErrorCauses(error);
+      logErrorCauses(error);
       process.exit(error.exitCode);
     }
 
     if (error instanceof Error) {
       log.error(color.red(error.message));
-      this.logErrorCauses(error);
+      logErrorCauses(error);
       process.exit(1);
     }
 
     console.error(color.red("Error:"), error);
     process.exit(1);
-  }
-
-  private logErrorCauses(error: Error, depth = 0): void {
-    if (depth >= MAX_ERROR_CAUSE_DEPTH) return;
-
-    const nested = [
-      ...(error instanceof AggregateError ? error.errors : []),
-      ...(error.cause !== undefined ? [error.cause] : []),
-    ];
-    for (const item of nested) {
-      log.info(color.dim(`caused by: ${item instanceof Error ? item.message : String(item)}`));
-      if (item instanceof Exit && item.hint) log.info(color.dim(`  ${item.hint}`));
-      if (item instanceof Error) this.logErrorCauses(item, depth + 1);
-    }
   }
 }

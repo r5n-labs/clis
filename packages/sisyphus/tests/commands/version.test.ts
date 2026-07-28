@@ -15,7 +15,9 @@ type CtxPositionals = Record<string, string | undefined>;
 type PackageSelection = { major: string[]; minor: string[]; patch: string[] };
 type InteractiveHarness = {
   createStone: (ctx: ExecuteCtx, data: StoneData, packages: Map<string, Package>) => Promise<void>;
+  isInteractiveSession: (ctx: ExecuteCtx) => boolean;
   promptDescription: () => Promise<string | undefined>;
+  promptMessage: () => Promise<string>;
   selectPackagesInteractive: (
     packages: Map<string, Package>,
     packageNames: readonly string[],
@@ -176,10 +178,23 @@ describe("VersionCommand non-interactive flags", () => {
     expect(readStones()).toEqual([]);
   });
 
-  test("missing message fails fast instead of prompting", async () => {
-    const ctx = makeCtx(config, { bump: "patch", yes: true });
+  test("missing message fails fast in a non-interactive session", async () => {
+    const ctx = makeCtx(config, { bump: "patch", yes: true }, { interactive: false });
 
-    await expect(new VersionCommand().execute(ctx)).rejects.toThrow("Message is required in non-interactive mode");
+    await expect(new VersionCommand().execute(ctx)).rejects.toThrow("Message is required");
+  });
+
+  test("missing message is prompted in a TTY session with manual selection", async () => {
+    const command = new VersionCommand();
+    const harness = command as unknown as InteractiveHarness;
+    harness.isInteractiveSession = () => true;
+    harness.promptMessage = async () => "fix: prompted";
+
+    await command.execute(makeCtx(config, { patch: "@fixture/foo", yes: true }));
+
+    const [stone] = readStones();
+    expect(stone?.message).toBe("fix: prompted");
+    expect(stone?.patch).toEqual(["@fixture/foo"]);
   });
 
   test("invalid --bump type fails with a clear error", async () => {
@@ -195,8 +210,8 @@ describe("VersionCommand non-interactive flags", () => {
   });
 
   test("--bump without --all or --yes fails fast instead of falling into the interactive prompts", async () => {
-    // ctx.interactive is true whenever no positionals are passed (it is not TTY-based),
-    // so `sisyphus version --bump patch --message "x"` must still route to the direct path.
+    // Manual selection flags must route to the direct path even when ctx.interactive stays true,
+    // so `sisyphus version --bump patch --message "x"` never falls into the prompts.
     const ctx = makeCtx(config, { bump: "patch", message: "release: x" }, { interactive: true });
 
     await expect(new VersionCommand().execute(ctx)).rejects.toThrow("--bump selects every (filtered) package");
@@ -251,6 +266,65 @@ describe("VersionCommand non-interactive flags", () => {
     expect([...(stone?.patch ?? [])].sort()).toEqual(["@fixture/bar", "@fixture/foo"]);
   });
 
+  test("message-only invocation without a TTY routes to the direct path instead of the multiselect", async () => {
+    const cliPath = join(import.meta.dir, "../../src/cli.ts");
+    const subprocess = Bun.spawn([process.execPath, cliPath, "version", "--message", "release: headless"], {
+      cwd: root,
+      stderr: "pipe",
+      stdin: "ignore",
+      stdout: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(subprocess.stdout).text(),
+      new Response(subprocess.stderr).text(),
+      subprocess.exited,
+    ]);
+
+    expect(exitCode).not.toBe(0);
+    expect(`${stdout}\n${stderr}`).toContain("At least one of --major");
+    expect(`${stdout}\n${stderr}`).not.toContain("Select packages");
+    expect(readStones()).toEqual([]);
+  });
+
+  test("message with package selection and no TTY creates the stone without prompt output", async () => {
+    const cliPath = join(import.meta.dir, "../../src/cli.ts");
+    const subprocess = Bun.spawn(
+      [process.execPath, cliPath, "version", "--message", "release: headless direct", "--patch", "@fixture/foo"],
+      { cwd: root, stderr: "pipe", stdin: "ignore", stdout: "pipe" },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(subprocess.stdout).text(),
+      new Response(subprocess.stderr).text(),
+      subprocess.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(`${stdout}\n${stderr}`).not.toContain("Select packages");
+    expect(`${stdout}\n${stderr}`).not.toContain("Create this stone?");
+    const [stone] = readStones();
+    expect(stone?.message).toBe("release: headless direct");
+    expect(stone?.patch).toEqual(["@fixture/foo"]);
+  });
+
+  test("bump flags without a message and no TTY fail fast with the message error", async () => {
+    const cliPath = join(import.meta.dir, "../../src/cli.ts");
+    const subprocess = Bun.spawn([process.execPath, cliPath, "version", "--patch", "@fixture/foo"], {
+      cwd: root,
+      stderr: "pipe",
+      stdin: "ignore",
+      stdout: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(subprocess.stdout).text(),
+      new Response(subprocess.stderr).text(),
+      subprocess.exited,
+    ]);
+
+    expect(exitCode).not.toBe(0);
+    expect(`${stdout}\n${stderr}`).toContain("Message is required");
+    expect(readStones()).toEqual([]);
+  });
+
   test("--all without --bump exits nonzero with closed stdin", async () => {
     const cliPath = join(import.meta.dir, "../../src/cli.ts");
     const subprocess = Bun.spawn([process.execPath, cliPath, "version", "--all", "--message", "release: x"], {
@@ -299,7 +373,7 @@ describe("VersionCommand non-interactive flags", () => {
     expect(readStones()).toEqual([]);
   });
 
-  test("rejects --from-commits with manual selections, --all, or messages", async () => {
+  test("rejects --fromCommits with manual selections, --all, or messages", async () => {
     const conflictingArgs: CtxArgs[] = [
       { bump: "patch", fromCommits: true },
       { all: true, fromCommits: true },
@@ -309,7 +383,7 @@ describe("VersionCommand non-interactive flags", () => {
 
     for (const args of conflictingArgs) {
       await expect(new VersionCommand().execute(makeCtx(config, args))).rejects.toThrow(
-        "--from-commits cannot be combined",
+        "--fromCommits cannot be combined",
       );
     }
 
@@ -319,18 +393,18 @@ describe("VersionCommand non-interactive flags", () => {
       { interactive: false, positionals: { message: "release: x" } },
     );
     await expect(new VersionCommand().execute(positionalMessageCtx)).rejects.toThrow(
-      "--from-commits cannot be combined",
+      "--fromCommits cannot be combined",
     );
   });
 
-  test("accepts --from-commits with filter, normalized tag, dryRun, and yes, then fails fast without a baseline", async () => {
+  test("accepts --fromCommits with filter, normalized tag, dryRun, and yes, then fails fast without a baseline", async () => {
     const ctx = makeCtx(config, { dryRun: true, filter: "foo", fromCommits: true, tag: " beta ", yes: true });
 
     await expect(new VersionCommand().execute(ctx)).rejects.toThrow("No release baseline recorded");
     expect(readStones()).toEqual([]);
   });
 
-  test("--from-commits with a recorded baseline reports no conventional commits instead of failing", async () => {
+  test("--fromCommits with a recorded baseline reports no conventional commits instead of failing", async () => {
     await runGit(root, ["init"]);
     await runGit(root, ["config", "user.name", "Fixture"]);
     await runGit(root, ["config", "user.email", "fixture@example.com"]);
@@ -422,6 +496,7 @@ describe("VersionCommand non-interactive flags", () => {
     let availablePackageNames: readonly string[] = [];
     let stoneData: StoneData | undefined;
 
+    harness.isInteractiveSession = () => true;
     harness.selectPackagesInteractive = async (_packages, packageNames) => {
       availablePackageNames = packageNames;
       return { major: [], minor: [], patch: [...packageNames] };

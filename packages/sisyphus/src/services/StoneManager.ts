@@ -54,11 +54,19 @@ export class StoneManager {
     }
 
     const content = await readFile(filePath, "utf-8");
-    const json: StoneJson = JSON.parse(content);
+    const json = this.parseStoneJson(content, filePath);
     if (json.id !== id) {
       throw new Error(`Stone file ID mismatch: expected "${id}", found "${String(json.id)}"`);
     }
     return Stone.fromJson(json);
+  }
+
+  private parseStoneJson(content: string, filePath: string): StoneJson {
+    try {
+      return JSON.parse(content);
+    } catch {
+      throw new Exit(`Failed to parse stone file ${filePath}`, "Remove or fix the file");
+    }
   }
 
   async save(stone: Stone): Promise<void> {
@@ -139,8 +147,9 @@ export class StoneManager {
     for (const file of jsonFiles) {
       try {
         const fileId = this.validateId(file.slice(0, -".json".length));
-        const content = await readFile(join(archiveDir, file), "utf-8");
-        const json: StoneJson = JSON.parse(content);
+        const stonePath = join(archiveDir, file);
+        const content = await readFile(stonePath, "utf-8");
+        const json = this.parseStoneJson(content, stonePath);
         if (json.id !== fileId) {
           throw new Error(`Stone file ID mismatch: expected "${fileId}", found "${String(json.id)}"`);
         }
