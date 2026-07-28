@@ -1,5 +1,6 @@
 import mri from "mri";
 import type { ArgDefinition, ArgValue, PositionalDefinition } from "../command";
+import { Exit } from "../exit";
 
 export type MriOptions = {
   alias: Record<string, string>;
@@ -42,6 +43,12 @@ export function convertNumbers(
   args: Record<string, string | boolean>,
   argDefs: Record<string, ArgDefinition>,
 ): ParsedArgs {
+  for (const [key, value] of Object.entries(args)) {
+    if (Array.isArray(value)) {
+      throw new Exit(`--${toKebabCase(key)} can only be provided once`);
+    }
+  }
+
   const result: ParsedArgs = { ...args };
 
   for (const [key, def] of Object.entries(argDefs)) {
