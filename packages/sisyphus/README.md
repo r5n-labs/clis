@@ -38,18 +38,39 @@ By default `roll` only updates files and creates the release commit. Publishing,
 Create a stone. Interactive when run without positionals; non-interactive with a message and package lists:
 
 ```bash
-sisyphus version "feat: add auth" -m @org/auth -p @org/core
-sisyphus version "fix: rc fixes" -p @org/api -t beta
-sisyphus version --fromCommits
+# Interactive
+sisyphus version
+
+# Apply one bump to every filtered package without prompts
+sisyphus version --bump minor --all --filter @org/core --message "feat: update core" --yes
+
+# Assign packages to bump groups without prompts
+sisyphus version --minor @org/core,@org/api --patch @org/utils --message "feat: update workspace" --yes
+
+# Generate stones from conventional commits
+sisyphus version --fromCommits --filter @org/core --dryRun
+
+# Create a tagged prerelease stone
+sisyphus version --bump patch --all --filter @org/core --message "fix: beta repair" --tag beta --yes
 ```
 
-- `-M, --major` / `-m, --minor` / `-p, --patch` — comma-separated package lists
-- `--fromCommits` — generate stones from conventional commits since the last release (`lastStone` in config; `commits.skip` filters apply)
-- `-t, --tag` — prerelease tag (e.g. `beta`), applied to the computed versions
-- `-f, --filter` — filter workspace packages by name
-- `-d, --dryRun`, `-y, --yes`
+**Options:**
+- `-a, --all` — Select every filtered package (requires `--bump`)
+- `-b, --bump` — Apply `major`, `minor`, or `patch` to every selected package
+- `-d, --dryRun` — Preview without writing stones
+- `-f, --filter` — Constrain interactive choices, explicit package lists, or commit analysis by package name
+- `--fromCommits` — Generate stones from conventional commits instead of manual selections
+- `-M, --major` — Comma-separated packages receiving a major bump
+- `--message` — Stone message; required for non-interactive manual selection
+- `-m, --minor` — Comma-separated packages receiving a minor bump
+- `-p, --patch` — Comma-separated packages receiving a patch bump
+- `-t, --tag` — Prerelease tag (alpha, beta, rc, etc.)
+- `-y, --yes` — Skip confirmation
 
 Packages that depend on the bumped ones are picked up automatically and get a dependency (patch-level) bump.
+
+The message and optional description can also be supplied as positional arguments. Do not combine a positional message
+with `--message`.
 
 ### `sisyphus check`
 
@@ -61,11 +82,12 @@ Manage pending stones: `list` (`-j`, `-v`), `show <id>` (`-j`), `edit <id> -m "n
 
 ### `sisyphus roll`
 
-Execute a release from all pending stones: bump versions, generate changelogs, delete the stones, commit, then optionally tag, publish, push, and create a provider release. Any step failure rolls back the created commit, tags, and file changes and restores the stones.
+Execute a release from all pending stones: bump versions, generate changelogs, delete the stones, commit, then optionally tag, push, publish, and create provider releases. Failures before an external operation roll back the commit, tags, file changes, and stones. Once an external operation starts, local state and a durable release ledger are preserved so the release can be reconciled and resumed.
 
 ```bash
 sisyphus roll --dryRun
 sisyphus roll -n -t -p -y
+sisyphus roll --resume
 ```
 
 - `-c, --changelog` — generate changelogs (default from `changelog.generate`)
@@ -76,9 +98,16 @@ sisyphus roll -n -t -p -y
 - `--noCommit` — skip the release commit (also disables tags, push, and provider release)
 - `--preview` — write changelogs, show them, then offer to revert
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
+- `--resume` — reconcile and continue the active incomplete release
 - `-d, --dryRun`, `-y, --yes`
 
-Publishing builds each package (`bun run build`) and runs `npm publish --tag <tag> --access public` in its directory. Private packages (`"private": true`) are skipped. Before publishing, each `package.json` is rewritten to a clean manifest: `workspace:` specifiers are resolved against the actual workspace versions (`workspace:*` pins the exact version, `workspace:^`/`workspace:~` become ranges), `catalog:` specifiers are resolved from the root `catalog`/`catalogs`, and `devDependencies` are stripped. The original file text is restored afterward, even if publishing fails.
+Provider releases require tags to be pushed to the same repository first, so normal releases must enable `--tags --push --createRelease`; publish-only releases require `--tags --createRelease` and push those exact tags before creating releases.
+
+Publishing builds each public package, rewrites its `package.json` to a clean publish manifest, and packs an immutable tarball before any package is uploaded. `workspace:` specifiers are resolved against actual workspace versions (`workspace:*` pins the exact version and `workspace:^`/`workspace:~` become ranges), `catalog:` specifiers are resolved from the root `catalog`/`catalogs`, and `devDependencies` are stripped. The source manifest is restored after packing, even if preparation fails. Private packages (`"private": true`) are skipped.
+
+For releases with external operations, Sisyphus stores the plan, immutable artifacts, exact Git refs, and per-operation progress below Git's worktree-specific administrative directory. `--resume` verifies an ambiguous npm upload by SHA-512 integrity, verifies an ambiguous push from exact remote refs, and verifies provider releases by tag, title, and notes. If the external system cannot confirm the expected state, resume stops rather than repeating the operation.
+
+Npm publication requires a release commit, so it cannot be combined with `--noCommit`. Publish-only releases verify the source hash recorded by `actions release-pr`, the exact package versions, and the complete archived-stone set before creating tags or artifacts.
 
 ### `sisyphus pr`
 
@@ -111,6 +140,7 @@ Create or edit `.sisyphus/config.json`. Flag-driven when invoked directly (the i
   "tag": "latest",
   "commit": {
     "author": "r5n-bot",
+    "email": "r5n-bot@users.noreply.github.com",
     "message": "chore(release): {message}"
   },
   "changelog": {
@@ -146,7 +176,7 @@ Create or edit `.sisyphus/config.json`. Flag-driven when invoked directly (the i
 
 - `single` — version the root package instead of workspace packages
 - `tag` — npm dist-tag used when publishing
-- `commit` — release commit author/email and message template; `{message}` and `{packages}` are substituted
+- `commit` — release commit author/email and message template; `{message}` and `{packages}` are substituted; a valid `email` is required whenever `author` is set
 - `changelog` — `sections` maps conventional commit types (`feat`, `fix`, `breaking`, ...) to headings; `root` adds a combined root changelog; `packageHeader`/`rootHeader` support `{emoji}`, `{version}`, `{date}`, `{packages}`
 - `commits.skip` / `pr.skip` — filters for `version --fromCommits` and `pr`
 - `release` — defaults for the corresponding `roll` flags
