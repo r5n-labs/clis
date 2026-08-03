@@ -1,5 +1,68 @@
 # Changelog
 
+## 2026-08-03 - @r5n/atlas@0.4.1, @r5n/cli-core@0.4.3, @r5n/sisyphus@0.9.1, @r5n/tools@0.2.1, @r5n/hydra@0.9.3
+
+**Packages**
+- 🐛 `@r5n/atlas` 0.4.0 → 0.4.1
+- 🐛 `@r5n/cli-core` 0.4.2 → 0.4.3
+- 🐛 `@r5n/sisyphus` 0.9.0 → 0.9.1
+- 🐛 `@r5n/tools` 0.2.0 → 0.2.1
+- 📦 `@r5n/hydra` 0.9.2 → 0.9.3
+
+### 🪨 Bug fixes
+**Packages:** `@r5n/atlas` · `@r5n/cli-core` · `@r5n/sisyphus` · `@r5n/tools`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`3c1c836`](https://github.com/r5n-labs/clis/commit/3c1c836) fix: close post-release review findings across core, atlas, tools, and sisyphus
+  <details>
+  <summary>Details</summary>
+
+  Applies every actionable finding from the post-merge reviews of the
+  #29-#34 stack.
+  
+  sisyphus:
+  - release-pr stages release-owned files before hashing, so newly created
+    changelogs hash as tracked and publish-only no longer wedges on the
+    recorded sourceHash; the committed tree carries the exact hashed state.
+  - sis version routes on a real TTY, so flag-only invocations fail fast in
+    CI instead of opening the package multiselect, and a terminal session
+    prompts for a missing message; sis pr intersects each commit's coverage
+    with the selected packages so narrowed stones no longer consume other
+    packages' commits; corrupt stone files fail with the file path named;
+    snapshot labels render the pinned version; schema drops nested required
+    arrays that contradicted deep-merged partial configs; roll snapshots
+    the config via ConfigManager.path; --abort documented.
+  - Templates: ledger cache re-keyed sha-free so workflow_dispatch recovery
+    restores the ledger and resumes; checkout pins the merge commit; ledger
+    paths resolved via git rev-parse; GitLab keeps non-443 ports and fails
+    loudly on a missing NPM_TOKEN. The repo workflow resumes an active
+    ledger instead of dying at the active-release guard.
+  
+  core: the run() catch now covers the interactive path; interactive-menu
+  Exits render cause chains via a shared helper; repeated flags report the
+  canonical long name; Exit's default exit code and cause rendering are
+  documented.
+  
+  atlas: multiline single-quoted and backtick dotenv values parse with Bun
+  parity; env-file parse errors name the file; run rejects swallowed global
+  flags with the passthrough hint; export validates --profile like run and
+  refuses --stdout with --out; deliberate parser divergences documented.
+  
+  tools: failure reports include captured stderr/stdout; the manifest is
+  restored even when re-reading it fails; concurrent-change aborts name the
+  recovery command; a failed restore also removes the packed artifact; dead
+  tag option deleted; tools joins the type-check fan-out with its own
+  tsconfig; argument parsing gains tests and fixtures ignore global git
+  signing config.
+  
+  Full suite: 640 tests pass (was 590), type-check clean across all five
+  workspaces, builds pass.
+  </details>
+
+</details>
+
 ## 2026-07-28 - @r5n/atlas@0.4.0, @r5n/sisyphus@0.9.0, @r5n/cli-core@0.4.2, @r5n/hydra@0.9.2
 
 **Packages**

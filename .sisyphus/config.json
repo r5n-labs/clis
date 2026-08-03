@@ -43,8 +43,8 @@
   },
   "ignore": [],
   "lastStone": {
-    "commit": "28fc62d1408f47e70b3690bfb41fbfa6f30f0df4",
-    "date": "2026-07-28T17:02:03.429Z"
+    "commit": "2916c61decf072aec31198bafbb6b1cfa090aec4",
+    "date": "2026-08-03T09:04:51.461Z"
   },
   "plugins": [],
   "pr": {
@@ -85,8 +85,6 @@
   },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [
-    "0001-8229d4b5"
-  ],
+  "stones": [],
   "tag": "latest"
 }

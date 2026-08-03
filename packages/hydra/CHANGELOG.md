@@ -1,5 +1,13 @@
 # @r5n/hydra
 
+## 📦 0.9.3 (2026-08-03)
+
+### Dependency updates
+- `@r5n/atlas` 0.4.0 → 0.4.1
+- `@r5n/cli-core` 0.4.2 → 0.4.3
+- `@r5n/sisyphus` 0.9.0 → 0.9.1
+- `@r5n/tools` 0.2.0 → 0.2.1
+
 ## 🐛 0.9.2 (2026-07-28)
 
 ### 🪨 feat: harden profile and release workflows
