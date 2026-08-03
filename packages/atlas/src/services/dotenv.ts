@@ -86,6 +86,8 @@ function readMultilineQuotedValue(
       continue;
     }
 
+    if (!hasCommentOnlyTrailer(fragment, closingQuoteIndex + FIRST_VALUE_CHARACTER_INDEX)) return undefined;
+
     fragments.push(fragment.slice(0, closingQuoteIndex));
     return { endIndex: index, value: decodeQuotedValue(fragments.join("\n"), quote) };
   }
@@ -114,11 +116,15 @@ function decodeQuotedValue(value: string, quote: QuoteCharacter): string {
 function readQuotedValue(value: string, quote: QuoteCharacter): string | undefined {
   const endIndex = findUnescapedQuote(value, quote, FIRST_VALUE_CHARACTER_INDEX);
   if (endIndex === NOT_FOUND_INDEX) return undefined;
-
-  const trailing = value.slice(endIndex + FIRST_VALUE_CHARACTER_INDEX).trimStart();
-  if (trailing && !trailing.startsWith("#")) return undefined;
+  if (!hasCommentOnlyTrailer(value, endIndex + FIRST_VALUE_CHARACTER_INDEX)) return undefined;
 
   return value.slice(FIRST_VALUE_CHARACTER_INDEX, endIndex);
+}
+
+function hasCommentOnlyTrailer(value: string, fromIndex: number): boolean {
+  const trailing = value.slice(fromIndex).trimStart();
+
+  return !trailing || trailing.startsWith("#");
 }
 
 function findUnescapedQuote(value: string, quote: QuoteCharacter, fromIndex: number): number {

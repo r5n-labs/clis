@@ -89,6 +89,8 @@ Atlas reads `envFiles` with its own parser rather than Bun's `--env-file` loader
 - **A wider double-quoted escape set.** Atlas decodes `\n`, `\r`, `\t`, `\"`, `\\`, and `\$` inside double quotes; Bun decodes only `\n`, `\r`, and `\$` and leaves the rest as literal backslash sequences. Single-quoted and backtick values keep every backslash literal in both readers.
 - **Stricter inline comments.** A `#` only starts a comment when it follows whitespace or a closing quote, so `TOKEN=abc#fragment` keeps its fragment. Bun cuts that value at the `#`.
 
+A closing quote — single-line or multiline — may only be followed by whitespace or a comment, matching Bun 1.3.14. `A='first` / `second' trailing` is therefore not a multiline value in either reader: Bun keeps `A` as the literal `'first` and skips the second line, while Atlas keeps the same `A` and then rejects `second' trailing` as a line that is not `KEY=VALUE`.
+
 A line that is neither blank, a comment, nor `KEY=VALUE` is an error rather than a skipped line. The message names the env file and the line number but never the line's contents.
 
 ## Trust Model

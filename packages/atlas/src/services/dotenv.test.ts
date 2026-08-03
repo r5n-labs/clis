@@ -145,12 +145,18 @@ BACKSLASH_QUOTE="literal\\\"quote"
     expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
   });
 
-  test("matches Bun by dropping content after a multiline closing quote", () => {
-    const input = "A='first\nsecond' trailing\nB=`third\nfourth` # comment\nC=c\n";
+  test("matches Bun by dropping a comment after a multiline closing quote", () => {
+    const input = "A='first\nsecond' # comment\nB=`third\nfourth` # comment\nC=c\n";
     const expected = { A: "first\nsecond", B: "third\nfourth", C: "c" };
 
     expect(parseDotenv(input)).toEqual(expected);
     expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
+  });
+
+  test("refuses a multiline value when non-comment content follows the closing quote", () => {
+    const input = "A='first\nsecond' trailing\nC=c\n";
+
+    expect(() => parseDotenv(input)).toThrow("Invalid dotenv syntax at line 2: expected KEY=VALUE");
   });
 
   test("matches Bun for CRLF-separated multiline single-quoted and backtick values", () => {
