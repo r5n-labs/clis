@@ -100,6 +100,88 @@ BACKSLASH_QUOTE="literal\\\"quote"
     expect(parseDotenv(input)).toEqual(expected);
     expect(loadWithBun(input, ["A"])).toEqual(expected);
   });
+
+  test("matches Bun for a multiline single-quoted PEM-shaped value", () => {
+    const input =
+      "KEY='-----BEGIN PRIVATE KEY-----\nMIIBVwIBADAN\nBgkqhkiG9w0B\n-----END PRIVATE KEY-----'\nAFTER=ok\n";
+    const expected = {
+      AFTER: "ok",
+      KEY: "-----BEGIN PRIVATE KEY-----\nMIIBVwIBADAN\nBgkqhkiG9w0B\n-----END PRIVATE KEY-----",
+    };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["AFTER", "KEY"])).toEqual(expected);
+  });
+
+  test("matches Bun for a multiline backtick value", () => {
+    const input = "A=`first\nsecond`\nB=b\n";
+    const expected = { A: "first\nsecond", B: "b" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B"])).toEqual(expected);
+  });
+
+  test("matches Bun for an unterminated single quote at EOF", () => {
+    const input = "A='first\nB=second\n";
+    const expected = { A: "'first", B: "second" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B"])).toEqual(expected);
+  });
+
+  test("matches Bun for an unterminated backtick at EOF", () => {
+    const input = "A=`first\nB=second\n";
+    const expected = { A: "`first", B: "second" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B"])).toEqual(expected);
+  });
+
+  test("matches Bun by keeping backslashes literal inside single-quoted and backtick values", () => {
+    const input = "A='a\\'b\nc'\nB=`d\\`e\nf`\nC='g\\nh\ni'\n";
+    const expected = { A: "a\\'b\nc", B: "d\\`e\nf", C: "g\\nh\ni" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
+  });
+
+  test("matches Bun by dropping a comment after a multiline closing quote", () => {
+    const input = "A='first\nsecond' # comment\nB=`third\nfourth` # comment\nC=c\n";
+    const expected = { A: "first\nsecond", B: "third\nfourth", C: "c" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
+  });
+
+  test("refuses a multiline value when non-comment content follows the closing quote", () => {
+    const input = "A='first\nsecond' trailing\nC=c\n";
+
+    expect(() => parseDotenv(input)).toThrow("Invalid dotenv syntax at line 2: expected KEY=VALUE");
+  });
+
+  test("matches Bun for CRLF-separated multiline single-quoted and backtick values", () => {
+    const input = "A='first\r\nsecond'\r\nB=`third\r\nfourth`\r\nC=c\r\n";
+    const expected = { A: "first\nsecond", B: "third\nfourth", C: "c" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
+  });
+
+  test("matches Bun for single-line backtick values", () => {
+    const input = "A=`hello # world`\nB=``\nC=`trailing` # comment\n";
+    const expected = { A: "hello # world", B: "", C: "trailing" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "B", "C"])).toEqual(expected);
+  });
+
+  test("matches Bun for a multiline single-quoted value wrapping a KEY=VALUE-shaped line", () => {
+    const input = "A='first\nB=second'\nC=c\n";
+    const expected = { A: "first\nB=second", C: "c" };
+
+    expect(parseDotenv(input)).toEqual(expected);
+    expect(loadWithBun(input, ["A", "C"])).toEqual(expected);
+  });
 });
 
 describe("serializeDotenv", () => {

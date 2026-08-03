@@ -178,6 +178,23 @@ describe("package.label getter", () => {
     const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Dependency);
     expect(pkg.label).toBe("@app/core@1.2.3 => 1.2.4 📦");
   });
+
+  test("uses the pinned newVersion instead of recomputing it", () => {
+    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Patch).withVersions("1.2.3", "9.9.9");
+    expect(pkg.label).toBe("@app/core@1.2.3 => 9.9.9 🐛");
+  });
+
+  test("uses the pinned snapshot version so previews cannot drift across time", () => {
+    const pkg = new Package({
+      bump: BumpType.Snapshot,
+      file: "packages/core/package.json",
+      name: "@app/core",
+      newVersion: "0.0.0-nightly-20260101000000",
+      version: "0.0.0",
+    });
+    expect(pkg.label).toBe("@app/core@0.0.0 => 0.0.0-nightly-20260101000000 📸");
+    expect(pkg.label).toBe(`@app/core@0.0.0 => ${pkg.newVersion} 📸`);
+  });
 });
 
 describe("applyStone pattern — applying bumps from stone to matching packages", () => {

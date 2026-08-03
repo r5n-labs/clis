@@ -104,10 +104,14 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const s = spinner();
     s.start("Applying release changes...");
 
-    const changedFiles = await this.applyReleaseChanges(ctx, stones, packages);
-    for (const file of changedFiles) {
-      await Bun.$`git add ${file}`.nothrow();
-    }
+    const sourceFiles = [
+      ...(await this.updatePackages(packages)),
+      ...(await this.generateChangelogs(ctx, stones, packages)),
+    ];
+    const timestamp = await this.archiveStones(ctx, stones);
+    await this.stageFiles(sourceFiles);
+    await this.recordCurrentRelease(ctx, stones, packages, timestamp);
+    await this.stageFiles([ctx.config.get("sisyphusDir")]);
 
     const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
     if (hasChanges.exitCode !== 0) {
@@ -235,14 +239,10 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await Bun.$`git stash --include-untracked`.nothrow();
   }
 
-  private async applyReleaseChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]): Promise<string[]> {
-    const changedFiles: string[] = [];
-
-    changedFiles.push(...(await this.updatePackages(packages)));
-    changedFiles.push(...(await this.generateChangelogs(ctx, stones, packages)));
-    changedFiles.push(...(await this.archiveStonesAndUpdateConfig(ctx, stones, packages)));
-
-    return changedFiles;
+  private async stageFiles(files: string[]) {
+    for (const file of files) {
+      await Bun.$`git add ${file}`.nothrow();
+    }
   }
 
   private async updatePackages(packages: Package[]): Promise<string[]> {
@@ -260,14 +260,12 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return [changelogConfig.filename, `**/${changelogConfig.filename}`];
   }
 
-  private async archiveStonesAndUpdateConfig(
-    ctx: ReleasePrCtx,
-    stones: Stone[],
-    packages: Package[],
-  ): Promise<string[]> {
+  private async archiveStones(ctx: ReleasePrCtx, stones: Stone[]): Promise<string> {
     const manager = new StoneManager(ctx.config);
-    const timestamp = await manager.archive(stones);
+    return manager.archive(stones);
+  }
 
+  private async recordCurrentRelease(ctx: ReleasePrCtx, stones: Stone[], packages: Package[], timestamp: string) {
     const packageVersions = this.buildPackageVersions(packages);
     const sourceHash = await hashReleaseSource(ctx.config.get("sisyphusDir"));
     const plan = { packages: packageVersions, sourceHash, stoneIds: stones.map((stone) => stone.id), timestamp };
@@ -280,8 +278,6 @@ export class ActionsReleasePrCommand extends BaseCommand {
     });
 
     await this.updateLastStone(ctx, stones);
-
-    return [ctx.config.get("sisyphusDir")];
   }
 
   private buildPackageVersions(packages: Package[]): Record<string, PackageRelease> {

@@ -450,4 +450,20 @@ describe("resolveAtlasEnv", () => {
     );
     expect(() => resolveAtlasEnv(loaded, { profiles: ["cycleA"] })).toThrow("Profile inheritance cycle");
   });
+
+  test("reports the offending env file path and line without echoing its contents", () => {
+    const home = join(tmpRoot, "home");
+    const project = join(tmpRoot, "repo");
+    const envFilePath = join(project, ".env.broken");
+    const secretBearingLine = "sensitive-value-without-equals";
+
+    writeJson(join(project, ".atlas", "config.json"), { profiles: { web: { envFiles: [".env.broken"] } } });
+    writeText(envFilePath, `# heading\n${secretBearingLine}\n`);
+
+    const loaded = loadAtlasConfig({ cwd: project, home });
+    const message = getErrorMessage(() => resolveAtlasEnv(loaded, { profiles: ["web"] }));
+
+    expect(message).toBe(`Invalid dotenv file ${envFilePath}: Invalid dotenv syntax at line 2: expected KEY=VALUE`);
+    expect(message).not.toContain(secretBearingLine);
+  });
 });

@@ -2,9 +2,16 @@ import { lstat, readlink, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { $ } from "bun";
 
-type PublishArtifactOptions = { cwd?: string; dryRun?: boolean; tag?: string };
+type PublishArtifactOptions = { cwd?: string; dryRun?: boolean };
 
 type PackageSourceState = { commit: string; manifestPath: string; repositoryRoot: string };
+
+type ManifestRestoration = {
+  manifestPath: string;
+  originalManifest: string;
+  packageDir: string;
+  preparedManifest: string | null;
+};
 
 const GITLINK_MODE = "160000";
 const GIT_INDEX_MODE_PATTERN = /^[0-7]{6}$/;
@@ -83,36 +90,58 @@ export async function preparePackageArtifact(packageDir: string, artifactPath: s
     }
     await validatePreparedPackageSource(sourceState);
   } catch (error) {
+    preparationError = error;
+  }
+
+  const restorationError = await restorePackageManifest({
+    manifestPath: pkgJsonPath,
+    originalManifest,
+    packageDir,
+    preparedManifest,
+  });
+
+  if (preparationError === undefined && restorationError === undefined) return;
+
+  let cleanupError: unknown;
+  if (artifactCreated) {
     try {
-      if (artifactCreated) await rm(resolvedArtifactPath, { force: true });
-      preparationError = error;
-    } catch (cleanupError) {
-      preparationError = new AggregateError(
-        [error, cleanupError],
-        `Failed to clean package artifact for ${packageDir}`,
+      await rm(resolvedArtifactPath, { force: true });
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  const failures = [preparationError, restorationError, cleanupError].filter((failure) => failure !== undefined);
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(failures, `Failed to prepare and restore ${packageDir}`);
+}
+
+async function restorePackageManifest(restoration: ManifestRestoration): Promise<unknown> {
+  const { manifestPath, originalManifest, packageDir, preparedManifest } = restoration;
+  let currentManifest: string;
+
+  try {
+    currentManifest = await Bun.file(manifestPath).text();
+  } catch (readError) {
+    try {
+      await Bun.write(manifestPath, originalManifest);
+      return undefined;
+    } catch (writeError) {
+      return new AggregateError([readError, writeError], `Failed to restore the package manifest at ${manifestPath}`);
+    }
+  }
+
+  try {
+    if (preparedManifest !== null && currentManifest !== preparedManifest) {
+      throw new Error(
+        `Package manifest changed concurrently while preparing ${packageDir}, so ${manifestPath} was left as written by the concurrent change. Recover the committed manifest with: git restore -- ${manifestPath}`,
       );
     }
-  }
-
-  let restorationError: unknown;
-  try {
-    const currentManifest = await Bun.file(pkgJsonPath).text();
-    if (preparedManifest !== null && currentManifest !== preparedManifest) {
-      throw new Error(`Package manifest changed concurrently while preparing ${packageDir}`);
-    }
-    if (currentManifest !== originalManifest) await Bun.write(pkgJsonPath, originalManifest);
+    if (currentManifest !== originalManifest) await Bun.write(manifestPath, originalManifest);
+    return undefined;
   } catch (error) {
-    restorationError = error;
+    return error;
   }
-
-  if (preparationError) {
-    if (restorationError) {
-      throw new AggregateError([preparationError, restorationError], `Failed to prepare and restore ${packageDir}`);
-    }
-    throw preparationError;
-  }
-
-  if (restorationError) throw restorationError;
 }
 
 async function readPackedManifest(artifactPath: string): Promise<string> {
@@ -416,6 +445,5 @@ export async function publishPackageArtifact(
   const resolvedArtifactPath = resolve(artifactPath);
   const cwd = resolve(options.cwd ?? ".");
   const dryRunArgs = options.dryRun ? ["--dry-run", "--force"] : [];
-  const tagArgs = options.tag ? ["--tag", options.tag] : [];
-  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access public ${tagArgs} ${dryRunArgs}`.cwd(cwd);
+  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access public ${dryRunArgs}`.cwd(cwd);
 }

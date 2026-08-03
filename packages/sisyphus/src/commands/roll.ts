@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
-import { CLI_BIN, DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE } from "../constants";
+import { CLI_BIN } from "../constants";
 import { BumpType, Package, Stone } from "../domain";
 import {
   ChangelogGenerator,
@@ -228,7 +228,7 @@ export class RollCommand extends BaseCommand {
   ) {
     const orchestrator = new ReleaseOrchestrator(ctx.config, options);
     const previousLastStone = { ...ctx.config.get("lastStone") };
-    const configPath = join(DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE);
+    const configPath = ctx.config.path;
     const previousConfigText = (await Bun.file(configPath).exists()) ? await Bun.file(configPath).text() : null;
     const stoneManager = new StoneManager(ctx.config);
     const stoneSnapshots = new Map<string, string>();

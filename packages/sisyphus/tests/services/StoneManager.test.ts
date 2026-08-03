@@ -58,6 +58,36 @@ describe("StoneManager safe IDs", () => {
     expect(existsSync(outsideFile)).toBe(true);
   });
 
+  test("get names the stone file path when JSON parsing fails", async () => {
+    writeFileSync(join(stonesDir, "0001-broken.json"), "{not json\n");
+
+    const error = await manager.get("0001-broken").then(
+      () => null,
+      (cause: unknown) => cause,
+    );
+    if (!(error instanceof Exit)) throw new Error("Expected an Exit error for the corrupt stone file");
+    expect(error.message).toContain("Failed to parse stone file");
+    expect(error.message).toContain(".sisyphus/stones");
+    expect(error.message).toContain("0001-broken.json");
+    expect(error.hint).toBe("Remove or fix the file");
+  });
+
+  test("released stone parse failures name the archived file when IDs are pinned", async () => {
+    const timestamp = "2026-07-21T12-34-56-789Z";
+    const archive = join(root, ".sisyphus/released", timestamp);
+    mkdirSync(archive, { recursive: true });
+    writeFileSync(join(archive, "0001-safe.json"), "{broken\n");
+
+    const error = await manager.getReleasedStones(timestamp, ["0001-safe"]).then(
+      () => null,
+      (cause: unknown) => cause,
+    );
+    if (!(error instanceof Exit)) throw new Error("Expected an Exit error for the corrupt archived stone file");
+    expect(error.message).toContain("Failed to parse stone file");
+    expect(error.message).toContain(join(".sisyphus/released", timestamp, "0001-safe.json"));
+    expect(error.hint).toBe("Remove or fix the file");
+  });
+
   test("requires loaded JSON IDs to match the filename-derived ID", async () => {
     writeFileSync(join(stonesDir, "0001-safe.json"), '{"id":"0002-other","message":"mismatch"}\n');
 

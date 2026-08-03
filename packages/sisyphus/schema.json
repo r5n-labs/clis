@@ -23,28 +23,20 @@
     "lastStone": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit", "date"],
       "properties": { "commit": { "type": "string" }, "date": { "type": "string" } }
     },
     "commit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["author", "message"],
       "properties": {
         "author": { "type": "string" },
-        "email": { "type": "string" },
+        "email": { "type": "string", "pattern": "^[^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+$" },
         "message": { "type": "string", "minLength": 1 }
-      },
-      "if": { "properties": { "author": { "pattern": "\\S" } } },
-      "then": {
-        "required": ["email"],
-        "properties": { "email": { "pattern": "^[^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+$" } }
       }
     },
     "release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["createRelease", "npm", "push", "tags"],
       "properties": {
         "createRelease": { "type": "boolean" },
         "npm": { "type": "boolean" },
@@ -55,7 +47,6 @@
     "changelog": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["append", "filename", "generate", "packageHeader", "root", "rootHeader", "sections"],
       "properties": {
         "append": { "type": "boolean" },
         "filename": { "type": "string", "minLength": 1 },
@@ -67,21 +58,6 @@
         "sections": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "breaking",
-            "build",
-            "chore",
-            "ci",
-            "dependencies",
-            "docs",
-            "feat",
-            "fix",
-            "other",
-            "perf",
-            "refactor",
-            "style",
-            "test"
-          ],
           "properties": {
             "breaking": { "type": "string" },
             "build": { "type": "string" },
@@ -103,7 +79,6 @@
     "scripts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pre", "post"],
       "properties": {
         "pre": { "type": "object", "additionalProperties": { "type": "string" } },
         "post": { "type": "object", "additionalProperties": { "type": "string" } }
@@ -112,12 +87,10 @@
     "commits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["skip"],
       "properties": {
         "skip": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["authors", "messagePatterns"],
           "properties": {
             "authors": { "type": "array", "items": { "type": "string" } },
             "messagePatterns": { "type": "array", "items": { "type": "string" } }
@@ -128,13 +101,11 @@
     "pr": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["labelMapping", "skip"],
       "properties": {
         "labelMapping": { "type": "object", "additionalProperties": { "enum": ["major", "minor", "patch"] } },
         "skip": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["authors", "labels", "titlePatterns"],
           "properties": {
             "authors": { "type": "array", "items": { "type": "string" } },
             "labels": { "type": "array", "items": { "type": "string" } },
@@ -146,14 +117,12 @@
     "currentRelease": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["packages", "planHash", "sourceHash", "stoneIds", "timestamp"],
       "properties": {
         "packages": {
           "type": "object",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["oldVersion", "newVersion"],
             "properties": {
               "oldVersion": { "type": "string", "minLength": 1 },
               "newVersion": { "type": "string", "minLength": 1 }

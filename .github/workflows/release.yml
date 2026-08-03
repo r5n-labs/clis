@@ -49,6 +49,7 @@ jobs:
           echo "Found $STONES_COUNT pending stones"
           echo "STONES_COUNT=$STONES_COUNT" >> $GITHUB_ENV
 
+      # The release validates that no gitignored build inputs exist outside node_modules and rebuilds per package itself.
       - name: Remove prebuilt publish outputs
         if: env.STONES_COUNT != '0'
         run: rm -rf packages/*/dist
@@ -60,7 +61,12 @@ jobs:
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
           npm --version
-          bun release:roll
+          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          if [ -f "$RELEASE_DIR/active.json" ]; then
+            bun sis roll --resume
+          else
+            bun release:roll
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production

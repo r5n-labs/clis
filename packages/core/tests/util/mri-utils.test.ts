@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { ArgDefinition } from "../../src/command/args";
 import type { PositionalDefinition } from "../../src/command/positionals";
-import { buildMriOptions, convertNumbers, mapPositionals, validatePositionals } from "../../src/util/mri-utils";
+import { Exit } from "../../src/exit";
+import {
+  buildMriOptions,
+  convertNumbers,
+  mapPositionals,
+  parseCommandArgs,
+  parseGlobalArgs,
+  validatePositionals,
+} from "../../src/util/mri-utils";
 
 describe("buildMriOptions", () => {
   test("boolean args go to boolean array", () => {
@@ -64,6 +72,52 @@ describe("convertNumbers", () => {
     const defs: Record<string, ArgDefinition> = { count: { type: "number" } };
     const result = convertNumbers({} as Record<string, string | boolean>, defs);
     expect(result.count).toBeUndefined();
+  });
+
+  test("throws Exit when a long flag is repeated", () => {
+    const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
+
+    expect(() => parseCommandArgs(["--json", "--json"], defs)).toThrow(Exit);
+    expect(() => parseCommandArgs(["--json", "--json"], defs)).toThrow("--json can only be provided once");
+  });
+
+  test("repeated short alias reports the canonical long flag", () => {
+    const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
+
+    expect(() => parseCommandArgs(["-j", "-j"], defs)).toThrow("--json can only be provided once");
+  });
+
+  test("repeated camelCase flag reports the kebab-case name", () => {
+    const defs: Record<string, ArgDefinition> = { dryRun: { alias: "d", type: "boolean" } };
+
+    expect(() => parseCommandArgs(["-d", "-d"], defs)).toThrow("--dry-run can only be provided once");
+  });
+
+  test("resolves alias keys handed straight to convertNumbers", () => {
+    const defs: Record<string, ArgDefinition> = { output: { alias: "o", type: "string" } };
+    const repeated = { o: ["a", "b"] } as unknown as Record<string, string | boolean>;
+
+    expect(() => convertNumbers(repeated, defs)).toThrow("--output can only be provided once");
+  });
+
+  test("undefined short flag keeps a single dash", () => {
+    const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
+
+    expect(() => parseCommandArgs(["-x", "-x"], defs)).toThrow("-x can only be provided once");
+  });
+});
+
+describe("parseGlobalArgs", () => {
+  const globals: Record<string, ArgDefinition> = { help: { alias: "h", type: "boolean" } };
+
+  test("repeated global flag reports the canonical long flag", () => {
+    expect(() => parseGlobalArgs(["-h", "-h"], globals)).toThrow("--help can only be provided once");
+  });
+
+  test("repeated command flags are left to the command parse", () => {
+    const result = parseGlobalArgs(["check", "-j", "-j"], globals);
+
+    expect(result).toMatchObject({ command: "check", restArgs: ["-j", "-j"] });
   });
 });
 

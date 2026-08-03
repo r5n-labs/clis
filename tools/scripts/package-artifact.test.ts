@@ -14,6 +14,7 @@ afterEach(() => {
 
 type PackageFixtureOptions = {
   commitChanges?: boolean;
+  deletesManifest?: boolean;
   packManifestChanges?: boolean;
   prepareFails?: boolean;
   sourceChanges?: boolean;
@@ -35,14 +36,17 @@ async function createPackageFixture(
       'const manifest = await Bun.file("package.json").json();',
       'await Bun.write("package.json", JSON.stringify({ ...manifest, prepared: true }, null, 2) + "\\n");',
       options.sourceChanges ? 'await Bun.write("source.ts", "export const value = 2;\\n");' : "",
-      options.commitChanges ? 'await Bun.$`git commit -q --allow-empty -m "prepare moved head"`;' : "",
+      options.commitChanges
+        ? 'await Bun.$`git -c commit.gpgsign=false commit -q --allow-empty -m "prepare moved head"`;'
+        : "",
       options.packManifestChanges
         ? [
             'const watcher = Bun.spawn([process.execPath, "manifest-watcher.ts"], { stderr: "ignore", stdout: "ignore" });',
             "watcher.unref();",
           ].join("\n")
         : "",
-      options.prepareFails ? "process.exit(1);" : "",
+      options.deletesManifest ? "await Bun.$`rm package.json`;" : "",
+      options.prepareFails || options.deletesManifest ? "process.exit(1);" : "",
     ].join("\n"),
   );
   if (options.packManifestChanges) {
@@ -73,7 +77,7 @@ async function createPackageFixture(
   await Bun.$`git config user.email artifact@test.local`.cwd(root).quiet();
   await Bun.$`git config user.name "Artifact Test"`.cwd(root).quiet();
   await Bun.$`git add -A`.cwd(root).quiet();
-  await Bun.$`git commit -q -m init`.cwd(root).quiet();
+  await Bun.$`git -c commit.gpgsign=false commit -q -m init`.cwd(root).quiet();
   return { artifactPath: join(artifactRoot, "package.tgz"), manifestPath, packageDirectory, root };
 }
 
@@ -95,6 +99,17 @@ describe("preparePackageArtifact", () => {
 
   test("restores the manifest when preparation mutates it and then fails", async () => {
     const fixture = await createPackageFixture({ prepareFails: true });
+    const originalManifest = readFileSync(fixture.manifestPath, "utf-8");
+
+    await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow();
+
+    expect(existsSync(fixture.artifactPath)).toBe(false);
+    expect(readFileSync(fixture.manifestPath, "utf-8")).toBe(originalManifest);
+    expect((await Bun.$`git status --porcelain`.cwd(fixture.root).quiet()).stdout.toString()).toBe("");
+  });
+
+  test("restores the manifest when preparation deletes it and then fails", async () => {
+    const fixture = await createPackageFixture({ deletesManifest: true });
     const originalManifest = readFileSync(fixture.manifestPath, "utf-8");
 
     await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow();
@@ -137,7 +152,7 @@ describe("preparePackageArtifact", () => {
     );
     writeFileSync(join(fixture.packageDirectory, ".gitignore"), "ignored.js\n");
     await Bun.$`git add packages/example`.cwd(fixture.root).quiet();
-    await Bun.$`git commit -q -m "include ignored source"`.cwd(fixture.root).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -m "include ignored source"`.cwd(fixture.root).quiet();
     writeFileSync(join(fixture.packageDirectory, "ignored.js"), "unbound payload\n");
 
     await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow(
@@ -164,7 +179,7 @@ describe("preparePackageArtifact", () => {
     );
     writeFileSync(join(fixture.packageDirectory, ".gitignore"), "dist/\npayload.txt\n");
     await Bun.$`git add packages/example`.cwd(fixture.root).quiet();
-    await Bun.$`git commit -q -m "copy ignored source"`.cwd(fixture.root).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -m "copy ignored source"`.cwd(fixture.root).quiet();
     writeFileSync(join(fixture.packageDirectory, "payload.txt"), "unbound build input\n");
 
     await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow(
@@ -195,7 +210,7 @@ describe("preparePackageArtifact", () => {
     await Bun.$`git config user.email artifact@test.local`.cwd(dependency).quiet();
     await Bun.$`git config user.name "Artifact Test"`.cwd(dependency).quiet();
     await Bun.$`git add tracked.js`.cwd(dependency).quiet();
-    await Bun.$`git commit -q -m init`.cwd(dependency).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -m init`.cwd(dependency).quiet();
     await Bun.$`git -c protocol.file.allow=always submodule add -q ${dependency} packages/example/vendor/dependency`
       .cwd(fixture.root)
       .quiet();
@@ -205,7 +220,7 @@ describe("preparePackageArtifact", () => {
       `${JSON.stringify({ ...manifest, files: ["vendor/dependency/ignored.js"] }, null, 2)}\n`,
     );
     await Bun.$`git add packages/example .gitmodules`.cwd(fixture.root).quiet();
-    await Bun.$`git commit -q -m "add nested dependency"`.cwd(fixture.root).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -m "add nested dependency"`.cwd(fixture.root).quiet();
     const submodule = join(fixture.packageDirectory, "vendor/dependency");
     const excludePath = resolve(
       submodule,
@@ -257,11 +272,11 @@ describe("preparePackageArtifact", () => {
     await Bun.$`git config user.email artifact@test.local`.cwd(dependency).quiet();
     await Bun.$`git config user.name "Artifact Test"`.cwd(dependency).quiet();
     await Bun.$`git add source.txt`.cwd(dependency).quiet();
-    await Bun.$`git commit -q -m init`.cwd(dependency).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -m init`.cwd(dependency).quiet();
     await Bun.$`git -c protocol.file.allow=always submodule add -q ${dependency} vendor/dependency`
       .cwd(fixture.root)
       .quiet();
-    await Bun.$`git commit -q -am "add dependency"`.cwd(fixture.root).quiet();
+    await Bun.$`git -c commit.gpgsign=false commit -q -am "add dependency"`.cwd(fixture.root).quiet();
     rmSync(join(fixture.root, "vendor/dependency"), { force: true, recursive: true });
     mkdirSync(join(fixture.root, "vendor/dependency"), { recursive: true });
     writeFileSync(join(fixture.root, "vendor/dependency/injected.txt"), "unbound source\n");

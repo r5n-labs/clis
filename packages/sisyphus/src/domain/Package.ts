@@ -75,7 +75,7 @@ export class Package {
 
   get label(): string {
     if (!this.bump) return `${this.name}@${this.version}`;
-    return VersionCalculator.formatLabel(this.name, this.version, this.bump, this.tag);
+    return VersionCalculator.formatLabel(this.name, this.version, this.bump, this.tag, this._newVersion);
   }
 
   withDependencyOf(dependencyOf: readonly string[]): Package {

@@ -4,7 +4,14 @@ import type { ConfigManager } from "./config-manager";
 import { Exit } from "./exit";
 import { log, select } from "./prompts";
 import type { CliMetadata } from "./types";
-import { color, handleUnknownItem, mapPositionals, parseCommandArgs, validatePositionals } from "./util";
+import {
+  color,
+  handleUnknownItem,
+  logErrorCauses,
+  mapPositionals,
+  parseCommandArgs,
+  validatePositionals,
+} from "./util";
 
 const EXIT_MENU_VALUE = "__exit__";
 
@@ -148,6 +155,7 @@ export class CommandRouter<TConfig extends object = object> {
       if (error instanceof Exit) {
         log.warn(color.yellow(error.message));
         if (error.hint) log.info(color.dim(error.hint));
+        logErrorCauses(error);
         return;
       }
       throw error;

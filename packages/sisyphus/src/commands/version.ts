@@ -55,11 +55,15 @@ export class VersionCommand extends BaseCommand {
 
     if (ctx.args.fromCommits) {
       await this.executeFromCommits(ctx, input);
-    } else if (ctx.interactive && !input.hasManualSelection) {
+    } else if (this.isInteractiveSession(ctx) && !input.hasManualSelection) {
       await this.executeInteractive(ctx, input);
     } else {
       await this.executeDirect(ctx, input);
     }
+  }
+
+  private isInteractiveSession(ctx: VersionCtx): boolean {
+    return ctx.interactive && process.stdout.isTTY === true;
   }
 
   private normalizeInput(ctx: VersionCtx): NormalizedVersionInput {
@@ -148,7 +152,7 @@ export class VersionCommand extends BaseCommand {
     if (!ctx.args.fromCommits) return;
     if (!input.hasManualSelection && input.message === undefined) return;
 
-    throw new Exit("--from-commits cannot be combined with --bump, --all, --major, --minor, --patch, or a message");
+    throw new Exit("--fromCommits cannot be combined with --bump, --all, --major, --minor, --patch, or a message");
   }
 
   private validateManualSelectionInput(ctx: VersionCtx, input: NormalizedVersionInput): void {
@@ -189,9 +193,9 @@ export class VersionCommand extends BaseCommand {
   }
 
   private async executeDirect(ctx: VersionCtx, input: NormalizedVersionInput) {
-    const message = input.message;
+    const message = input.message ?? (this.isInteractiveSession(ctx) ? await this.promptMessage() : undefined);
     if (!message) {
-      throw new Exit("Message is required in non-interactive mode", 'Pass it as a positional or with --message "..."');
+      throw new Exit("Message is required", 'Pass --message "..." or a positional message');
     }
 
     const { packages, packageNames } = await this.scanPackages(ctx, input.filter);
@@ -393,7 +397,7 @@ export class VersionCommand extends BaseCommand {
       return;
     }
 
-    if (!ctx.args.yes && ctx.interactive && process.stdout.isTTY) {
+    if (!ctx.args.yes && this.isInteractiveSession(ctx)) {
       const confirmed = await confirm({ initialValue: true, message: "Create this stone?" });
       if (!confirmed) return;
     }

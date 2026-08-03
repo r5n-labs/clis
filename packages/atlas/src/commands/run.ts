@@ -2,14 +2,20 @@ import { resolve } from "node:path";
 import { type ArgDefinition, args, Exit, positionals } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig, resolveAtlasEnv } from "../services/config";
-import { splitCsv } from "../utils";
+import { parseProfileOption } from "../utils";
 
 const runArgs = args({
   cwd: { description: "Working directory override", type: "string" },
   profile: { alias: "p", description: "Comma-separated profiles to apply", type: "string" },
 });
 
+const ALIAS_FLAG_LENGTH = 1;
+const PASSTHROUGH_HINT = "Put child command flags after --: atlas run -p app -- <cmd> --flags";
+const PROFILE_USAGE = "Usage: atlas run --profile <name,...> -- <command...>";
+
 const GLOBAL_ARG_KEYS = ["help", "h", "interactive", "i", "version", "v"];
+
+const CHILD_CONFLICTING_ARG_KEYS = ["interactive", "i", "version", "v"];
 
 const RUN_ARG_KEYS: ReadonlySet<string> = new Set([
   ...GLOBAL_ARG_KEYS,
@@ -31,10 +37,7 @@ export class RunCommand extends BaseCommand {
   async execute(ctx: RunCtx): Promise<void> {
     const unknownFlag = Object.keys(ctx.args).find((flag) => !RUN_ARG_KEYS.has(flag));
     if (unknownFlag !== undefined) {
-      throw new Exit(
-        `Unknown option: --${unknownFlag}`,
-        "Put child command flags after --: atlas run -p app -- <cmd> --flags",
-      );
+      throw new Exit(`Unknown option: ${formatFlag(unknownFlag)}`, PASSTHROUGH_HINT);
     }
 
     const command = ctx.positionals.command;
@@ -42,18 +45,16 @@ export class RunCommand extends BaseCommand {
       throw new Exit("Command is required", "Usage: atlas run --profile app:web -- <command...>");
     }
 
+    const swallowedFlag = CHILD_CONFLICTING_ARG_KEYS.find((flag) => Object.hasOwn(ctx.args, flag));
+    if (swallowedFlag !== undefined) {
+      throw new Exit(`Unknown option: ${formatFlag(swallowedFlag)}`, PASSTHROUGH_HINT);
+    }
+
     if (ctx.args.cwd !== undefined && ctx.args.cwd.trim().length === 0) {
       throw new Exit("--cwd must not be empty", "Usage: atlas run --cwd <dir> -- <command...>");
     }
 
-    const profiles = ctx.args.profile === undefined ? undefined : splitCsv(ctx.args.profile);
-    if (profiles?.length === 0) {
-      throw new Exit(
-        "--profile must include at least one profile",
-        "Usage: atlas run --profile <name,...> -- <command...>",
-      );
-    }
-
+    const profiles = parseProfileOption(ctx.args.profile, PROFILE_USAGE);
     const cwd = resolve(ctx.args.cwd ?? process.cwd());
     const env = buildRunEnvironment({ cwd, env: process.env, profiles });
 
@@ -73,6 +74,10 @@ export class RunCommand extends BaseCommand {
 
     if (exitCode !== 0) process.exit(exitCode);
   }
+}
+
+function formatFlag(flag: string): string {
+  return flag.length === ALIAS_FLAG_LENGTH ? `-${flag}` : `--${flag}`;
 }
 
 export function buildRunEnvironment(options: BuildRunEnvironmentOptions = {}): Record<string, string> {

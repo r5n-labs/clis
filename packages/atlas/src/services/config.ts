@@ -327,7 +327,13 @@ function readEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) {
     throw new Exit(`Atlas env file not found: ${path}`, "Create the file or remove it from the profile's envFiles");
   }
-  return parseDotenv(readFileSync(path, "utf8"));
+
+  try {
+    return parseDotenv(readFileSync(path, "utf8"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "env file failed to parse";
+    throw new Exit(`Invalid dotenv file ${path}: ${reason}`, "Fix the reported line in the env file");
+  }
 }
 
 function resolveSecret(
