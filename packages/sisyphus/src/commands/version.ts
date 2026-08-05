@@ -1,7 +1,7 @@
 import { args, color, confirm, Exit, log, multiselect, note, positionals, text } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
-import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
+import { BUMP_COLORS, BumpType, nonEmpty, Package, Stone, type StoneData } from "../domain";
 import {
   CommitAnalyzer,
   collectDependents,
@@ -194,7 +194,7 @@ export class VersionCommand extends BaseCommand {
 
   private async executeInteractive(ctx: VersionCtx, input: NormalizedVersionInput) {
     const { packages, packageNames } = await this.scanPackages(ctx, input.filter);
-    const selection = await this.selectPackagesInteractive(packages, packageNames);
+    const selection = await this.selectPackagesInteractive(packages, packageNames, input.tag);
     const message = input.message ?? (await this.promptMessage());
     const description = input.description ?? (await this.promptDescription());
 
@@ -330,6 +330,7 @@ export class VersionCommand extends BaseCommand {
   private async selectPackagesInteractive(
     packages: Map<string, Package>,
     packageNames: readonly string[],
+    tag?: string,
   ): Promise<PackageSelection> {
     const selected: string[] = [];
     const result: PackageSelection = { major: [], minor: [], patch: [] };
@@ -338,7 +339,7 @@ export class VersionCommand extends BaseCommand {
       const available = packageNames.filter((name) => !selected.includes(name));
       if (available.length === 0) break;
 
-      const choices = await this.promptPackages(bumpType, available, packages);
+      const choices = await this.promptPackages(bumpType, available, packages, tag);
       selected.push(...choices);
 
       if (bumpType === BumpType.Major) result.major = choices;
@@ -357,15 +358,25 @@ export class VersionCommand extends BaseCommand {
     bump: BumpType,
     available: readonly string[],
     packages: Map<string, Package>,
+    tag?: string,
   ): Promise<string[]> {
     const colorFn = BUMP_COLORS[bump];
     const options = available.map((name) => {
       const pkg = packages.get(name);
-      const label = pkg ? pkg.withBump(bump).label : name;
+      const label = pkg ? this.safeLabel(pkg, bump, tag) : name;
       return { label, value: name };
     });
 
     return multiselect({ message: `Select packages for ${color.bold(colorFn(bump))} bump`, options, required: false });
+  }
+
+  private safeLabel(pkg: Package, bump: BumpType, tag?: string): string {
+    try {
+      return pkg.withBump(bump, tag).label;
+    } catch (error) {
+      if (error instanceof Exit) return pkg.name;
+      throw error;
+    }
   }
 
   private async promptMessage(): Promise<string> {
@@ -446,24 +457,21 @@ export class VersionCommand extends BaseCommand {
     lines.push(`${color.dim("Stone:")} ${color.bold(data.message)}`);
     if (data.tag) lines.push(`${color.dim("Tag:")} ${data.tag}`);
 
-    const bumpTypes = [
-      { bump: BumpType.Major, names: data.major },
-      { bump: BumpType.Minor, names: data.minor },
-      { bump: BumpType.Patch, names: data.patch },
-      { bump: BumpType.Dependency, names: data.dependency },
-    ];
-
-    for (const { bump, names } of bumpTypes) {
-      if (!names?.length) continue;
-
-      for (const name of names) {
-        const pkg = packages.get(name);
-        if (pkg) {
-          lines.push(`  ${pkg.withBump(bump, data.tag).label}`);
-        }
-      }
+    for (const label of this.previewLabels(data, packages)) {
+      lines.push(`  ${label}`);
     }
 
     log.step(lines.join("\n"));
+  }
+
+  private previewLabels(data: StoneData, packages: Map<string, Package>): string[] {
+    const stone = Stone.create(data);
+
+    try {
+      return Package.applyStone(stone, packages).map((pkg) => pkg.label);
+    } catch (error) {
+      if (error instanceof Exit) return stone.allPackages.filter((name) => packages.has(name));
+      throw error;
+    }
   }
 }

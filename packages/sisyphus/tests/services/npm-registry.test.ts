@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
 import { resolveReleaseNpmTag } from "../../src/services/release/npm-registry";
 
@@ -57,6 +58,18 @@ describe("resolveReleaseNpmTag channel extraction", () => {
     expect(() => resolveReleaseNpmTag([makePackage("a", "2.0.0-v2.0")], "latest")).toThrow(
       "Cannot derive an npm dist-tag",
     );
+  });
+
+  test("hints at a valid prerelease identifier instead of release.tag", () => {
+    let caught: unknown;
+    try {
+      resolveReleaseNpmTag([makePackage("a", "2.0.0-v2.0")], "latest");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Exit);
+    expect((caught as Exit).hint).toBe("Use a prerelease identifier that is a valid npm dist-tag (e.g. beta, rc)");
   });
 
   test("rejects a version that is not valid SemVer", () => {

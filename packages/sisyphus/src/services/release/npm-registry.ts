@@ -52,7 +52,7 @@ export function resolveReleaseNpmTag(packages: readonly Package[], configuredTag
     if (!channel || !isValidNpmTag(channel)) {
       throw new Exit(
         `Cannot derive an npm dist-tag for ${pkg.name}@${version}`,
-        "Use a prerelease identifier that is also a valid npm dist-tag, or set release.tag explicitly",
+        "Use a prerelease identifier that is a valid npm dist-tag (e.g. beta, rc)",
       );
     }
 

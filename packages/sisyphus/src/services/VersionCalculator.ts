@@ -5,6 +5,7 @@ import {
   formatSemver,
   hasSameCore,
   incrementSemver,
+  isPrerelease,
   prereleaseCounter,
   prereleaseTag,
   requireSemver,
@@ -83,7 +84,15 @@ export class VersionCalculator {
     if (tag !== undefined) return tag;
     if (graduating || bump !== BumpType.Dependency) return undefined;
 
-    return prereleaseTag(current);
+    const currentTag = prereleaseTag(current);
+    if (currentTag === undefined && isPrerelease(current)) {
+      throw new Exit(
+        `Cannot continue the prerelease of ${formatSemver(current)}`,
+        "Set the package version to a <tag>.<number> prerelease, or roll a graduating release to leave the channel",
+      );
+    }
+
+    return currentTag;
   }
 
   private static applyPrerelease(target: Semver, current: Semver, tag: string, version: string): Semver {

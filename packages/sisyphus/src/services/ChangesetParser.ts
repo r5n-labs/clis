@@ -125,6 +125,7 @@ export class ChangesetParser {
     const major: string[] = [];
     const minor: string[] = [];
     const patch: string[] = [];
+    const unsupported: string[] = [];
 
     for (const [pkg, bump] of Object.entries(changeset.packages)) {
       switch (bump) {
@@ -138,11 +139,15 @@ export class ChangesetParser {
           patch.push(pkg);
           break;
         default:
-          throw new Exit(
-            `Changeset for ${pkg} uses an unsupported bump type "${bump}"`,
-            "Rewrite it as major, minor, or patch before migrating",
-          );
+          unsupported.push(`${pkg} uses an unsupported bump type "${bump}"`);
       }
+    }
+
+    if (unsupported.length > 0) {
+      throw new Exit(
+        `Changeset ${changeset.filename}: ${unsupported.join("; ")}`,
+        "Rewrite them as major, minor, or patch before migrating",
+      );
     }
 
     const lines = changeset.summary.split("\n");

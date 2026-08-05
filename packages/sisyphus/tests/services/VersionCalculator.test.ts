@@ -104,6 +104,19 @@ describe("VersionCalculator", () => {
       expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency, undefined, true)).toBe("1.0.0");
     });
 
+    test.each(["1.0.0-alpha", "1.0.0-alpha.beta.1"])(
+      "refuses to silently graduate a non-canonical prerelease %p on an untagged dependency bump",
+      (version) => {
+        expect(() => VersionCalculator.bump(version, BumpType.Dependency)).toThrow(
+          `Cannot continue the prerelease of ${version}`,
+        );
+      },
+    );
+
+    test("a graduating release still drops a non-canonical prerelease: 1.0.0-alpha => 1.0.0", () => {
+      expect(VersionCalculator.bump("1.0.0-alpha", BumpType.Dependency, undefined, true)).toBe("1.0.0");
+    });
+
     test.each(["beta.4", "", "with space", "beta/rc"])("rejects the prerelease tag %p", (tag) => {
       expect(() => VersionCalculator.bump("1.0.0", BumpType.Minor, tag)).toThrow("Invalid prerelease tag");
     });

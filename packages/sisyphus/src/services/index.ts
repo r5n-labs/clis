@@ -10,6 +10,7 @@ export * from "./ReleaseOrchestrator";
 export * from "./ReleaseSource";
 export { getNpmTag, resolveReleaseNpmTag } from "./release/npm-registry";
 export * from "./release-ledger";
+export * from "./release-plan";
 export * from "./release-report";
 export * from "./StoneManager";
 export * from "./VersionCalculator";

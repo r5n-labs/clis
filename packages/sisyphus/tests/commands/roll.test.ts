@@ -614,6 +614,183 @@ describe("RollCommand release metadata", () => {
     expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
   });
 
+  test("skips ignored-only stones without failing and keeps them on disk", async () => {
+    config.set("ignore", [PACKAGE_NAME]);
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await expect(new RollCommand().execute(makeCtx(config))).resolves.toBeUndefined();
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    expect(existsSync(join(root, STONE_FILE))).toBe(true);
+    expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
+  });
+
+  test("--json reports an ignored-only release as planned with the warning", async () => {
+    config.set("ignore", [PACKAGE_NAME]);
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+
+    try {
+      await expect(new RollCommand().execute(makeCtx(config, { json: true }))).resolves.toBeUndefined();
+    } finally {
+      consoleLog.mockRestore();
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report).toMatchObject({ packages: [], published: false, status: "planned", stones: [STONE_ID] });
+    expect(report.warnings).toContain("Pending stones reference only ignored packages");
+    expect(report.warnings).toContain(`Excluded by config.ignore: ${PACKAGE_NAME}`);
+    expect(existsSync(join(root, STONE_FILE))).toBe(true);
+  });
+
+  test("an ignored-only stone with a different prerelease tag no longer blocks the release", async () => {
+    config.set("ignore", ["@fixture/ghost"]);
+    const manager = new StoneManager(config);
+    await manager.save(
+      Stone.fromJson({ id: "0002-ignored", message: "feat: ghost", patch: ["@fixture/ghost"], tag: "beta" }),
+    );
+    await Bun.$`git add -A`.cwd(root).quiet();
+    await Bun.$`git commit -q -m "add ignored stone"`.cwd(root).quiet();
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await expect(new RollCommand().execute(makeCtx(config))).resolves.toBeUndefined();
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).not.toBe(baseline);
+    expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.1");
+    expect(existsSync(join(root, STONE_FILE))).toBe(false);
+  });
+
+  test("names the stale packages when stones reference only unknown packages", async () => {
+    rmSync(join(root, STONE_FILE));
+    config.set("stones", []);
+    const manager = new StoneManager(config);
+    await manager.save(Stone.fromJson({ id: "0003-ghost", message: "feat: ghost", patch: ["@fixture/ghost"] }));
+
+    await expect(new RollCommand().execute(makeCtx(config))).rejects.toThrow(
+      "Pending stones reference unknown packages: @fixture/ghost",
+    );
+
+    expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
+  });
+
+  test("--json in a TTY refuses to release without --yes", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true });
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+    const consoleError = spyOn(console, "error").mockImplementation(() => undefined);
+    const exit = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    try {
+      await expect(new RollCommand().execute(makeCtx(config, { json: true, yes: false }))).rejects.toThrow("exit:1");
+    } finally {
+      consoleLog.mockRestore();
+      consoleError.mockRestore();
+      exit.mockRestore();
+      if (descriptor) Object.defineProperty(process.stdout, "isTTY", descriptor);
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report.status).toBe("failed");
+    expect(report.error.message).toBe("--json requires --yes in an interactive terminal");
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    expect(existsSync(join(root, STONE_FILE))).toBe(true);
+    expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
+  });
+
+  test("--json in a TTY proceeds with --yes", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true });
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+
+    try {
+      await expect(new RollCommand().execute(makeCtx(config, { json: true, yes: true }))).resolves.toBeUndefined();
+    } finally {
+      consoleLog.mockRestore();
+      if (descriptor) Object.defineProperty(process.stdout, "isTTY", descriptor);
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report.status).toBe("completed");
+    expect(await gitText(root, ["rev-parse", "HEAD"])).not.toBe(baseline);
+    expect(existsSync(join(root, STONE_FILE))).toBe(false);
+  });
+
+  test("--json surfaces ignore-exclusion warnings in the report", async () => {
+    config.set("ignore", ["@fixture/ghost"]);
+    rmSync(join(root, STONE_FILE));
+    config.set("stones", []);
+    const manager = new StoneManager(config);
+    await manager.save(
+      Stone.fromJson({ id: "0004-mixed", message: "fix: mixed", patch: [PACKAGE_NAME, "@fixture/ghost"] }),
+    );
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+
+    try {
+      await new RollCommand().execute(makeCtx(config, { dryRun: true, json: true }));
+    } finally {
+      consoleLog.mockRestore();
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report.status).toBe("planned");
+    expect(report.warnings).toEqual(["Excluded by config.ignore: @fixture/ghost"]);
+    expect(report.packages.map((pkg: { name: string }) => pkg.name)).toEqual([PACKAGE_NAME]);
+  });
+
+  test("--json dry-run of a mixed-channel release reports the plan plus a warning", async () => {
+    writeFileSync(
+      join(root, PACKAGE_FILE),
+      `${JSON.stringify({ name: PACKAGE_NAME, private: false, version: "1.0.0" }, null, 2)}\n`,
+    );
+    mkdirSync(join(root, "packages/bar"), { recursive: true });
+    writeFileSync(
+      join(root, "packages/bar/package.json"),
+      `${JSON.stringify({ name: "@fixture/bar", private: false, version: "1.0.0" }, null, 2)}\n`,
+    );
+    rmSync(join(root, STONE_FILE));
+    config.set("stones", []);
+    const manager = new StoneManager(config);
+    await manager.save(
+      Stone.fromJson({
+        id: "0005-channels",
+        message: "feat: split",
+        patch: [PACKAGE_NAME],
+        snapshot: ["@fixture/bar"],
+      }),
+    );
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+
+    try {
+      await new RollCommand().execute(makeCtx(config, { dryRun: true, json: true, npm: true }));
+    } finally {
+      consoleLog.mockRestore();
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report.status).toBe("planned");
+    expect(report.operations.npmTag).toBe("latest");
+    expect(report.warnings.join("\n")).toContain("Npm publication would fail: Release mixes npm dist-tags");
+    expect(report.packages).toHaveLength(2);
+  });
+
   test("--json emits exactly one document and no clack output", async () => {
     const logged: string[] = [];
     const consoleLog = spyOn(console, "log").mockImplementation((value) => {
@@ -642,6 +819,7 @@ describe("RollCommand release metadata", () => {
       status: "planned",
       stones: [STONE_ID],
       tags: [RELEASE_TAG],
+      warnings: [],
     });
     expect(report.packages).toEqual([
       {

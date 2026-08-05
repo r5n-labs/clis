@@ -52,7 +52,15 @@ describe("ChangesetParser.toStoneData", () => {
 
   test("unknown bump types are rejected instead of dropping the package", () => {
     expect(() => parser.toStoneData(makeChangeset({ "@app/core": "prepatch" }, "Pre-release"))).toThrow(
-      'Changeset for @app/core uses an unsupported bump type "prepatch"',
+      'Changeset test-changeset.md: @app/core uses an unsupported bump type "prepatch"',
+    );
+  });
+
+  test("lists every unsupported bump in one error", () => {
+    expect(() =>
+      parser.toStoneData(makeChangeset({ "@app/core": "prepatch", "@app/ui": "none", "@app/ok": "patch" }, "x")),
+    ).toThrow(
+      'Changeset test-changeset.md: @app/core uses an unsupported bump type "prepatch"; @app/ui uses an unsupported bump type "none"',
     );
   });
 

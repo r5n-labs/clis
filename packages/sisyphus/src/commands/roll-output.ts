@@ -14,13 +14,16 @@ export type RollReporter = {
 };
 
 export function redirectStdoutToStderr(): () => void {
-  const original = process.stdout.write.bind(process.stdout);
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalLog = console.log;
 
   process.stdout.write = ((chunk: unknown, ...rest: unknown[]) =>
     (process.stderr.write as (...args: unknown[]) => boolean)(chunk, ...rest)) as typeof process.stdout.write;
+  console.log = (...values: unknown[]) => console.error(...values);
 
   return () => {
-    process.stdout.write = original;
+    process.stdout.write = originalWrite;
+    console.log = originalLog;
   };
 }
 

@@ -73,7 +73,7 @@
             "outputs": {
               "type": "array",
               "description": "Repository-root-relative globs written by the release build. They are cleaned before the build and exempted from the ignored-input and pack-input guards.",
-              "items": { "type": "string", "minLength": 1, "not": { "pattern": "^[/.]" } },
+              "items": { "type": "string", "minLength": 1, "not": { "pattern": "^(\\.\\.?/|/)" } },
               "uniqueItems": true
             },
             "root": {

@@ -98,7 +98,7 @@ sisyphus roll --resume
 - `--noCommit` — skip the release commit (also disables tags, push, and provider release)
 - `--preview` — write changelogs, show them, then offer to revert
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
-- `-j, --json` — print a machine-readable release report on stdout instead of the interactive output
+- `-j, --json` — print a machine-readable release report on stdout instead of the interactive output; the report carries a required `warnings` string array listing ignore exclusions, cycle-order caveats, and channel problems
 - `--resume` — reconcile and continue the active incomplete release
 - `--abort` — abandon the incomplete release if nothing external has started; releases with external progress must use `--resume`
 - `-d, --dryRun`, `-y, --yes`
@@ -206,7 +206,7 @@ Stones may also carry a `tag` (prerelease) and the `commits` they were generated
 
 ## Dependents
 
-Selecting a package pulls in everything that depends on it, transitively, as a `dependency` bump. Edges come from the manifest sections listed in `dependents.kinds`; the default includes `devDependencies` because bundled packages inline their workspace dependencies at build time. Drop it when only the published manifest matters:
+Selecting a package pulls in everything that depends on it, transitively, as a `dependency` bump. Propagation follows only `workspace:` protocol specifiers — a dependency declared with a plain version range is never treated as an internal edge, even when its name matches a workspace package. Edges come from the manifest sections listed in `dependents.kinds`; the default includes `devDependencies` because bundled packages inline their workspace dependencies at build time. Drop it when only the published manifest matters:
 
 ```json
 {
@@ -230,7 +230,7 @@ Pass `--tag` to `version` to open a prerelease channel. The base version is bump
 | `1.1.0-beta.1` | major + `--tag beta` | `2.0.0-beta.0` |
 | `1.1.0-beta.1` | patch, no tag | `1.1.0` |
 
-Omitting `--tag` leaves the channel and lands on the accumulated stable target. The npm dist-tag follows the channel, so prereleases never publish as `latest`; a roll that mixes stable and prerelease packages is rejected.
+Omitting `--tag` leaves the channel and lands on the accumulated stable target. The npm dist-tag follows the channel, so prereleases never publish as `latest`. A single roll cannot publish stable and prerelease packages to npm together — the dist-tag applies to the whole release — so such a mix fails closed before anything is published. In practice, graduate the prerelease packages first or roll the two channels separately.
 
 ## Build
 

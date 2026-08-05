@@ -1,8 +1,8 @@
 import { args, color, log, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import type { Package, Stone } from "../domain";
-import { BUMP_COLORS, BUMP_EMOJI, BUMP_ORDER } from "../domain";
-import { isIgnoredPackage, StoneManager, VersionCalculator, WorkspaceScanner } from "../services";
+import { BUMP_COLORS, BUMP_EMOJI } from "../domain";
+import { isIgnoredPackage, predictStoneVersions, StoneManager, WorkspaceScanner } from "../services";
 
 const checkArgs = args({
   config: { alias: "c", default: false, description: "Include config in output", type: "boolean" },
@@ -22,6 +22,7 @@ type JsonStone = {
   id: string;
   message: string;
   tag?: string;
+  invalid?: string;
   packages: { name: string; version: string; bump: string; newVersion: string }[];
 };
 
@@ -77,18 +78,13 @@ export class CheckCommand extends BaseCommand {
   }
 
   private stoneToJson(stone: Stone, packages: Map<string, Package>, ignore: readonly string[]): JsonStone {
-    const stonePkgs: JsonStone["packages"] = [];
+    const prediction = predictStoneVersions(stone, packages, ignore);
 
-    for (const bump of BUMP_ORDER) {
-      for (const name of stone.getPackages(bump)) {
-        if (isIgnoredPackage(name, ignore)) continue;
-        const pkg = packages.get(name);
-        const version = pkg?.version ?? "0.0.0";
-        stonePkgs.push({ bump, name, newVersion: VersionCalculator.bump(version, bump, stone.tag), version });
-      }
+    if (prediction.kind === "invalid") {
+      return { id: stone.id, invalid: prediction.message, message: stone.message, packages: [], tag: stone.tag };
     }
 
-    return { id: stone.id, message: stone.message, packages: stonePkgs, tag: stone.tag };
+    return { id: stone.id, message: stone.message, packages: prediction.packages, tag: stone.tag };
   }
 
   private printFormatted(data: CheckData) {
@@ -143,20 +139,18 @@ export class CheckCommand extends BaseCommand {
     lines.push(`${color.dim("Message:")} ${stone.message}`);
     lines.push(`${color.bold("Packages:")}`);
 
-    for (const bump of BUMP_ORDER) {
-      const pkgNames = stone.getPackages(bump);
-      if (pkgNames.length === 0) continue;
+    const prediction = predictStoneVersions(stone, packages, ignore);
 
-      for (const name of pkgNames) {
-        if (isIgnoredPackage(name, ignore)) continue;
-        const pkg = packages.get(name);
-        const version = pkg?.version ?? "0.0.0";
-        const newVersion = VersionCalculator.bump(version, bump, stone.tag);
-        const colorFn = BUMP_COLORS[bump];
-        const emoji = BUMP_EMOJI[bump];
+    if (prediction.kind === "invalid") {
+      lines.push(`  ${color.yellow(`invalid: ${prediction.message}`)}`);
+      return lines.join("\n");
+    }
 
-        lines.push(`  ${emoji} ${color.cyan(name)}@${colorFn(newVersion)} ${color.dim(`(${bump})`)}`);
-      }
+    for (const pkg of prediction.packages) {
+      const colorFn = BUMP_COLORS[pkg.bump];
+      const emoji = BUMP_EMOJI[pkg.bump];
+
+      lines.push(`  ${emoji} ${color.cyan(pkg.name)}@${colorFn(pkg.newVersion)} ${color.dim(`(${pkg.bump})`)}`);
     }
 
     return lines.join("\n");

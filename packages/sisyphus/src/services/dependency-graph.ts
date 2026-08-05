@@ -145,6 +145,7 @@ export function orderForRelease(packages: readonly Package[]): ReleaseOrder {
   const names = [...selected.keys()].sort(compareNames);
   const remaining = new Map<string, number>();
   const dependents = new Map<string, string[]>();
+  const dependenciesByName = new Map<string, ReadonlySet<string>>();
 
   for (const name of names) {
     const dependencies = new Set(
@@ -154,6 +155,7 @@ export function orderForRelease(packages: readonly Package[]): ReleaseOrder {
     );
 
     remaining.set(name, dependencies.size);
+    dependenciesByName.set(name, dependencies);
     for (const dependency of dependencies) {
       dependents.set(dependency, [...(dependents.get(dependency) ?? []), name]);
     }
@@ -166,7 +168,7 @@ export function orderForRelease(packages: readonly Package[]): ReleaseOrder {
 
   while (emitted.size < names.length) {
     if (ready.length === 0) {
-      const forced = breakCycle(names, emitted, dependents);
+      const forced = breakCycle(names, emitted, dependents, dependenciesByName);
       if (!forced) break;
       cycle.push(forced);
       enqueue(ready, forced);
@@ -194,11 +196,14 @@ function breakCycle(
   names: readonly string[],
   emitted: ReadonlySet<string>,
   dependents: ReadonlyMap<string, string[]>,
+  dependencies: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | undefined {
+  const members = cycleMembers(names, emitted, dependents, dependencies);
+  const candidates = members.size > 0 ? names.filter((name) => members.has(name)) : names;
   let best: string | undefined;
   let bestBlocked = -1;
 
-  for (const name of names) {
+  for (const name of candidates) {
     if (emitted.has(name)) continue;
 
     const blocked = (dependents.get(name) ?? []).filter((dependent) => !emitted.has(dependent)).length;
@@ -209,6 +214,31 @@ function breakCycle(
   }
 
   return best;
+}
+
+function cycleMembers(
+  names: readonly string[],
+  emitted: ReadonlySet<string>,
+  dependents: ReadonlyMap<string, string[]>,
+  dependencies: ReadonlyMap<string, ReadonlySet<string>>,
+): ReadonlySet<string> {
+  const active = new Set(names.filter((name) => !emitted.has(name)));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const name of [...active]) {
+      const hasDependent = (dependents.get(name) ?? []).some((dependent) => active.has(dependent));
+      const hasDependency = [...(dependencies.get(name) ?? [])].some((dependency) => active.has(dependency));
+      if (hasDependent && hasDependency) continue;
+
+      active.delete(name);
+      changed = true;
+    }
+  }
+
+  return active;
 }
 
 function buildReverseIndex(

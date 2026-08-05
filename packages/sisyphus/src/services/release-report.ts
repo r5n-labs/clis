@@ -33,6 +33,7 @@ export type ReleaseReport = {
   tags: string[];
   stones: string[];
   operations: { npmTag: string; pushed: boolean; providerReleases: boolean };
+  warnings: string[];
   changelogFiles?: string[];
   error?: { message: string; hint?: string; causes?: string[] };
 };
@@ -48,6 +49,7 @@ export type ReleaseReportInput = {
   status: ReleaseReportStatus;
   stones: readonly Stone[];
   tagsEnabled: boolean;
+  warnings?: readonly string[];
 };
 
 export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
@@ -75,6 +77,7 @@ export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
     status: input.status,
     stones: ledger ? ledger.stones.map((stone) => stone.id) : input.stones.map((stone) => stone.id),
     tags: ledger ? (ledger.tagsReady ? [...ledger.releaseTags] : []) : predictTags(input.packages, input.tagsEnabled),
+    warnings: [...(input.warnings ?? [])],
   };
 
   if (input.changelogFiles) report.changelogFiles = [...input.changelogFiles];
@@ -92,8 +95,14 @@ function fromLedger(ledger: ReleaseLedgerData): ReleaseReportPackage[] {
     private: pkg.isPrivate,
     published: ledger.operations.npm[pkg.name]?.state === "completed",
     registry: ledger.operations.npmRegistries[pkg.name] ?? null,
-    tag: ledger.releaseTags.find((tag) => tag === `${pkg.name}@${pkg.newVersion}`) ?? null,
+    tag: ledger.tagsReady
+      ? (ledger.releaseTags.find((tag) => tag === formatReleaseTag(pkg.name, pkg.newVersion)) ?? null)
+      : null,
   }));
+}
+
+function formatReleaseTag(name: string, version: string): string {
+  return `${name}@${version}`;
 }
 
 function fromPlan(packages: readonly Package[]): ReleaseReportPackage[] {
@@ -111,7 +120,7 @@ function fromPlan(packages: readonly Package[]): ReleaseReportPackage[] {
 
 function predictTags(packages: readonly Package[], tagsEnabled: boolean): string[] {
   if (!tagsEnabled) return [];
-  return packages.map((pkg) => `${pkg.name}@${pkg.newVersion ?? pkg.version}`).sort();
+  return packages.map((pkg) => formatReleaseTag(pkg.name, pkg.newVersion ?? pkg.version)).sort();
 }
 
 function hasCompletedProviderReleases(ledger: ReleaseLedgerData | null): boolean {

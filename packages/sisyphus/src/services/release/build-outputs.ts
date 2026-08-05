@@ -94,7 +94,7 @@ export async function cleanBuildOutputs(root: string, prefix: string, matcher: B
 }
 
 export async function runBuildCommand(argv: readonly string[], cwd: string, context: string): Promise<void> {
-  const subprocess = Bun.spawn([...argv], { cwd, stderr: "pipe", stdout: "pipe" });
+  const subprocess = spawnBuildCommand(argv, cwd, context);
 
   let exitCode: number;
   let stderr: string;
@@ -111,6 +111,14 @@ export async function runBuildCommand(argv: readonly string[], cwd: string, cont
 
   if (exitCode !== 0) {
     throw new Error(`${context}: ${stderr.trim() || `${argv[0]} exited with code ${exitCode}`}`);
+  }
+}
+
+function spawnBuildCommand(argv: readonly string[], cwd: string, context: string) {
+  try {
+    return Bun.spawn([...argv], { cwd, stderr: "pipe", stdout: "pipe" });
+  } catch (error) {
+    throw new Error(`${context}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

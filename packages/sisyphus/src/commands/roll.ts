@@ -8,6 +8,8 @@ import {
   buildReleaseReport,
   ChangelogGenerator,
   excludeIgnored,
+  explainEmptyRelease,
+  getNpmTag,
   hashReleasePlan,
   hashReleaseSource,
   orderForRelease,
@@ -19,6 +21,7 @@ import {
   type ReleaseReportStatus,
   resolveReleaseNpmTag,
   StoneManager,
+  stripIgnoredFromStones,
   WorkspaceScanner,
 } from "../services";
 import {
@@ -30,6 +33,9 @@ import {
 } from "./roll-output";
 
 const SNAPSHOT_DATE_SUFFIX = /\d{14}$/;
+const IGNORED_ONLY_WARNING = "Pending stones reference only ignored packages";
+const JSON_CONSENT_MESSAGE = "--json requires --yes in an interactive terminal";
+const JSON_CONSENT_HINT = "Pass --yes to consent to the release, or use --dryRun to preview it";
 
 type ReportContext = {
   ledger?: ReleaseLedgerData;
@@ -82,8 +88,12 @@ export class RollCommand extends BaseCommand {
 
   private reportContext: ReportContext = { mode: "release", npmTag: DEFAULT_NPM_TAG, packages: [], stones: [] };
   private restoreStdout: (() => void) | undefined;
+  private stdoutWasTTY = false;
+  private warnings: string[] = [];
 
   async execute(ctx: RollCtx) {
+    this.stdoutWasTTY = process.stdout.isTTY === true;
+
     if (!ctx.args.json) {
       await this.run(ctx);
       return;
@@ -111,6 +121,7 @@ export class RollCommand extends BaseCommand {
       status,
       stones: this.reportContext.stones,
       tagsEnabled: this.reportContext.tagsEnabled ?? ctx.args.tags ?? ctx.config.get("release").tags,
+      warnings: this.warnings,
       ...extra,
     });
   }
@@ -153,20 +164,36 @@ export class RollCommand extends BaseCommand {
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
 
-    const mergedStone = Stone.mergeAll(stones);
+    const ignore = ctx.config.get("ignore") ?? [];
+    const { skipped, stones: plannedStones } = stripIgnoredFromStones(stones, ignore);
+    if (skipped.length > 0) this.recordWarning(ctx, `Excluded by config.ignore: ${skipped.join(", ")}`);
+
+    const mergedStone = Stone.mergeAll(plannedStones);
     const updatedPackages = this.planPackages(ctx, Package.applyStone(mergedStone, packages));
+    const mode: ReleaseReportMode = options.dryRun ? "dry-run" : ctx.args.preview ? "preview" : "release";
 
     if (updatedPackages.length === 0) {
-      throw new Exit("No packages to update", "Stones don't reference any known packages");
+      const reason = explainEmptyRelease(mergedStone, packages, ignore);
+      if (reason.kind === "unknown-packages") {
+        throw new Exit(
+          `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
+          "Remove the stale stones or restore the packages before rolling",
+        );
+      }
+      this.recordWarning(ctx, IGNORED_ONLY_WARNING);
+      this.reportContext = { mode, npmTag: DEFAULT_NPM_TAG, packages: [], stones, tagsEnabled: options.tags };
+      this.emit(ctx, "planned");
+      return;
     }
 
     this.reportContext = {
-      mode: options.dryRun ? "dry-run" : ctx.args.preview ? "preview" : "release",
-      npmTag: options.npm ? resolveReleaseNpmTag(updatedPackages, ctx.config.get("tag")) : DEFAULT_NPM_TAG,
+      mode,
+      npmTag: DEFAULT_NPM_TAG,
       packages: updatedPackages,
       stones,
       tagsEnabled: options.tags,
     };
+    this.reportContext.npmTag = this.resolveReportNpmTag(ctx, updatedPackages, options.npm);
 
     if (ctx.args.preview) {
       await this.previewChangelogs(ctx, stones, updatedPackages);
@@ -176,7 +203,8 @@ export class RollCommand extends BaseCommand {
     const reporter = createRollReporter(ctx.args.json);
     this.printPreview(reporter, mergedStone, updatedPackages, options);
 
-    if (!options.dryRun && !ctx.args.yes && !ctx.args.json && process.stdout.isTTY) {
+    if (!options.dryRun && !ctx.args.yes && this.stdoutWasTTY) {
+      this.assertJsonConsent(ctx);
       const confirmed = await confirm({ initialValue: true, message: "Proceed with release?" });
       if (!confirmed) return;
     }
@@ -191,16 +219,37 @@ export class RollCommand extends BaseCommand {
   }
 
   private planPackages(ctx: RollCtx, packages: Package[]): Package[] {
-    const warn = ctx.args.json ? () => undefined : (message: string) => log.warn(color.yellow(message));
     const { kept, skipped } = excludeIgnored(packages, ctx.config.get("ignore") ?? []);
-    if (skipped.length > 0) warn(`Excluded by config.ignore: ${skipped.join(", ")}`);
+    if (skipped.length > 0) this.recordWarning(ctx, `Excluded by config.ignore: ${skipped.join(", ")}`);
 
     const { cycle, ordered } = orderForRelease(kept);
     if (cycle.length > 0) {
-      warn(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`);
+      this.recordWarning(ctx, `Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`);
     }
 
     return ordered;
+  }
+
+  private recordWarning(ctx: RollCtx, message: string) {
+    this.warnings.push(message);
+    if (!ctx.args.json) log.warn(color.yellow(message));
+  }
+
+  private assertJsonConsent(ctx: RollCtx) {
+    if (!ctx.args.json) return;
+    throw new Exit(JSON_CONSENT_MESSAGE, JSON_CONSENT_HINT);
+  }
+
+  private resolveReportNpmTag(ctx: RollCtx, packages: readonly Package[], npm: boolean): string {
+    if (!npm) return DEFAULT_NPM_TAG;
+
+    try {
+      return resolveReleaseNpmTag(packages, ctx.config.get("tag"));
+    } catch (error) {
+      const fallback = getNpmTag(ctx.config.get("tag"));
+      this.recordWarning(ctx, `Npm publication would fail: ${error instanceof Error ? error.message : String(error)}`);
+      return fallback;
+    }
   }
 
   private async previewChangelogs(ctx: RollCtx, stones: Stone[], packages: Package[]) {
@@ -613,9 +662,7 @@ export class RollCommand extends BaseCommand {
     const reporter = createRollReporter(ctx.args.json);
     const { cycle, ordered } = orderForRelease(packagesToPublish);
     if (cycle.length > 0) {
-      reporter.warn(
-        color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`),
-      );
+      this.recordWarning(ctx, `Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`);
     }
 
     reporter.info(color.bold("Publish-only mode"));
@@ -643,11 +690,12 @@ export class RollCommand extends BaseCommand {
 
     this.reportContext = {
       mode: "publish-only",
-      npmTag: options.npm ? resolveReleaseNpmTag(ordered, ctx.config.get("tag")) : DEFAULT_NPM_TAG,
+      npmTag: DEFAULT_NPM_TAG,
       packages: ordered,
       stones: releaseStones,
       tagsEnabled: options.tags,
     };
+    this.reportContext.npmTag = this.resolveReportNpmTag(ctx, ordered, options.npm);
 
     if (options.createRelease && !options.tags) {
       throw new Exit(
@@ -669,7 +717,8 @@ export class RollCommand extends BaseCommand {
       return;
     }
 
-    if (!ctx.args.yes && !ctx.args.json && process.stdout.isTTY) {
+    if (!ctx.args.yes && this.stdoutWasTTY) {
+      this.assertJsonConsent(ctx);
       const confirmed = await confirm({ initialValue: true, message: "Proceed with publishing?" });
       if (!confirmed) return;
     }

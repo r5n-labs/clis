@@ -5,6 +5,7 @@ import {
   createBuildOutputMatcher,
   EMPTY_BUILD_OUTPUT_MATCHER,
   resolveBuildConfig,
+  runBuildCommand,
 } from "../../src/services/release/build-outputs";
 
 describe("createBuildOutputMatcher", () => {
@@ -27,6 +28,21 @@ describe("createBuildOutputMatcher", () => {
     const matcher = createBuildOutputMatcher(["**/dist/**"]);
 
     expect(matcher.isOutput("packages/foo/vendor/dep/dist/x.js")).toBe(true);
+  });
+
+  test("treats a bare directory pattern as covering everything beneath it", () => {
+    const matcher = createBuildOutputMatcher(["packages/*/dist"]);
+
+    expect(matcher.isOutput("packages/foo/dist/x.js")).toBe(true);
+    expect(matcher.isOutput("packages/foo/dist/types/x.d.ts")).toBe(true);
+    expect(matcher.isOutput("packages/foo/distant.js")).toBe(false);
+  });
+
+  test("an exact file pattern matches only itself", () => {
+    const matcher = createBuildOutputMatcher(["root-build-count.txt"]);
+
+    expect(matcher.isOutput("root-build-count.txt")).toBe(true);
+    expect(matcher.isOutput("root-build-count.txt.bak")).toBe(false);
   });
 
   test("an empty pattern list never matches", () => {
@@ -62,5 +78,13 @@ describe("resolveBuildConfig", () => {
     expect(() => resolveBuildConfig({ command: [], outputs: ["dist/**"], root: [] })).toThrow(
       "release.build.outputs is declared but no build command runs",
     );
+  });
+});
+
+describe("runBuildCommand", () => {
+  test("labels a missing executable with the build context", async () => {
+    await expect(
+      runBuildCommand(["sisyphus-missing-executable-fixture"], process.cwd(), "Failed to build @fixture/foo"),
+    ).rejects.toThrow(/^Failed to build @fixture\/foo: /);
   });
 });

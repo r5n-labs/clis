@@ -86,29 +86,54 @@ export class Package {
   static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
     const updated: Package[] = [];
     const seen = new Set<string>();
-    const graduating = Package.leavesPrerelease(stone, packages);
+    const graduating = Package.graduatingPackages(stone, packages);
 
     for (const bump of BUMP_ORDER) {
       for (const name of stone.getPackages(bump)) {
         const pkg = packages.get(name);
         if (!pkg || seen.has(name)) continue;
         seen.add(name);
-        updated.push(pkg.withBump(bump, stone.tag, graduating));
+        updated.push(pkg.withBump(bump, stone.tag, graduating.has(name)));
       }
     }
 
     return updated;
   }
 
-  private static leavesPrerelease(stone: Stone, packages: Map<string, Package>): boolean {
-    if (stone.tag !== undefined) return false;
+  private static graduatingPackages(stone: Stone, packages: Map<string, Package>): ReadonlySet<string> {
+    const graduating = new Set<string>();
+    if (stone.tag !== undefined) return graduating;
 
-    return BUMP_ORDER.filter((bump) => bump !== BumpType.Dependency && bump !== BumpType.Snapshot).some((bump) =>
-      stone.getPackages(bump).some((name) => {
-        const version = packages.get(name)?.version;
-        return version !== undefined && isPrerelease(parseSemver(version) ?? EMPTY_SEMVER);
-      }),
-    );
+    const explicitBumps = BUMP_ORDER.filter((bump) => bump !== BumpType.Dependency && bump !== BumpType.Snapshot);
+    for (const bump of explicitBumps) {
+      for (const name of stone.getPackages(bump)) {
+        if (Package.isPrereleaseVersion(packages.get(name)?.version)) graduating.add(name);
+      }
+    }
+
+    const candidates = stone
+      .getPackages(BumpType.Dependency)
+      .map((name) => packages.get(name))
+      .filter((pkg): pkg is Package => pkg !== undefined && Package.isPrereleaseVersion(pkg.version));
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+
+      for (const pkg of candidates) {
+        if (graduating.has(pkg.name)) continue;
+        if (!pkg.workspaceDependencies.some((dependency) => graduating.has(dependency.name))) continue;
+
+        graduating.add(pkg.name);
+        changed = true;
+      }
+    }
+
+    return graduating;
+  }
+
+  private static isPrereleaseVersion(version: string | undefined): boolean {
+    return version !== undefined && isPrerelease(parseSemver(version) ?? EMPTY_SEMVER);
   }
 
   get newVersion(): string | undefined {

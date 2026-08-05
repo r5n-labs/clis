@@ -256,31 +256,76 @@ describe("applyStone pattern — applying bumps from stone to matching packages"
 });
 
 describe("Package.applyStone() prerelease channels", () => {
-  const packages = (versions: Record<string, string>) =>
-    new Map(
-      Object.entries(versions).map(([name, version]) => [
-        name,
-        Package.fromJson({ name, version }, `packages/${name}/package.json`),
-      ]),
-    );
+  const packages = (entries: PackageJson[]) =>
+    new Map(entries.map((entry) => [entry.name, Package.fromJson(entry, `packages/${entry.name}/package.json`)]));
+
+  const versionsOnly = (versions: Record<string, string>) =>
+    packages(Object.entries(versions).map(([name, version]) => ({ name, version })));
 
   test("dependents leave the channel when the release itself graduates", () => {
     const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"] });
-    const applied = Package.applyStone(stone, packages({ "@app/cli": "1.0.2-beta.3", "@app/core": "2.0.0-beta.0" }));
+    const applied = Package.applyStone(
+      stone,
+      packages([
+        { name: "@app/core", version: "2.0.0-beta.0" },
+        { dependencies: { "@app/core": "workspace:*" }, name: "@app/cli", version: "1.0.2-beta.3" },
+      ]),
+    );
 
     expect(applied.map((pkg) => pkg.newVersion)).toEqual(["2.0.0", "1.0.2"]);
   });
 
+  test("an unrelated graduating package does not graduate an independent prerelease dependent", () => {
+    const stone = Stone.create({
+      dependency: ["@app/ui-z"],
+      major: ["@app/lib-x"],
+      message: "ship",
+      patch: ["@app/app-y"],
+    });
+    const applied = Package.applyStone(
+      stone,
+      packages([
+        { name: "@app/lib-x", version: "2.0.0-beta.3" },
+        { name: "@app/app-y", version: "1.0.0" },
+        { dependencies: { "@app/app-y": "workspace:*" }, name: "@app/ui-z", version: "4.0.0-alpha.1" },
+      ]),
+    );
+
+    const byName = new Map(applied.map((pkg) => [pkg.name, pkg.newVersion]));
+
+    expect(byName.get("@app/lib-x")).toBe("2.0.0");
+    expect(byName.get("@app/app-y")).toBe("1.0.1");
+    expect(byName.get("@app/ui-z")).toBe("4.0.0-alpha.2");
+  });
+
+  test("graduation propagates transitively through prerelease dependents", () => {
+    const stone = Stone.create({ dependency: ["@app/b", "@app/c"], message: "ship", minor: ["@app/a"] });
+    const applied = Package.applyStone(
+      stone,
+      packages([
+        { name: "@app/a", version: "1.1.0-beta.2" },
+        { dependencies: { "@app/a": "workspace:*" }, name: "@app/b", version: "2.0.0-beta.5" },
+        { dependencies: { "@app/b": "workspace:*" }, name: "@app/c", version: "3.0.0-rc.1" },
+      ]),
+    );
+
+    const byName = new Map(applied.map((pkg) => [pkg.name, pkg.newVersion]));
+
+    expect(byName.get("@app/a")).toBe("1.1.0");
+    expect(byName.get("@app/b")).toBe("2.0.0");
+    expect(byName.get("@app/c")).toBe("3.0.0");
+  });
+
   test("dependents keep an unrelated channel when the release is plain stable", () => {
     const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"] });
-    const applied = Package.applyStone(stone, packages({ "@app/cli": "2.0.0-rc.3", "@app/core": "1.0.0" }));
+    const applied = Package.applyStone(stone, versionsOnly({ "@app/cli": "2.0.0-rc.3", "@app/core": "1.0.0" }));
 
     expect(applied.map((pkg) => pkg.newVersion)).toEqual(["1.0.1", "2.0.0-rc.4"]);
   });
 
   test("a tagged release puts every package on the channel", () => {
     const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"], tag: "beta" });
-    const applied = Package.applyStone(stone, packages({ "@app/cli": "1.0.1", "@app/core": "1.0.0" }));
+    const applied = Package.applyStone(stone, versionsOnly({ "@app/cli": "1.0.1", "@app/core": "1.0.0" }));
 
     expect(applied.map((pkg) => pkg.newVersion)).toEqual(["1.0.1-beta.0", "1.0.2-beta.0"]);
   });

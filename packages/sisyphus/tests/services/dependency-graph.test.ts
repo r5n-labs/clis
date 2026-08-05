@@ -244,6 +244,29 @@ describe("orderForRelease", () => {
     expect(ordered.ordered.map((pkg) => pkg.name)).toEqual(["@app/z", "@app/a", "@app/y"]);
   });
 
+  test("never forces an acyclic package that merely sits behind a cycle", () => {
+    const packages = makePackages([
+      { dependencies: { "@app/b": "workspace:*" }, name: "@app/a", version: "1.0.0" },
+      { dependencies: { "@app/a": "workspace:*" }, name: "@app/b", version: "1.0.0" },
+      { dependencies: { "@app/a": "workspace:*" }, name: "@app/c", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*" }, name: "@app/d", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*" }, name: "@app/e", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*" }, name: "@app/f", version: "1.0.0" },
+    ]);
+
+    const ordered = orderForRelease([...packages.values()]);
+    const names = ordered.ordered.map((pkg) => pkg.name);
+    const position = (name: string) => names.indexOf(name);
+
+    expect(ordered.cycle).toHaveLength(1);
+    expect(["@app/a", "@app/b"]).toContain(ordered.cycle[0] ?? "");
+    expect(["@app/a", "@app/b"]).toContain(names[0] ?? "");
+    expect(position("@app/c")).toBeGreaterThan(position("@app/a"));
+    expect(position("@app/d")).toBeGreaterThan(position("@app/c"));
+    expect(position("@app/e")).toBeGreaterThan(position("@app/c"));
+    expect(position("@app/f")).toBeGreaterThan(position("@app/c"));
+  });
+
   test("ignores dependencies outside the release set", () => {
     const packages = chain();
     const ordered = orderForRelease([packages.get("@app/c") as Package]);

@@ -19,6 +19,7 @@ const REPORT_KEYS = [
   "status",
   "stones",
   "tags",
+  "warnings",
 ];
 
 function makeLedger(overrides: Partial<ReleaseLedgerData> = {}): ReleaseLedgerData {
@@ -164,6 +165,27 @@ describe("buildReleaseReport", () => {
     const report = buildReleaseReport({ ...baseInput, error: new Error("boom"), ledger: null, status: "failed" });
 
     expect(report.error).toEqual({ message: "boom" });
+  });
+
+  test("reports no per-package tags before tagging completed", () => {
+    const report = buildReleaseReport({ ...baseInput, ledger: makeLedger({ tagsReady: false }), status: "failed" });
+
+    expect(report.tags).toEqual([]);
+    expect(report.packages.map((pkg) => pkg.tag)).toEqual([null, null]);
+  });
+
+  test("emits an empty warnings array by default", () => {
+    const report = buildReleaseReport({ ...baseInput, ledger: null });
+
+    expect(report.warnings).toEqual([]);
+  });
+
+  test("carries provided warnings into the report", () => {
+    const warnings = ["Excluded by config.ignore: @app/legacy"];
+    const report = buildReleaseReport({ ...baseInput, ledger: makeLedger(), warnings });
+
+    expect(report.warnings).toEqual(warnings);
+    expect(report.warnings).not.toBe(warnings);
   });
 
   test("emits a stable key set", () => {

@@ -70,6 +70,17 @@ export class PrCommand extends BaseCommand {
     }
 
     const ignore = ctx.config.get("ignore") ?? [];
+
+    if (ctx.args.packages) {
+      const ignoredRequested = selected.filter((name) => isIgnoredPackage(name, ignore));
+      if (ignoredRequested.length > 0) {
+        throw new Exit(
+          `Packages are excluded by config.ignore: ${ignoredRequested.join(", ")}`,
+          "Remove them from ignore before releasing them",
+        );
+      }
+    }
+
     const packages = selected.filter((name) => !isIgnoredPackage(name, ignore));
 
     if (packages.length === 0) {

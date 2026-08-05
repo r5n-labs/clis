@@ -1,17 +1,19 @@
-import { args, color, log, spinner } from "@r5n/cli-core";
+import { args, color, Exit, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
 import {
+  buildReleasePrTitle,
   ChangelogGenerator,
   CommitAnalyzer,
   dependentsOptions,
-  excludeIgnoredFromStone,
+  explainEmptyRelease,
   hashReleasePlan,
   hashReleaseSource,
   orderForRelease,
   PackageUpdater,
   StoneManager,
+  stripIgnoredFromStones,
   WorkspaceScanner,
 } from "../../services";
 import type { PackageRelease } from "../../types";
@@ -93,9 +95,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     if (collected.length === 0) return { packages: [], stones: [] };
 
     const ignore = ctx.config.get("ignore") ?? [];
-    const excluded = collected.map((stone) => excludeIgnoredFromStone(stone, ignore));
-    const stones = excluded.map((entry) => entry.stone);
-    const skipped = [...new Set(excluded.flatMap((entry) => entry.skipped))];
+    const { stones, skipped } = stripIgnoredFromStones(collected, ignore);
     if (skipped.length > 0) {
       log.warn(color.yellow(`Excluded by config.ignore: ${skipped.join(", ")}`));
     }
@@ -108,6 +108,14 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     if (ordered.length === 0) {
+      const reason = explainEmptyRelease(mergedStone, packages, ignore);
+      if (reason.kind === "unknown-packages") {
+        throw new Exit(
+          `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
+          "Remove or update the stale stones before creating a release PR",
+        );
+      }
+
       log.warn(color.yellow("Pending stones reference no releasable packages"));
       return { packages: [], stones: [] };
     }
@@ -155,8 +163,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private buildPrTitle(packages: Package[]): string {
-    const names = packages.map((p) => `${p.name}@${p.newVersion}`).join(", ");
-    return `${PR_TITLE_PREFIX} ${names}`;
+    return buildReleasePrTitle(PR_TITLE_PREFIX, packages);
   }
 
   private buildPrBody(packages: Package[], stones: Stone[]): string {
