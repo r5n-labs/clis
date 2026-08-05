@@ -13,6 +13,17 @@ export type RollReporter = {
   warn: (message: string) => void;
 };
 
+export function redirectStdoutToStderr(): () => void {
+  const original = process.stdout.write.bind(process.stdout);
+
+  process.stdout.write = ((chunk: unknown, ...rest: unknown[]) =>
+    (process.stderr.write as (...args: unknown[]) => boolean)(chunk, ...rest)) as typeof process.stdout.write;
+
+  return () => {
+    process.stdout.write = original;
+  };
+}
+
 export function createRollReporter(json: boolean): RollReporter {
   if (json) {
     const noop = () => undefined;
@@ -32,14 +43,16 @@ export function createRollReporter(json: boolean): RollReporter {
   };
 }
 
-export function emitReleaseReport(report: ReleaseReport): void {
+export function emitReleaseReport(report: ReleaseReport, restoreStdout?: () => void): void {
+  restoreStdout?.();
   console.log(JSON.stringify(report, null, 2));
 }
 
-export function failWithReleaseReport(report: ReleaseReport, error: unknown): never {
-  emitReleaseReport(report);
+export function failWithReleaseReport(report: ReleaseReport, error: unknown, restoreStdout?: () => void): never {
+  emitReleaseReport(report, restoreStdout);
   console.error(error instanceof Error ? error.message : String(error));
   if (error instanceof Exit && error.hint) console.error(error.hint);
+  for (const cause of report.error?.causes ?? []) console.error(cause);
 
   process.exit(error instanceof Exit ? error.exitCode : GENERIC_FAILURE_EXIT_CODE);
 }

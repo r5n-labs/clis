@@ -70,7 +70,7 @@ describe("RollCommand release metadata", () => {
     const configData = structuredClone(SISYPHUS_DEFAULT_CONFIG);
     configData.changelog.generate = false;
     configData.lastStone = { ...PREVIOUS_LAST_STONE };
-    configData.release = { createRelease: false, npm: false, push: false, tags: false };
+    configData.release = { ...configData.release, createRelease: false, npm: false, push: false, tags: false };
     config = new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), configData);
     config.save(configData);
 
@@ -367,7 +367,7 @@ describe("RollCommand release metadata", () => {
   });
 
   test("bare resume still dispatches to the recorded release operation", async () => {
-    const resume = spyOn(ReleaseOrchestrator, "resume").mockResolvedValue({ packages: [] });
+    const resume = spyOn(ReleaseOrchestrator, "resume").mockResolvedValue({ ledger: null, packages: [], stones: [] });
 
     try {
       await expect(new RollCommand().execute(makeCtx(config, { resume: true }))).resolves.toBeUndefined();
@@ -512,7 +512,7 @@ describe("RollCommand release metadata", () => {
   test("restores hand-formatted config and stone bytes exactly on reversible failure", async () => {
     const configPath = join(root, ".sisyphus/config.json");
     const parsedConfig = JSON.parse(readFileSync(configPath, "utf-8")) as SisyphusConfig;
-    const customConfigText = `${JSON.stringify({ tag: parsedConfig.tag, ...parsedConfig }, null, 4)}\n`;
+    const customConfigText = `${JSON.stringify({ ...parsedConfig, tag: parsedConfig.tag }, null, 4)}\n`;
     writeFileSync(configPath, customConfigText);
     const stonePath = join(root, STONE_FILE);
     const customStoneText = `${JSON.stringify(JSON.parse(readFileSync(stonePath, "utf-8")))}\n`;

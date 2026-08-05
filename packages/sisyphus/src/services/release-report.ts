@@ -34,7 +34,7 @@ export type ReleaseReport = {
   stones: string[];
   operations: { npmTag: string; pushed: boolean; providerReleases: boolean };
   changelogFiles?: string[];
-  error?: { message: string; hint?: string };
+  error?: { message: string; hint?: string; causes?: string[] };
 };
 
 export type ReleaseReportInput = {
@@ -73,7 +73,7 @@ export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
     schemaVersion: RELEASE_REPORT_SCHEMA_VERSION,
     status: input.status,
     stones: ledger ? ledger.stones.map((stone) => stone.id) : input.stones.map((stone) => stone.id),
-    tags: ledger ? [...ledger.releaseTags] : predictTags(input.packages, input.tagsEnabled),
+    tags: ledger ? (ledger.tagsReady ? [...ledger.releaseTags] : []) : predictTags(input.packages, input.tagsEnabled),
   };
 
   if (input.changelogFiles) report.changelogFiles = [...input.changelogFiles];
@@ -118,8 +118,20 @@ function hasCompletedProviderReleases(ledger: ReleaseLedgerData | null): boolean
   return releases.length > 0 && releases.every((release) => release.state === "completed");
 }
 
-function describeError(error: unknown): { message: string; hint?: string } {
-  if (error instanceof Exit)
-    return error.hint ? { hint: error.hint, message: error.message } : { message: error.message };
-  return { message: error instanceof Error ? error.message : String(error) };
+function describeError(error: unknown): { message: string; hint?: string; causes?: string[] } {
+  const message = error instanceof Error ? error.message : String(error);
+  const hint = error instanceof Exit ? error.hint : undefined;
+  const causes = collectCauses(error);
+
+  return { ...(causes.length > 0 ? { causes } : {}), ...(hint ? { hint } : {}), message };
+}
+
+function collectCauses(error: unknown, seen = new Set<unknown>()): string[] {
+  if (!(error instanceof Error) || seen.has(error)) return [];
+  seen.add(error);
+
+  const nested = error instanceof AggregateError ? error.errors : [];
+  const causes = [...nested, error.cause].filter((cause): cause is Error => cause instanceof Error);
+
+  return causes.flatMap((cause) => [cause.message, ...collectCauses(cause, seen)]);
 }

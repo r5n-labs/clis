@@ -63,17 +63,25 @@ jobs:
           npm --version
           RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
           REPORT="$RUNNER_TEMP/release.json"
+          STATUS=0
           if [ -f "$RELEASE_DIR/active.json" ]; then
-            bun sis roll --resume --json > "$REPORT"
+            bun sis roll --resume --json > "$REPORT" || STATUS=$?
           else
-            bun sis roll --json --yes > "$REPORT"
+            bun sis roll --json --yes > "$REPORT" || STATUS=$?
           fi
+
+          cat "$REPORT"
+
+          PUBLISHED=$(jq -r '.published // false' "$REPORT" 2>/dev/null || echo false)
+          PACKAGES=$(jq -c '.publishedPackages // []' "$REPORT" 2>/dev/null || echo '[]')
           {
-            echo "published=$(jq -r '.published' "$REPORT")"
+            echo "published=$PUBLISHED"
             echo "publishedPackages<<SIS_JSON_EOF"
-            jq -c '.publishedPackages' "$REPORT"
+            echo "$PACKAGES"
             echo "SIS_JSON_EOF"
           } >> "$GITHUB_OUTPUT"
+
+          exit "$STATUS"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production

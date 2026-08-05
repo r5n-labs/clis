@@ -161,30 +161,54 @@ export function orderForRelease(packages: readonly Package[]): ReleaseOrder {
 
   const ready = names.filter((name) => remaining.get(name) === 0);
   const ordered: Package[] = [];
+  const emitted = new Set<string>();
+  const cycle: string[] = [];
 
-  while (ready.length > 0) {
+  while (emitted.size < names.length) {
+    if (ready.length === 0) {
+      const forced = breakCycle(names, emitted, dependents);
+      if (!forced) break;
+      cycle.push(forced);
+      enqueue(ready, forced);
+    }
+
     const name = ready.shift();
-    if (!name) continue;
+    if (!name || emitted.has(name)) continue;
 
+    emitted.add(name);
     const pkg = selected.get(name);
     if (pkg) ordered.push(pkg);
 
     for (const dependent of dependents.get(name) ?? []) {
+      if (emitted.has(dependent)) continue;
       const count = (remaining.get(dependent) ?? 0) - 1;
       remaining.set(dependent, count);
       if (count === 0) enqueue(ready, dependent);
     }
   }
 
-  const resolved = new Set(ordered.map((pkg) => pkg.name));
-  const cycle = names.filter((name) => !resolved.has(name));
+  return { cycle, ordered };
+}
 
-  for (const name of cycle) {
-    const pkg = selected.get(name);
-    if (pkg) ordered.push(pkg);
+function breakCycle(
+  names: readonly string[],
+  emitted: ReadonlySet<string>,
+  dependents: ReadonlyMap<string, string[]>,
+): string | undefined {
+  let best: string | undefined;
+  let bestBlocked = -1;
+
+  for (const name of names) {
+    if (emitted.has(name)) continue;
+
+    const blocked = (dependents.get(name) ?? []).filter((dependent) => !emitted.has(dependent)).length;
+    if (blocked <= bestBlocked) continue;
+
+    best = name;
+    bestBlocked = blocked;
   }
 
-  return { cycle, ordered };
+  return best;
 }
 
 function buildReverseIndex(

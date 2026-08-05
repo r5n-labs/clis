@@ -32,7 +32,7 @@
         },
         "updateInternal": {
           "enum": ["always", "outOfRange"],
-          "description": "'always' releases every dependent; 'outOfRange' releases only dependents whose published range no longer admits the new version."
+          "description": "'always' releases every dependent; 'outOfRange' releases a dependent only when its published range no longer admits the new version. A literal 'workspace:<range>' is never rewritten by a release, so it never triggers one."
         }
       }
     },

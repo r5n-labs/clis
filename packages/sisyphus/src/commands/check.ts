@@ -51,7 +51,10 @@ export class CheckCommand extends BaseCommand {
 
   private async gatherData(ctx: CheckCtx): Promise<CheckData> {
     const isSingle = ctx.config.get("single");
-    const { packages, packageNames } = await WorkspaceScanner.scan({ single: isSingle });
+    const ignore = ctx.config.get("ignore") ?? [];
+    const scan = await WorkspaceScanner.scan({ single: isSingle });
+    const packages = scan.packages;
+    const packageNames = scan.packageNames.filter((name) => !isIgnoredPackage(name, ignore));
 
     const rootResult = isSingle ? null : await WorkspaceScanner.scan({ single: true });
     const root = rootResult?.packages.values().next().value ?? packages.values().next().value;
@@ -59,14 +62,7 @@ export class CheckCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const stones = await manager.list();
 
-    return {
-      config: ctx.args.config ? ctx.config.getAll() : undefined,
-      ignore: ctx.config.get("ignore") ?? [],
-      packageNames,
-      packages,
-      root,
-      stones,
-    };
+    return { config: ctx.args.config ? ctx.config.getAll() : undefined, ignore, packageNames, packages, root, stones };
   }
 
   private printJson(data: CheckData) {

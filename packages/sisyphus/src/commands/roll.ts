@@ -21,7 +21,13 @@ import {
   StoneManager,
   WorkspaceScanner,
 } from "../services";
-import { createRollReporter, emitReleaseReport, failWithReleaseReport, type RollReporter } from "./roll-output";
+import {
+  createRollReporter,
+  emitReleaseReport,
+  failWithReleaseReport,
+  type RollReporter,
+  redirectStdoutToStderr,
+} from "./roll-output";
 
 const SNAPSHOT_DATE_SUFFIX = /\d{14}$/;
 
@@ -74,6 +80,7 @@ export class RollCommand extends BaseCommand {
   args = rollArgs;
 
   private reportContext: ReportContext = { mode: "release", npmTag: DEFAULT_NPM_TAG, packages: [], stones: [] };
+  private restoreStdout: (() => void) | undefined;
 
   async execute(ctx: RollCtx) {
     if (!ctx.args.json) {
@@ -81,10 +88,15 @@ export class RollCommand extends BaseCommand {
       return;
     }
 
+    const restoreStdout = redirectStdoutToStderr();
+    this.restoreStdout = restoreStdout;
+
     try {
       await this.run(ctx);
+      restoreStdout();
     } catch (error) {
-      failWithReleaseReport(this.buildReport(ctx, "failed", { error }), error);
+      this.reportContext.ledger ??= (await ReleaseLedger.loadActive().catch(() => null))?.data;
+      failWithReleaseReport(this.buildReport(ctx, "failed", { error }), error, restoreStdout);
     }
   }
 
@@ -103,7 +115,7 @@ export class RollCommand extends BaseCommand {
 
   private emit(ctx: RollCtx, status: ReleaseReportStatus, extra: Partial<ReleaseReportInput> = {}) {
     if (!ctx.args.json) return;
-    emitReleaseReport(this.buildReport(ctx, status, extra));
+    emitReleaseReport(this.buildReport(ctx, status, extra), this.restoreStdout);
   }
 
   private async run(ctx: RollCtx) {
@@ -595,12 +607,14 @@ export class RollCommand extends BaseCommand {
     }
     this.validateArchivedPackagePlan(releaseStones, currentRelease.packages);
 
+    const reporter = createRollReporter(ctx.args.json);
     const { cycle, ordered } = orderForRelease(packagesToPublish);
     if (cycle.length > 0) {
-      log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
+      reporter.warn(
+        color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`),
+      );
     }
 
-    const reporter = createRollReporter(ctx.args.json);
     reporter.info(color.bold("Publish-only mode"));
     reporter.info(color.dim(`Timestamp: ${currentRelease.timestamp}`));
     reporter.info(color.dim(`Stones: ${currentRelease.stoneIds.join(", ")}`));

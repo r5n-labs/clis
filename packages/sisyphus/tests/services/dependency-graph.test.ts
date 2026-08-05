@@ -219,7 +219,7 @@ describe("orderForRelease", () => {
     expect(ordered.ordered.map((pkg) => pkg.name)).toEqual(["@app/a", "@app/z"]);
   });
 
-  test("reports cyclic packages and still emits each exactly once", () => {
+  test("reports the packages it had to force and still emits each exactly once", () => {
     const packages = makePackages([
       { dependencies: { "@app/b": "workspace:*" }, name: "@app/a", version: "1.0.0" },
       { dependencies: { "@app/a": "workspace:*" }, name: "@app/b", version: "1.0.0" },
@@ -227,8 +227,21 @@ describe("orderForRelease", () => {
 
     const ordered = orderForRelease([...packages.values()]);
 
-    expect(ordered.cycle).toEqual(["@app/a", "@app/b"]);
+    expect(ordered.cycle).toEqual(["@app/a"]);
     expect(ordered.ordered.map((pkg) => pkg.name)).toEqual(["@app/a", "@app/b"]);
+  });
+
+  test("keeps satisfiable constraints when only part of the graph is cyclic", () => {
+    const packages = makePackages([
+      { dependencies: { "@app/z": "workspace:*" }, name: "@app/a", version: "1.0.0" },
+      { dependencies: { "@app/y": "workspace:*" }, name: "@app/z", version: "1.0.0" },
+      { dependencies: { "@app/z": "workspace:*" }, name: "@app/y", version: "1.0.0" },
+    ]);
+
+    const ordered = orderForRelease([...packages.values()]);
+
+    expect(ordered.cycle).toEqual(["@app/z"]);
+    expect(ordered.ordered.map((pkg) => pkg.name)).toEqual(["@app/z", "@app/a", "@app/y"]);
   });
 
   test("ignores dependencies outside the release set", () => {

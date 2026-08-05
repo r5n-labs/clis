@@ -24,8 +24,13 @@ export function resolveBuildConfig(config: ReleaseBuildConfig | undefined): Reso
   const root = config?.root ?? [];
   const outputs = config?.outputs ?? [];
 
+  assertArray(command, "release.build.command");
+  assertArray(root, "release.build.root");
+  assertArray(outputs, "release.build.outputs");
   assertArgv(command, "release.build.command");
+
   for (const [index, argv] of root.entries()) {
+    assertArray(argv, `release.build.root[${index}]`);
     assertArgv(argv, `release.build.root[${index}]`);
     if (argv.length === 0) {
       throw new Exit(
@@ -36,7 +41,7 @@ export function resolveBuildConfig(config: ReleaseBuildConfig | undefined): Reso
   }
 
   for (const pattern of outputs) {
-    if (!pattern || isAbsolute(pattern) || pattern.startsWith(RELATIVE_PREFIX) || isEscapingPath(pattern)) {
+    if (!pattern || isAbsolute(pattern) || pattern.startsWith(RELATIVE_PREFIX) || escapesRoot(pattern)) {
       throw new Exit(
         `Invalid release.build.outputs entry: ${pattern || "(empty)"}`,
         "Build output globs must be relative to the repository root, e.g. packages/*/dist/**",
@@ -99,6 +104,16 @@ export async function runBuildCommand(argv: readonly string[], cwd: string, cont
   if (exitCode !== 0) {
     throw new Error(`${context}: ${stderr.trim() || `${argv[0]} exited with code ${exitCode}`}`);
   }
+}
+
+function assertArray(value: unknown, field: string): void {
+  if (Array.isArray(value)) return;
+  throw new Exit(`Invalid ${field}`, `${field} must be an array`);
+}
+
+function escapesRoot(pattern: string): boolean {
+  if (isEscapingPath(pattern)) return true;
+  return pattern.split("/").includes("..");
 }
 
 function assertArgv(argv: readonly string[], field: string): void {
