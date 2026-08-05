@@ -159,7 +159,7 @@ describe("package.newVersion getter", () => {
 
   test("computes tagged bump correctly", () => {
     const pkg = makePackage({ version: "1.0.0" }).withBump(BumpType.Minor, "beta");
-    expect(pkg.newVersion).toBe("1.0.0-beta.1");
+    expect(pkg.newVersion).toBe("1.1.0-beta.0");
   });
 
   test("returns undefined when no bump is set", () => {

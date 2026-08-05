@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Exit } from "@r5n/cli-core";
 import { nonEmpty, type StoneData } from "../domain";
 
 const CHANGESET_DIR = ".changeset";
@@ -136,6 +137,11 @@ export class ChangesetParser {
         case "patch":
           patch.push(pkg);
           break;
+        default:
+          throw new Exit(
+            `Changeset for ${pkg} uses an unsupported bump type "${bump}"`,
+            "Rewrite it as major, minor, or patch before migrating",
+          );
       }
     }
 

@@ -50,10 +50,10 @@ describe("ChangesetParser.toStoneData", () => {
     expect(result).toMatchObject({ major: undefined, minor: undefined, patch: ["@app/core", "@app/lib"] });
   });
 
-  test("unknown bump types are silently dropped", () => {
-    const result = parser.toStoneData(makeChangeset({ "@app/core": "prepatch" }, "Pre-release"));
-
-    expect(result).toMatchObject({ major: undefined, message: "Pre-release", minor: undefined, patch: undefined });
+  test("unknown bump types are rejected instead of dropping the package", () => {
+    expect(() => parser.toStoneData(makeChangeset({ "@app/core": "prepatch" }, "Pre-release"))).toThrow(
+      'Changeset for @app/core uses an unsupported bump type "prepatch"',
+    );
   });
 
   test("first line of summary used as message", () => {

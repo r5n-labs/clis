@@ -48,11 +48,11 @@ import {
   validateRepositoryIgnoredInputs,
 } from "./release/npm-pack";
 import {
-  getNpmTag,
   getPublishablePackages,
   getScopeRegistryArgs,
   readPublishedPackage,
   resolveNpmRegistry,
+  resolveReleaseNpmTag,
 } from "./release/npm-registry";
 import { getProviderRelease } from "./release/release-notes";
 import {
@@ -183,7 +183,7 @@ export class ReleaseOrchestrator {
     this.ledger = await ReleaseLedger.create({
       options: {
         ...this.options,
-        npmTag: this.options.npm ? getNpmTag(this.config.get("tag")) : DEFAULT_NPM_TAG,
+        npmTag: this.options.npm ? resolveReleaseNpmTag(packages, this.config.get("tag")) : DEFAULT_NPM_TAG,
         publishOnly,
       },
       packages: packages.map((pkg) => ({

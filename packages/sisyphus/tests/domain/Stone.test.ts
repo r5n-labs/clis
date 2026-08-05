@@ -123,14 +123,26 @@ describe("Stone.merge()", () => {
     expect(stone.minor).not.toContain("@app/core");
   });
 
-  test("BUG: drops Snapshot packages entirely during merge", () => {
+  test("keeps Snapshot packages during merge", () => {
     const stoneA = Stone.create({ message: "stone A", snapshot: ["@app/snapshot-pkg"] });
     const stoneB = Stone.create({ message: "stone B", patch: ["@app/cli"] });
 
-    const { stone } = Stone.merge([stoneA, stoneB], "merged");
+    const { stone, errors } = Stone.merge([stoneA, stoneB], "merged");
 
-    expect(stone.snapshot).toEqual([]);
-    expect(stone.allPackages).not.toContain("@app/snapshot-pkg");
+    expect(stone.snapshot).toEqual(["@app/snapshot-pkg"]);
+    expect(stone.allPackages).toContain("@app/snapshot-pkg");
+    expect(errors).toEqual([]);
+  });
+
+  test("reports an error when one package is both a snapshot and a normal release", () => {
+    const stoneA = Stone.create({ message: "stone A", snapshot: ["@app/core"] });
+    const stoneB = Stone.create({ message: "stone B", patch: ["@app/core"] });
+
+    const { errors } = Stone.merge([stoneA, stoneB], "merged");
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("@app/core");
+    expect(() => Stone.mergeAll([stoneA, stoneB])).toThrow("Pending stones conflict");
   });
 
   test("merges descriptions from both stones", () => {
@@ -152,17 +164,71 @@ describe("Stone.merge()", () => {
     const { stone } = Stone.merge([stoneA, stoneB], "merged");
 
     const hashes = stone.commits?.map((c) => c.hash) ?? [];
-    expect(hashes).toEqual(["aaa1111", "bbb2222", "bbb2222"]);
+    expect(hashes).toEqual(["aaa1111", "bbb2222"]);
   });
 
-  test("silently picks first tag when tags conflict", () => {
-    const stoneA = Stone.create({ message: "A", tag: "v1.0.0" });
-    const stoneB = Stone.create({ message: "B", tag: "v2.0.0" });
+  test("unions the package attribution of a duplicated commit", () => {
+    const stoneA = Stone.create({
+      commits: [{ ...makeCommit("aaa1111", "shared"), packages: ["@app/core"] }],
+      message: "A",
+    });
+    const stoneB = Stone.create({
+      commits: [{ ...makeCommit("aaa1111", "shared"), packages: ["@app/cli"] }],
+      message: "B",
+    });
 
-    const { stone, conflicts } = Stone.merge([stoneA, stoneB], "merged");
+    const { stone } = Stone.merge([stoneA, stoneB], "merged");
 
-    expect(stone.tag).toBe("v1.0.0");
-    expect(conflicts).toEqual([]);
+    expect(stone.commits).toHaveLength(1);
+    expect(stone.commits?.[0]?.packages).toEqual(["@app/core", "@app/cli"]);
+  });
+
+  test("reports an error when tags conflict", () => {
+    const stoneA = Stone.create({ message: "A", tag: "alpha" });
+    const stoneB = Stone.create({ message: "B", tag: "beta" });
+
+    const { errors } = Stone.merge([stoneA, stoneB], "merged");
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("alpha");
+    expect(errors[0]).toContain("beta");
+    expect(() => Stone.mergeAll([stoneA, stoneB])).toThrow("Pending stones conflict");
+  });
+
+  test("reports an error when a tagged stone is merged with an untagged one", () => {
+    const stoneA = Stone.create({ message: "A", tag: "beta" });
+    const stoneB = Stone.create({ message: "B" });
+
+    const { errors } = Stone.merge([stoneA, stoneB], "merged");
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("no tag");
+  });
+
+  test("accepts a homogeneous tag across every stone", () => {
+    const stoneA = Stone.create({ message: "A", patch: ["@app/core"], tag: "beta" });
+    const stoneB = Stone.create({ message: "B", patch: ["@app/cli"], tag: "beta" });
+
+    const { stone, errors } = Stone.merge([stoneA, stoneB], "merged");
+
+    expect(errors).toEqual([]);
+    expect(stone.tag).toBe("beta");
+  });
+});
+
+describe("Stone.mergeAll()", () => {
+  test("normalises a single stone that lists one package twice", () => {
+    const stone = Stone.mergeAll([Stone.create({ major: ["@app/core"], message: "A", patch: ["@app/core"] })]);
+
+    expect(stone.major).toEqual(["@app/core"]);
+    expect(stone.patch).toEqual([]);
+    expect(stone.allPackages).toEqual(["@app/core"]);
+  });
+
+  test("keeps a lone snapshot stone intact", () => {
+    const stone = Stone.mergeAll([Stone.create({ message: "A", snapshot: ["@app/core"] })]);
+
+    expect(stone.snapshot).toEqual(["@app/core"]);
   });
 });
 

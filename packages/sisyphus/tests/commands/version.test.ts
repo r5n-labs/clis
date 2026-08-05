@@ -152,7 +152,7 @@ describe("VersionCommand non-interactive flags", () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(`${stdout}\n${stderr}`).toContain("1.0.0-rc1.1");
+    expect(`${stdout}\n${stderr}`).toContain("1.0.1-rc1.0");
     expect(readStones()).toHaveLength(1);
   });
 

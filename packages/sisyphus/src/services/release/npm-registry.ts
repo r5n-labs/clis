@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { DEFAULT_NPM_TAG } from "../../constants";
 import type { Package } from "../../domain";
+import { parseSemver } from "../../domain/semver";
 import { getErrorDetail } from "./run";
 
 const NPM_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z._-]*$/;
@@ -22,6 +23,35 @@ export function getNpmTag(configuredTag: string): string {
     );
   }
   return tag;
+}
+
+export function resolveReleaseNpmTag(packages: readonly Package[], configuredTag: string): string {
+  const configured = getNpmTag(configuredTag);
+  const channels = new Set<string>();
+
+  for (const pkg of packages) {
+    if (pkg.isPrivate) continue;
+    const channel = prereleaseChannel(pkg.newVersion ?? pkg.version);
+    channels.add(channel ?? configured);
+  }
+
+  if (channels.size <= 1) return [...channels][0] ?? configured;
+
+  throw new Exit(
+    `Release mixes npm dist-tags (${[...channels].sort().join(", ")})`,
+    "Roll stable and prerelease packages separately, or give every prerelease the same tag",
+  );
+}
+
+function prereleaseChannel(version: string): string | undefined {
+  const parsed = parseSemver(version);
+  if (!parsed || parsed.prerelease.length === 0) return undefined;
+
+  const [identifier] = parsed.prerelease;
+  if (typeof identifier !== "string") return undefined;
+
+  const channel = identifier.split("-")[0];
+  return channel && isValidNpmTag(channel) ? channel : undefined;
 }
 
 export function getPackageScope(packageName: string): string | undefined {

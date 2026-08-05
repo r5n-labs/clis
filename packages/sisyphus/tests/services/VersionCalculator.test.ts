@@ -24,16 +24,38 @@ describe("VersionCalculator", () => {
       expect(VersionCalculator.bump("0.1.0", BumpType.Major)).toBe("1.0.0");
     });
 
-    test("pre-release with tag: 1.0.0 + minor + alpha => 1.0.0-alpha.1", () => {
-      expect(VersionCalculator.bump("1.0.0", BumpType.Minor, "alpha")).toBe("1.0.0-alpha.1");
+    test("entering a pre-release bumps the base first: 1.0.0 + minor + alpha => 1.1.0-alpha.0", () => {
+      expect(VersionCalculator.bump("1.0.0", BumpType.Minor, "alpha")).toBe("1.1.0-alpha.0");
     });
 
-    test("pre-release increment same tag: 1.0.0-alpha.1 + minor + alpha => 1.0.0-alpha.2", () => {
-      expect(VersionCalculator.bump("1.0.0-alpha.1", BumpType.Minor, "alpha")).toBe("1.0.0-alpha.2");
+    test("pre-release increment same tag: 1.1.0-alpha.0 + minor + alpha => 1.1.0-alpha.1", () => {
+      expect(VersionCalculator.bump("1.1.0-alpha.0", BumpType.Minor, "alpha")).toBe("1.1.0-alpha.1");
     });
 
-    test("pre-release new tag resets counter: 1.0.0-alpha.3 + minor + beta => 1.0.0-beta.1", () => {
-      expect(VersionCalculator.bump("1.0.0-alpha.3", BumpType.Minor, "beta")).toBe("1.0.0-beta.1");
+    test("pre-release increment same tag: 1.0.0-alpha.1 + patch + alpha => 1.0.0-alpha.2", () => {
+      expect(VersionCalculator.bump("1.0.0-alpha.1", BumpType.Patch, "alpha")).toBe("1.0.0-alpha.2");
+    });
+
+    test("a higher bump escalates the base: 1.1.0-alpha.1 + major + alpha => 2.0.0-alpha.0", () => {
+      expect(VersionCalculator.bump("1.1.0-alpha.1", BumpType.Major, "alpha")).toBe("2.0.0-alpha.0");
+    });
+
+    test("pre-release new tag resets counter: 1.0.0-alpha.3 + minor + beta => 1.0.0-beta.0", () => {
+      expect(VersionCalculator.bump("1.0.0-alpha.3", BumpType.Minor, "beta")).toBe("1.0.0-beta.0");
+    });
+
+    test("leaving a pre-release lands on the accumulated target: 1.1.0-beta.1 + patch => 1.1.0", () => {
+      expect(VersionCalculator.bump("1.1.0-beta.1", BumpType.Patch)).toBe("1.1.0");
+    });
+
+    test("leaving a pre-release ignores a lower bump: 1.1.0-beta.1 + minor => 1.1.0", () => {
+      expect(VersionCalculator.bump("1.1.0-beta.1", BumpType.Minor)).toBe("1.1.0");
+    });
+
+    test("a pre-release tag that moves backwards is rejected", () => {
+      expect(() => VersionCalculator.bump("1.0.0-rc.3", BumpType.Patch, "alpha")).toThrow(
+        "A patch bump would move 1.0.0-rc.3 to 1.0.0-alpha.0, which is not a later version",
+      );
     });
 
     test("snapshot returns 0.0.0-nightly-<date> format", () => {
@@ -46,17 +68,28 @@ describe("VersionCalculator", () => {
       expect(result).toMatch(/^0\.0\.0-canary-\d{14}$/);
     });
 
-    test("malformed version input produces partial NaN in output (known bug)", () => {
-      expect(VersionCalculator.bump("invalid", BumpType.Patch)).toBe("NaN.0.1");
+    test.each(["invalid", "", "1.x.0", "v1.2.3", "1.2"])("malformed version %p is rejected", (version) => {
+      expect(() => VersionCalculator.bump(version, BumpType.Patch)).toThrow("is not a valid version");
     });
 
-    test("empty string version produces partial NaN in output", () => {
-      expect(VersionCalculator.bump("", BumpType.Patch)).toBe("NaN.0.1");
+    test("unknown bump type is rejected", () => {
+      expect(() => VersionCalculator.bump("1.2.3", "unknown" as BumpType)).toThrow('Unknown bump type "unknown"');
     });
 
-    test("default case returns unchanged version for unknown bump type", () => {
-      const result = VersionCalculator.bump("1.2.3", "unknown" as BumpType);
-      expect(result).toBe("1.2.3");
+    test("a normal bump on a snapshot version is rejected", () => {
+      expect(() => VersionCalculator.bump("0.0.0-nightly-20260805120000", BumpType.Patch)).toThrow(
+        "Cannot apply a patch bump to snapshot version",
+      );
+    });
+
+    test("build metadata is dropped by a bump", () => {
+      expect(VersionCalculator.bump("1.2.3+build.5", BumpType.Patch)).toBe("1.2.4");
+    });
+
+    test("a non-canonical prerelease cannot be continued under the same tag", () => {
+      expect(() => VersionCalculator.bump("1.0.0-alpha.beta.1", BumpType.Patch, "alpha")).toThrow(
+        'Cannot continue the "alpha" prerelease from 1.0.0-alpha.beta.1',
+      );
     });
 
     test("dependency bump on pre-release preserves tag: 1.0.0-rc.2 + dependency => 1.0.0-rc.3", () => {
@@ -96,7 +129,7 @@ describe("VersionCalculator", () => {
 
     test("formats label with pre-release tag", () => {
       const result = VersionCalculator.formatLabel("pkg", "2.0.0", BumpType.Minor, "beta");
-      expect(result).toBe("pkg@2.0.0 => 2.0.0-beta.1 \u2728");
+      expect(result).toBe("pkg@2.0.0 => 2.1.0-beta.0 \u2728");
     });
   });
 });
