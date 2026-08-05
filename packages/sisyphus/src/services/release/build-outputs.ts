@@ -95,11 +95,19 @@ export async function cleanBuildOutputs(root: string, prefix: string, matcher: B
 
 export async function runBuildCommand(argv: readonly string[], cwd: string, context: string): Promise<void> {
   const subprocess = Bun.spawn([...argv], { cwd, stderr: "pipe", stdout: "pipe" });
-  const [exitCode, stderr] = await Promise.all([
-    subprocess.exited,
-    new Response(subprocess.stderr).text(),
-    new Response(subprocess.stdout).text(),
-  ]);
+
+  let exitCode: number;
+  let stderr: string;
+  try {
+    [exitCode, stderr] = await Promise.all([
+      subprocess.exited,
+      new Response(subprocess.stderr).text(),
+      new Response(subprocess.stdout).text(),
+    ]);
+  } catch (error) {
+    subprocess.kill();
+    throw error;
+  }
 
   if (exitCode !== 0) {
     throw new Error(`${context}: ${stderr.trim() || `${argv[0]} exited with code ${exitCode}`}`);

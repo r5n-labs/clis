@@ -41,6 +41,7 @@ export type ReleaseReportInput = {
   changelogFiles?: readonly string[];
   error?: unknown;
   ledger: ReleaseLedgerData | null;
+  releaseCommit?: string;
   mode: ReleaseReportMode;
   npmTag: string;
   packages: readonly Package[];
@@ -68,7 +69,7 @@ export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
     packages,
     published: publishedPackages.length > 0,
     publishedPackages,
-    releaseCommit: ledger?.releaseCommit ?? null,
+    releaseCommit: ledger?.releaseCommit ?? input.releaseCommit ?? null,
     releaseId: ledger?.id ?? null,
     schemaVersion: RELEASE_REPORT_SCHEMA_VERSION,
     status: input.status,

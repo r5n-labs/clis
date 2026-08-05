@@ -33,6 +33,7 @@ const SNAPSHOT_DATE_SUFFIX = /\d{14}$/;
 
 type ReportContext = {
   ledger?: ReleaseLedgerData;
+  releaseCommit?: string;
   mode: ReleaseReportMode;
   npmTag: string;
   packages: Package[];
@@ -106,6 +107,7 @@ export class RollCommand extends BaseCommand {
       mode: this.reportContext.mode,
       npmTag: this.reportContext.npmTag,
       packages: this.reportContext.packages,
+      releaseCommit: this.reportContext.releaseCommit,
       status,
       stones: this.reportContext.stones,
       tagsEnabled: this.reportContext.tagsEnabled ?? ctx.args.tags ?? ctx.config.get("release").tags,
@@ -360,6 +362,7 @@ export class RollCommand extends BaseCommand {
         s.start("Creating release commit...");
         ctx.config.set("lastStone", { commit: preReleaseHead, date: new Date().toISOString() });
         await orchestrator.createCommit(stone, packages, originalStones);
+        this.reportContext.releaseCommit = await this.getCurrentCommit();
         s.stop("Release commit created");
       }
 

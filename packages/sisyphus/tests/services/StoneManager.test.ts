@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigManager, Exit } from "@r5n/cli-core";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
-import { Stone } from "../../src/domain";
+import { BumpType, Stone } from "../../src/domain";
 import { StoneManager } from "../../src/services/StoneManager";
 import type { SisyphusConfig } from "../../src/types";
 
@@ -134,5 +134,42 @@ describe("StoneManager safe IDs", () => {
     writeFileSync(join(archive, "0002-extra.json"), '{"id":"0002-extra","message":"extra"}\n');
 
     await expect(manager.getReleasedStones(timestamp, ["0001-safe"])).rejects.toThrow("does not match currentRelease");
+  });
+});
+
+describe("StoneManager archive", () => {
+  const originalCwd = process.cwd();
+  let manager: StoneManager;
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "sisyphus-archive-"));
+    mkdirSync(join(root, ".sisyphus/stones"), { recursive: true });
+    process.chdir(root);
+    const config = new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), SISYPHUS_DEFAULT_CONFIG);
+    manager = new StoneManager(config);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(root, { force: true, recursive: true });
+  });
+
+  test("archives the planned stone rather than the bytes left on disk", async () => {
+    const pending = Stone.fromJson({
+      dependency: ["@internal/playground"],
+      id: "0001-abcdabcd",
+      message: "fix: x",
+      patch: ["@app/core"],
+    });
+    await manager.save(pending);
+
+    const planned = pending.withPackages(BumpType.Dependency, []);
+    const timestamp = await manager.archive([planned]);
+    const [archived] = await manager.getReleasedStones(timestamp, [planned.id]);
+
+    expect(archived?.toJson()).toEqual(planned.toJson());
+    expect(archived?.allPackages).toEqual(["@app/core"]);
+    expect(existsSync(join(root, ".sisyphus/stones/0001-abcdabcd.json"))).toBe(false);
   });
 });

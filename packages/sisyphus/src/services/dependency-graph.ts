@@ -1,4 +1,4 @@
-import { type ConfigManager, Exit } from "@r5n/cli-core";
+import type { ConfigManager } from "@r5n/cli-core";
 import { SISYPHUS_DEFAULT_CONFIG } from "../constants";
 import {
   BUMP_ORDER,
@@ -269,14 +269,12 @@ function compareNames(left: string, right: string): number {
 }
 
 function matchesGlob(name: string, pattern: string): boolean {
-  try {
-    let glob = globCache.get(pattern);
-    if (!glob) {
-      glob = new Bun.Glob(pattern);
-      globCache.set(pattern, glob);
-    }
-    return glob.match(name);
-  } catch {
-    throw new Exit(`Invalid ignore pattern "${pattern}"`, "Use a package name or a glob such as @scope/*");
+  let glob = globCache.get(pattern);
+
+  if (!glob) {
+    glob = new Bun.Glob(pattern);
+    globCache.set(pattern, glob);
   }
+
+  return glob.match(name);
 }
