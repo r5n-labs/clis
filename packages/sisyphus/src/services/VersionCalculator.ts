@@ -5,7 +5,6 @@ import {
   formatSemver,
   hasSameCore,
   incrementSemver,
-  isPrerelease,
   prereleaseCounter,
   prereleaseTag,
   requireSemver,
@@ -49,10 +48,8 @@ export class VersionCalculator {
     }
 
     const current = requireSemver(version, operation);
-    const effectiveTag = VersionCalculator.resolveTag(current, bump, tag, version);
     const target = incrementSemver(current, release);
-    const next =
-      effectiveTag === undefined ? target : VersionCalculator.applyPrerelease(target, current, effectiveTag, version);
+    const next = tag === undefined ? target : VersionCalculator.applyPrerelease(target, current, tag, version);
 
     if (compareSemver(next, current) <= 0) {
       throw new Exit(
@@ -72,24 +69,6 @@ export class VersionCalculator {
 
   static isSnapshotVersion(version: string): boolean {
     return SNAPSHOT_VERSION_PATTERN.test(version);
-  }
-
-  private static resolveTag(
-    current: Semver,
-    bump: BumpType,
-    tag: string | undefined,
-    version: string,
-  ): string | undefined {
-    if (tag) return tag;
-    if (bump !== BumpType.Dependency || !isPrerelease(current)) return undefined;
-
-    const currentTag = prereleaseTag(current);
-    if (currentTag) return currentTag;
-
-    throw new Exit(
-      `Cannot apply a dependency bump to ${version}`,
-      "Give the stone a prerelease tag, or set the package to a <tag>.<number> prerelease",
-    );
   }
 
   private static applyPrerelease(target: Semver, current: Semver, tag: string, version: string): Semver {

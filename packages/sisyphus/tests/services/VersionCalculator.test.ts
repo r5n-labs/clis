@@ -92,8 +92,12 @@ describe("VersionCalculator", () => {
       );
     });
 
-    test("dependency bump on pre-release preserves tag: 1.0.0-rc.2 + dependency => 1.0.0-rc.3", () => {
-      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency)).toBe("1.0.0-rc.3");
+    test("dependency bump inside a channel advances it: 1.0.0-rc.2 + dependency + rc => 1.0.0-rc.3", () => {
+      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency, "rc")).toBe("1.0.0-rc.3");
+    });
+
+    test("an untagged dependency bump leaves the channel with its dependency: 1.0.0-rc.2 => 1.0.0", () => {
+      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency)).toBe("1.0.0");
     });
 
     test("dependency bump without tag on non-prerelease acts as patch", () => {
