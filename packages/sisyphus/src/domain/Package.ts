@@ -1,7 +1,19 @@
 import { DEFAULT_VERSION } from "../constants";
 import { VersionCalculator } from "../services/VersionCalculator";
+import type { DependencyKind } from "../types";
 import { BUMP_ORDER, type BumpType } from "./BumpType";
 import type { Stone } from "./Stone";
+
+export const WORKSPACE_PREFIX = "workspace:";
+
+export const DEPENDENCY_KINDS: readonly DependencyKind[] = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+];
+
+export type WorkspaceDependency = { name: string; kind: DependencyKind; specifier: string };
 
 export type PackageJson = {
   name: string;
@@ -9,24 +21,39 @@ export type PackageJson = {
   private?: boolean;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
 export type PackageOptions = {
   name: string;
   version: string;
   file: string;
-  dependencyOf?: readonly string[];
+  workspaceDependencies?: readonly WorkspaceDependency[];
   bump?: BumpType;
   tag?: string;
   newVersion?: string;
   isPrivate?: boolean;
 };
 
+export function collectWorkspaceDependencies(json: PackageJson): WorkspaceDependency[] {
+  const dependencies: WorkspaceDependency[] = [];
+
+  for (const kind of DEPENDENCY_KINDS) {
+    for (const [name, specifier] of Object.entries(json[kind] ?? {})) {
+      if (!specifier?.startsWith(WORKSPACE_PREFIX)) continue;
+      dependencies.push({ kind, name, specifier });
+    }
+  }
+
+  return dependencies;
+}
+
 export class Package {
   readonly name: string;
   readonly version: string;
   readonly file: string;
-  readonly dependencyOf: readonly string[];
+  readonly workspaceDependencies: readonly WorkspaceDependency[];
   readonly bump?: BumpType;
   readonly tag?: string;
   readonly isPrivate: boolean;
@@ -36,7 +63,7 @@ export class Package {
     this.name = options.name;
     this.version = options.version;
     this.file = options.file;
-    this.dependencyOf = options.dependencyOf ?? [];
+    this.workspaceDependencies = options.workspaceDependencies ?? [];
     this.bump = options.bump;
     this.tag = options.tag;
     this.isPrivate = options.isPrivate ?? false;
@@ -49,18 +76,20 @@ export class Package {
       isPrivate: json.private ?? false,
       name: json.name,
       version: json.version || DEFAULT_VERSION,
+      workspaceDependencies: collectWorkspaceDependencies(json),
     });
   }
 
   static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
     const updated: Package[] = [];
+    const seen = new Set<string>();
 
     for (const bump of BUMP_ORDER) {
       for (const name of stone.getPackages(bump)) {
         const pkg = packages.get(name);
-        if (pkg) {
-          updated.push(pkg.withBump(bump, stone.tag));
-        }
+        if (!pkg || seen.has(name)) continue;
+        seen.add(name);
+        updated.push(pkg.withBump(bump, stone.tag));
       }
     }
 
@@ -78,10 +107,6 @@ export class Package {
     return VersionCalculator.formatLabel(this.name, this.version, this.bump, this.tag, this._newVersion);
   }
 
-  withDependencyOf(dependencyOf: readonly string[]): Package {
-    return new Package({ ...this.toOptions(), dependencyOf });
-  }
-
   withBump(bump: BumpType, tag?: string): Package {
     return new Package({ ...this.toOptions(), bump, newVersion: VersionCalculator.bump(this.version, bump, tag), tag });
   }
@@ -93,13 +118,13 @@ export class Package {
   private toOptions(): PackageOptions {
     return {
       bump: this.bump,
-      dependencyOf: this.dependencyOf,
       file: this.file,
       isPrivate: this.isPrivate,
       name: this.name,
       newVersion: this._newVersion,
       tag: this.tag,
       version: this.version,
+      workspaceDependencies: this.workspaceDependencies,
     };
   }
 }

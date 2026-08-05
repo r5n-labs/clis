@@ -6,8 +6,10 @@ import { CLI_BIN } from "../constants";
 import { BumpType, Package, Stone } from "../domain";
 import {
   ChangelogGenerator,
+  excludeIgnored,
   hashReleasePlan,
   hashReleaseSource,
+  orderForRelease,
   ReleaseLedger,
   ReleaseOrchestrator,
   StoneManager,
@@ -85,7 +87,7 @@ export class RollCommand extends BaseCommand {
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
 
     const mergedStone = Stone.mergeAll(stones);
-    const updatedPackages = Package.applyStone(mergedStone, packages);
+    const updatedPackages = this.planPackages(ctx, Package.applyStone(mergedStone, packages));
 
     if (updatedPackages.length === 0) {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
@@ -109,6 +111,20 @@ export class RollCommand extends BaseCommand {
     }
 
     await this.executeRelease(ctx, mergedStone, updatedPackages, stones, options);
+  }
+
+  private planPackages(ctx: RollCtx, packages: Package[]): Package[] {
+    const { kept, skipped } = excludeIgnored(packages, ctx.config.get("ignore") ?? []);
+    if (skipped.length > 0) {
+      log.warn(color.yellow(`Excluded by config.ignore: ${skipped.join(", ")}`));
+    }
+
+    const { cycle, ordered } = orderForRelease(kept);
+    if (cycle.length > 0) {
+      log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
+    }
+
+    return ordered;
   }
 
   private async previewChangelogs(ctx: RollCtx, stones: Stone[], packages: Package[]) {
@@ -506,13 +522,18 @@ export class RollCommand extends BaseCommand {
     }
     this.validateArchivedPackagePlan(releaseStones, currentRelease.packages);
 
+    const { cycle, ordered } = orderForRelease(packagesToPublish);
+    if (cycle.length > 0) {
+      log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
+    }
+
     log.info(color.bold("Publish-only mode"));
     log.info(color.dim(`Timestamp: ${currentRelease.timestamp}`));
     log.info(color.dim(`Stones: ${currentRelease.stoneIds.join(", ")}`));
     log.info("");
 
     log.info(color.bold("Packages to publish:"));
-    for (const pkg of packagesToPublish) {
+    for (const pkg of ordered) {
       log.info(`  ${pkg.name}@${pkg.newVersion ?? pkg.version}`);
     }
     log.info("");
@@ -551,7 +572,7 @@ export class RollCommand extends BaseCommand {
       if (!confirmed) return;
     }
 
-    await this.executePublish(ctx, packagesToPublish, releaseStones, options);
+    await this.executePublish(ctx, ordered, releaseStones, options);
   }
 
   private async executePublish(ctx: RollCtx, packages: Package[], releaseStones: Stone[], options: PublishOnlyOptions) {

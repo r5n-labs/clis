@@ -2,8 +2,14 @@ import { args, color, confirm, Exit, log, multiselect, note, positionals, text }
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_COLORS, BumpType, nonEmpty, type Package, type StoneData } from "../domain";
-import { CommitAnalyzer, StoneManager, WorkspaceScanner } from "../services";
-import { findDependencyPackages } from "../utils";
+import {
+  CommitAnalyzer,
+  collectDependents,
+  dependentsOptions,
+  isIgnoredPackage,
+  StoneManager,
+  WorkspaceScanner,
+} from "../services";
 
 const PRERELEASE_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z]*$/;
 
@@ -176,10 +182,14 @@ export class VersionCommand extends BaseCommand {
 
   private async scanPackages(ctx: VersionCtx, filter: string | undefined) {
     const scan = await WorkspaceScanner.scan({ filter, single: ctx.config.get("single") });
-    if (scan.packageNames.length === 0) {
+    const ignore = ctx.config.get("ignore") ?? [];
+    const packageNames = scan.packageNames.filter((name) => !isIgnoredPackage(name, ignore));
+
+    if (packageNames.length === 0) {
       throw new Exit("No packages found matching the criteria");
     }
-    return scan;
+
+    return { packageNames, packages: scan.packages };
   }
 
   private async executeInteractive(ctx: VersionCtx, input: NormalizedVersionInput) {
@@ -188,7 +198,7 @@ export class VersionCommand extends BaseCommand {
     const message = input.message ?? (await this.promptMessage());
     const description = input.description ?? (await this.promptDescription());
 
-    const stoneData = this.buildStoneData({ description, message, packages, selection, tag: input.tag });
+    const stoneData = this.buildStoneData({ ctx, description, message, packages, selection, tag: input.tag });
     await this.createStone(ctx, stoneData, packages);
   }
 
@@ -200,9 +210,10 @@ export class VersionCommand extends BaseCommand {
 
     const { packages, packageNames } = await this.scanPackages(ctx, input.filter);
     const selection = this.resolveSelection(ctx, input, packageNames);
-    this.validatePackages(selection, packages, packageNames, input.filter);
+    this.validatePackages(selection, packages, packageNames, ctx.config.get("ignore") ?? [], input.filter);
 
     const stoneData = this.buildStoneData({
+      ctx,
       description: input.description,
       message,
       packages,
@@ -248,12 +259,21 @@ export class VersionCommand extends BaseCommand {
     selection: PackageSelection,
     packages: Map<string, Package>,
     allowedPackageNames: readonly string[],
+    ignore: readonly string[],
     filter?: string,
   ): void {
     const allSelected = [...selection.major, ...selection.minor, ...selection.patch];
     const unknownPackages = allSelected.filter((name) => !packages.has(name));
     if (unknownPackages.length > 0) {
       throw new Exit(`Unknown packages: ${unknownPackages.join(", ")}`);
+    }
+
+    const ignoredPackages = allSelected.filter((name) => isIgnoredPackage(name, ignore));
+    if (ignoredPackages.length > 0) {
+      throw new Exit(
+        `Packages are excluded by config.ignore: ${ignoredPackages.join(", ")}`,
+        "Remove them from ignore before releasing them",
+      );
     }
 
     const allowedPackages = new Set(allowedPackageNames);
@@ -287,7 +307,7 @@ export class VersionCommand extends BaseCommand {
     let createdCount = 0;
 
     for (const group of commitGroups) {
-      const stoneData = CommitAnalyzer.buildStoneData(group, packages, input.tag);
+      const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(ctx.config, input.tag));
 
       if (ctx.args.dryRun) {
         this.logPreview(stoneData, packages, true);
@@ -367,15 +387,20 @@ export class VersionCommand extends BaseCommand {
   }
 
   private buildStoneData(opts: {
+    ctx: VersionCtx;
     selection: PackageSelection;
     message: string;
     packages: Map<string, Package>;
     tag?: string;
     description?: string;
   }): StoneData {
-    const { selection, message, packages, tag, description } = opts;
-    const allSelected = [...selection.major, ...selection.minor, ...selection.patch];
-    const dependencyPackages = findDependencyPackages(allSelected, packages);
+    const { ctx, selection, message, packages, tag, description } = opts;
+    const seeds = [
+      ...selection.major.map((name) => ({ bump: BumpType.Major, name })),
+      ...selection.minor.map((name) => ({ bump: BumpType.Minor, name })),
+      ...selection.patch.map((name) => ({ bump: BumpType.Patch, name })),
+    ];
+    const dependencyPackages = collectDependents(seeds, packages, dependentsOptions(ctx.config, tag));
 
     return {
       dependency: nonEmpty(dependencyPackages),

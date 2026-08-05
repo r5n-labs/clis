@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ConfigManager } from "@r5n/cli-core";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
 import { CommitAnalyzer } from "../../src/services/CommitAnalyzer";
+import { dependentsOptions } from "../../src/services/dependency-graph";
 import { StoneManager } from "../../src/services/StoneManager";
 import { WorkspaceScanner } from "../../src/services/WorkspaceScanner";
 import type { SisyphusConfig } from "../../src/types";
@@ -50,17 +51,8 @@ describe("CommitAnalyzer", () => {
   beforeEach(async () => {
     root = createWorkspaceFixture([
       { name: "@fixture/foo", private: true },
-      { name: "@fixture/bar", private: true },
+      { dependencies: { "@fixture/foo": "workspace:*" }, name: "@fixture/bar", private: true },
     ]);
-    const barManifestPath = join(root, "packages/bar/package.json");
-    writeFileSync(
-      barManifestPath,
-      `${JSON.stringify(
-        { dependencies: { "@fixture/foo": "workspace:*" }, name: "@fixture/bar", private: true, version: "1.0.0" },
-        null,
-        2,
-      )}\n`,
-    );
     const baseCommit = await initGitWorkspace(root);
 
     process.chdir(root);
@@ -85,7 +77,7 @@ describe("CommitAnalyzer", () => {
     expect(group.commits[0]?.packages).toEqual(["@fixture/foo"]);
 
     const { packages } = await WorkspaceScanner.scan({ filter: "foo" });
-    const stoneData = CommitAnalyzer.buildStoneData(group, packages);
+    const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(config));
     expect(stoneData.patch).toEqual(["@fixture/foo"]);
     expect(stoneData.dependency).toEqual(["@fixture/bar"]);
   });
@@ -126,7 +118,9 @@ describe("CommitAnalyzer per-package commit dedup", () => {
     expect([...filteredGroup.packages]).toEqual(["@fixture/foo"]);
 
     const { packages: fooPackages } = await WorkspaceScanner.scan({ filter: "foo" });
-    const firstStone = await manager.create(CommitAnalyzer.buildStoneData(filteredGroup, fooPackages));
+    const firstStone = await manager.create(
+      CommitAnalyzer.buildStoneData(filteredGroup, fooPackages, dependentsOptions(config)),
+    );
     expect(firstStone.patch).toEqual(["@fixture/foo"]);
 
     const groups = await analyzer.analyze();
@@ -137,7 +131,7 @@ describe("CommitAnalyzer per-package commit dedup", () => {
     expect(group.commits[0]?.packages).toEqual(["@fixture/bar"]);
 
     const { packages } = await WorkspaceScanner.scan();
-    const secondStone = await manager.create(CommitAnalyzer.buildStoneData(group, packages));
+    const secondStone = await manager.create(CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(config)));
     expect(secondStone.patch).toEqual(["@fixture/bar"]);
     expect(secondStone.allPackages).not.toContain("@fixture/foo");
 
@@ -153,7 +147,7 @@ describe("CommitAnalyzer per-package commit dedup", () => {
     expect([...group.packages].sort()).toEqual(["@fixture/bar", "@fixture/foo"]);
 
     const { packages } = await WorkspaceScanner.scan();
-    await manager.create(CommitAnalyzer.buildStoneData(group, packages));
+    await manager.create(CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(config)));
 
     expect(await analyzer.analyze()).toEqual([]);
     expect(await analyzer.analyze({ filter: "foo" })).toEqual([]);

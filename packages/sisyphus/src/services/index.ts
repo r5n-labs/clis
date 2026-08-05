@@ -1,6 +1,7 @@
 export * from "./ChangelogGenerator";
 export * from "./ChangesetParser";
 export * from "./CommitAnalyzer";
+export * from "./dependency-graph";
 export * from "./GitRemoteParser";
 export * from "./PackageUpdater";
 export * from "./PublishManifest";

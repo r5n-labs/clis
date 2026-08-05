@@ -53,12 +53,19 @@ export type CommitsSkipConfig = { authors: string[]; messagePatterns: string[] }
 
 export type CommitsConfig = { skip: CommitsSkipConfig };
 
+export type DependencyKind = "dependencies" | "devDependencies" | "optionalDependencies" | "peerDependencies";
+
+export type UpdateInternalPolicy = "always" | "outOfRange";
+
+export type DependentsConfig = { kinds: DependencyKind[]; updateInternal: UpdateInternalPolicy };
+
 export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
   commits: CommitsConfig;
   currentRelease?: CurrentRelease;
+  dependents: DependentsConfig;
   sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;

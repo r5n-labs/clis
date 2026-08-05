@@ -3,9 +3,15 @@ import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import type { CommitInfo, Package, StoneData } from "../domain";
 import { BumpType, isBumpType, nonEmpty } from "../domain";
-import type { PullRequestInfo } from "../services";
-import { PullRequestAnalyzer, StoneManager, WorkspaceScanner } from "../services";
-import { findDependencyPackages } from "../utils";
+import type { DependentsOptions, PullRequestInfo } from "../services";
+import {
+  collectDependents,
+  dependentsOptions,
+  isIgnoredPackage,
+  PullRequestAnalyzer,
+  StoneManager,
+  WorkspaceScanner,
+} from "../services";
 
 const DESCRIPTION_PREVIEW_LENGTH = 100;
 
@@ -73,6 +79,7 @@ export class PrCommand extends BaseCommand {
       allPackages,
       bump: bumpType,
       commits: result.commits,
+      dependents: dependentsOptions(ctx.config),
       description,
       message,
       packages,
@@ -222,19 +229,32 @@ export class PrCommand extends BaseCommand {
   private buildStoneData(options: {
     allPackages: Map<string, Package>;
     bump: BumpType;
+    dependents: DependentsOptions;
     packages: string[];
     message: string;
     description: string | undefined;
     commits: readonly CommitInfo[] | undefined;
   }): StoneData {
-    const { allPackages, bump, commits, description, message, packages } = options;
+    const { allPackages, bump, commits, dependents, description, message } = options;
+    const packages = options.packages.filter((name) => !isIgnoredPackage(name, dependents.ignore ?? []));
+
+    if (packages.length === 0) {
+      throw new Exit("No packages selected", "Every affected package is excluded by config.ignore");
+    }
+
     const data: StoneData = { commits: intersectCommitPackages(commits, packages), description, message };
 
     if (bump === BumpType.Major) data.major = packages;
     else if (bump === BumpType.Minor) data.minor = packages;
     else data.patch = packages;
 
-    data.dependency = nonEmpty(findDependencyPackages(packages, allPackages));
+    data.dependency = nonEmpty(
+      collectDependents(
+        packages.map((name) => ({ bump, name })),
+        allPackages,
+        dependents,
+      ),
+    );
 
     return data;
   }

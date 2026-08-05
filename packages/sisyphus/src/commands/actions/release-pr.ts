@@ -5,8 +5,11 @@ import { createGitProvider, type GitProvider } from "../../providers";
 import {
   ChangelogGenerator,
   CommitAnalyzer,
+  dependentsOptions,
+  excludeIgnoredFromStone,
   hashReleasePlan,
   hashReleaseSource,
+  orderForRelease,
   PackageUpdater,
   StoneManager,
   WorkspaceScanner,
@@ -85,19 +88,30 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const generatedStones = await this.generateStonesFromCommits(ctx, manager, ctx.args.dryRun);
     const pendingStones = await manager.list();
-    const stones = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
+    const collected = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
 
-    if (stones.length === 0) return { packages: [], stones: [] };
+    if (collected.length === 0) return { packages: [], stones: [] };
+
+    const ignore = ctx.config.get("ignore") ?? [];
+    const excluded = collected.map((stone) => excludeIgnoredFromStone(stone, ignore));
+    const stones = excluded.map((entry) => entry.stone);
+    const skipped = [...new Set(excluded.flatMap((entry) => entry.skipped))];
+    if (skipped.length > 0) {
+      log.warn(color.yellow(`Excluded by config.ignore: ${skipped.join(", ")}`));
+    }
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const mergedStone = Stone.mergeAll(stones);
-    const updatedPackages = Package.applyStone(mergedStone, packages);
+    const { cycle, ordered } = orderForRelease(Package.applyStone(mergedStone, packages));
+    if (cycle.length > 0) {
+      log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
+    }
 
-    if (updatedPackages.length === 0) {
+    if (ordered.length === 0) {
       throw new Exit("No packages to update", "Stones don't reference any known packages");
     }
 
-    return { packages: updatedPackages, stones };
+    return { packages: ordered, stones };
   }
 
   private async commitAndPushChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
@@ -212,7 +226,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const stones: Stone[] = [];
 
     for (const [index, group] of commitGroups.entries()) {
-      const stoneData = CommitAnalyzer.buildStoneData(group, packages);
+      const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(ctx.config));
 
       if (dryRun) {
         log.info(`${color.dim("[dry-run] Would generate stone:")} ${group.message}`);

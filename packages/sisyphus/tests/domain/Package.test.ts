@@ -33,10 +33,10 @@ describe("Package.fromJson()", () => {
 
     expect(pkg).toMatchObject({
       bump: undefined,
-      dependencyOf: [],
       file: "packages/core/package.json",
       name: "@app/core",
       version: "1.2.3",
+      workspaceDependencies: [],
     });
   });
 
@@ -105,19 +105,34 @@ describe("package.withBump()", () => {
   });
 });
 
-describe("package.withDependencyOf()", () => {
-  test("sets dependency list", () => {
-    const pkg = makePackage();
-    const updated = pkg.withDependencyOf(["@app/cli", "@app/web"]);
+describe("package.workspaceDependencies", () => {
+  test("collects workspace edges from every manifest section", () => {
+    const pkg = makePackage({
+      dependencies: { "@app/runtime": "workspace:*", external: "^1.0.0" },
+      devDependencies: { "@app/tools": "workspace:^" },
+      optionalDependencies: { "@app/optional": "workspace:~" },
+      peerDependencies: { "@app/peer": "workspace:>=1.0.0" },
+    });
 
-    expect(updated.dependencyOf).toEqual(["@app/cli", "@app/web"]);
-    expect(pkg.dependencyOf).toEqual([]); // original unchanged
+    expect(pkg.workspaceDependencies).toEqual([
+      { kind: "dependencies", name: "@app/runtime", specifier: "workspace:*" },
+      { kind: "devDependencies", name: "@app/tools", specifier: "workspace:^" },
+      { kind: "optionalDependencies", name: "@app/optional", specifier: "workspace:~" },
+      { kind: "peerDependencies", name: "@app/peer", specifier: "workspace:>=1.0.0" },
+    ]);
   });
 
-  test("preserves other fields", () => {
-    const updated = makePackage().withBump(BumpType.Patch).withDependencyOf(["@app/cli"]);
+  test("ignores specifiers that only look like the workspace protocol", () => {
+    const pkg = makePackage({ dependencies: { "@app/other": "workspaceish:1.0.0" } });
 
-    expect(updated).toMatchObject({ bump: BumpType.Patch, name: "@app/core", version: "1.2.3" });
+    expect(pkg.workspaceDependencies).toEqual([]);
+  });
+
+  test("survives withBump", () => {
+    const pkg = makePackage({ dependencies: { "@app/runtime": "workspace:*" } }).withBump(BumpType.Patch);
+
+    expect(pkg.workspaceDependencies).toHaveLength(1);
+    expect(pkg).toMatchObject({ bump: BumpType.Patch, name: "@app/core", version: "1.2.3" });
   });
 });
 

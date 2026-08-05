@@ -2,7 +2,7 @@ import { args, color, log, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import type { Package, Stone } from "../domain";
 import { BUMP_COLORS, BUMP_EMOJI, BUMP_ORDER } from "../domain";
-import { StoneManager, VersionCalculator, WorkspaceScanner } from "../services";
+import { isIgnoredPackage, StoneManager, VersionCalculator, WorkspaceScanner } from "../services";
 
 const checkArgs = args({
   config: { alias: "c", default: false, description: "Include config in output", type: "boolean" },
@@ -30,6 +30,7 @@ type CheckData = {
   packages: Map<string, Package>;
   packageNames: readonly string[];
   stones: Stone[];
+  ignore: readonly string[];
   config?: object;
 };
 
@@ -58,7 +59,14 @@ export class CheckCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const stones = await manager.list();
 
-    return { config: ctx.args.config ? ctx.config.getAll() : undefined, packageNames, packages, root, stones };
+    return {
+      config: ctx.args.config ? ctx.config.getAll() : undefined,
+      ignore: ctx.config.get("ignore") ?? [],
+      packageNames,
+      packages,
+      root,
+      stones,
+    };
   }
 
   private printJson(data: CheckData) {
@@ -66,17 +74,18 @@ export class CheckCommand extends BaseCommand {
       config: data.config,
       packages: data.packageNames.map((name) => ({ name, version: data.packages.get(name)?.version ?? "0.0.0" })),
       root: { name: data.root?.name ?? "", version: data.root?.version ?? "0.0.0" },
-      stones: data.stones.map((stone) => this.stoneToJson(stone, data.packages)),
+      stones: data.stones.map((stone) => this.stoneToJson(stone, data.packages, data.ignore)),
     };
 
     console.log(JSON.stringify(output, null, 2));
   }
 
-  private stoneToJson(stone: Stone, packages: Map<string, Package>): JsonStone {
+  private stoneToJson(stone: Stone, packages: Map<string, Package>, ignore: readonly string[]): JsonStone {
     const stonePkgs: JsonStone["packages"] = [];
 
     for (const bump of BUMP_ORDER) {
       for (const name of stone.getPackages(bump)) {
+        if (isIgnoredPackage(name, ignore)) continue;
         const pkg = packages.get(name);
         const version = pkg?.version ?? "0.0.0";
         stonePkgs.push({ bump, name, newVersion: VersionCalculator.bump(version, bump, stone.tag), version });
@@ -91,7 +100,7 @@ export class CheckCommand extends BaseCommand {
     this.printPackages(data);
 
     if (data.stones.length > 0) {
-      this.printStones(data.stones, data.packages);
+      this.printStones(data.stones, data.packages, data.ignore);
     }
 
     if (data.config) {
@@ -125,12 +134,12 @@ export class CheckCommand extends BaseCommand {
     log.step(lines.join("\n"));
   }
 
-  private printStones(stones: Stone[], packages: Map<string, Package>) {
-    const allStones = stones.map((stone) => this.formatStone(stone, packages)).join("\n\n");
+  private printStones(stones: Stone[], packages: Map<string, Package>, ignore: readonly string[]) {
+    const allStones = stones.map((stone) => this.formatStone(stone, packages, ignore)).join("\n\n");
     log.step(`${color.bold(color.green("Stones:"))}\n\n${allStones}`);
   }
 
-  private formatStone(stone: Stone, packages: Map<string, Package>): string {
+  private formatStone(stone: Stone, packages: Map<string, Package>, ignore: readonly string[]): string {
     const lines: string[] = [];
 
     lines.push(`${color.bold("Stone:")} ${color.cyan(stone.id)}`);
@@ -143,6 +152,7 @@ export class CheckCommand extends BaseCommand {
       if (pkgNames.length === 0) continue;
 
       for (const name of pkgNames) {
+        if (isIgnoredPackage(name, ignore)) continue;
         const pkg = packages.get(name);
         const version = pkg?.version ?? "0.0.0";
         const newVersion = VersionCalculator.bump(version, bump, stone.tag);

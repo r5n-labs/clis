@@ -73,6 +73,11 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commits: { skip: { authors: ["r5n-bot[bot]"], messagePatterns: ["^chore\\(release\\):", "^chore: add stone"] } },
 
+  dependents: {
+    kinds: ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],
+    updateInternal: "always",
+  },
+
   ignore: [],
 
   lastStone: { commit: "", date: "" },

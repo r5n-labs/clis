@@ -13,7 +13,29 @@
     },
     "sisyphusDir": { "type": "string", "minLength": 1 },
     "stonesPath": { "type": "string", "minLength": 1 },
-    "ignore": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "ignore": {
+      "type": "array",
+      "description": "Package names or globs that are never released. Globs use path semantics, so scoped names need '@scope/*' rather than '*'.",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "dependents": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How dependent packages are pulled into a release.",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "description": "Manifest sections whose workspace dependencies make a dependent releasable. Keep 'devDependencies' when packages are bundled at build time; drop it when only the published manifest matters.",
+          "items": { "enum": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] },
+          "uniqueItems": true
+        },
+        "updateInternal": {
+          "enum": ["always", "outOfRange"],
+          "description": "'always' releases every dependent; 'outOfRange' releases only dependents whose published range no longer admits the new version."
+        }
+      }
+    },
     "plugins": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "stones": {
       "type": "array",
