@@ -17,6 +17,13 @@ import {
   type WorkspaceVersionMap,
   workspaceVersionsFromPackages,
 } from "./PublishManifest";
+import {
+  assertBuildOutputsUntracked,
+  cleanBuildOutputs,
+  type ResolvedBuildConfig,
+  resolveBuildConfig,
+  runBuildCommand,
+} from "./release/build-outputs";
 import { formatCommitMessage, getChangelogFiles, getCommitAuthorArg, getCommitterEnv } from "./release/commit-meta";
 import {
   getCommitTree,
@@ -111,6 +118,8 @@ export class ReleaseOrchestrator {
   private repositoryRoot: string | null = null;
   private rollbackBlockedReason: string | null = null;
   private ignoredBuildInputsValidated = false;
+  private buildConfig: ResolvedBuildConfig | null = null;
+  private buildOutputsPrepared = false;
   private preparedNpmPublish: PreparedNpmPublish | null = null;
   private ledger: ReleaseLedger | null = null;
   private publishContext: { catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap } | null = null;
@@ -357,6 +366,10 @@ export class ReleaseOrchestrator {
     if (publishablePackages.length === 0) {
       this.preparedNpmPublish = { key, packages: [] };
       return;
+    }
+
+    if (publishablePackages.some((pkg) => !ledger.data.artifacts[pkg.name])) {
+      await this.prepareBuildOutputs();
     }
 
     const tempDir = await mkdtemp(join(tmpdir(), "sisyphus-publish-"));
@@ -902,8 +915,11 @@ export class ReleaseOrchestrator {
       await this.validatePublishCommitBinding(sourceCommit);
       await validatePublishSources(await this.getRepositoryRoot());
       await this.validateIgnoredBuildInputs();
-      await validateExistingPackInputs(pkg, packageDirectory, await this.getRepositoryRoot());
-      await runInContext(() => Bun.$`bun run build`.cwd(packageDirectory).quiet(), `Failed to build ${pkg.name}`);
+      const build = this.getBuildConfig();
+      await validateExistingPackInputs(pkg, packageDirectory, await this.getRepositoryRoot(), build.matcher);
+      if (build.command.length > 0) {
+        await runBuildCommand(build.command, packageDirectory, `Failed to build ${pkg.name}`);
+      }
       const builtSourceCommit = await getHeadCommit();
       await this.validatePublishCommitBinding(builtSourceCommit);
       const builtSourceStatus = await getPublishSourceStatus(await this.getRepositoryRoot());
@@ -955,8 +971,44 @@ export class ReleaseOrchestrator {
 
   private async validateIgnoredBuildInputs(): Promise<void> {
     if (this.ignoredBuildInputsValidated) return;
-    await validateRepositoryIgnoredInputs(await this.getRepositoryRoot(), "");
+    await validateRepositoryIgnoredInputs(await this.getRepositoryRoot(), "", this.getBuildConfig().matcher);
     this.ignoredBuildInputsValidated = true;
+  }
+
+  private getBuildConfig(): ResolvedBuildConfig {
+    this.buildConfig ??= resolveBuildConfig(this.config.get("release")?.build);
+    return this.buildConfig;
+  }
+
+  private async prepareBuildOutputs(): Promise<void> {
+    if (this.buildOutputsPrepared) return;
+
+    const build = this.getBuildConfig();
+    const repositoryRoot = await this.getRepositoryRoot();
+    const sourceCommit = await getHeadCommit();
+
+    await this.validatePublishCommitBinding(sourceCommit);
+    await validatePublishSources(repositoryRoot);
+    await assertBuildOutputsUntracked(repositoryRoot, build.matcher);
+    await cleanBuildOutputs(repositoryRoot, "", build.matcher);
+
+    for (const [index, argv] of build.root.entries()) {
+      await runBuildCommand(argv, repositoryRoot, `Failed to run release root build command ${index}`);
+    }
+
+    if (build.root.length > 0) {
+      const builtCommit = await getHeadCommit();
+      await this.validatePublishCommitBinding(builtCommit);
+      if (builtCommit !== sourceCommit || (await getPublishSourceStatus(repositoryRoot)).length > 0) {
+        throw new Exit(
+          "Root build changed repository source files",
+          "No package was packed and nothing was published; restore the build changes before retrying",
+        );
+      }
+    }
+
+    await this.validateIgnoredBuildInputs();
+    this.buildOutputsPrepared = true;
   }
 
   private async getPublishContext(): Promise<{ catalogs: CatalogMap; workspaceVersions: WorkspaceVersionMap }> {

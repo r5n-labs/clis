@@ -8,7 +8,7 @@ import { Package } from "../../src/domain/Package";
 import { Stone } from "../../src/domain/Stone";
 import { type ReleaseOptions, ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import type { ReleaseLedger } from "../../src/services/release-ledger";
-import type { SisyphusConfig } from "../../src/types";
+import type { ReleaseBuildConfig, SisyphusConfig } from "../../src/types";
 
 export const PACKAGE_NAME = "@fixture/foo";
 export const PACKAGE_FILE = "packages/foo/package.json";
@@ -68,12 +68,34 @@ export async function setupReleaseFixture(withChangelog: boolean): Promise<Fixtu
   return { remote, root };
 }
 
-export function makeConfig(root: string): ConfigManager<SisyphusConfig> {
-  return new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), SISYPHUS_DEFAULT_CONFIG);
+export function makeConfig(root: string, build?: Partial<ReleaseBuildConfig>): ConfigManager<SisyphusConfig> {
+  const config = new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), SISYPHUS_DEFAULT_CONFIG);
+  if (build) {
+    config.set("release", { ...config.get("release"), build: { ...config.get("release").build, ...build } });
+  }
+  return config;
 }
 
-export function makeOrchestrator(root: string, options: Partial<ReleaseOptions> = {}): ReleaseOrchestrator {
-  return new ReleaseOrchestrator(makeConfig(root), { ...BASE_OPTIONS, ...options });
+export function makeOrchestrator(
+  root: string,
+  options: Partial<ReleaseOptions> = {},
+  build?: Partial<ReleaseBuildConfig>,
+): ReleaseOrchestrator {
+  return new ReleaseOrchestrator(makeConfig(root, build), { ...BASE_OPTIONS, ...options });
+}
+
+export function makeRootBuildScript(root: string, emits: Record<string, string> = {}): string[] {
+  const lines = [
+    'const countFile = Bun.file("root-build-count.txt");',
+    "const count = (await countFile.exists()) ? Number(await countFile.text()) : 0;",
+    "await Bun.write(countFile, String(count + 1));",
+    ...Object.entries(emits).map(
+      ([path, contents]) => `await Bun.write(${JSON.stringify(path)}, ${JSON.stringify(contents)});`,
+    ),
+  ];
+
+  writeFileSync(join(root, "root-build.ts"), `${lines.join("\n")}\n`);
+  return ["bun", "root-build.ts"];
 }
 
 export function makePackage(): Package {

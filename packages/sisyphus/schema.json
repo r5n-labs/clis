@@ -60,6 +60,29 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How package artifacts are built before packing.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "description": "Argv for the per-package build, run in the package directory. An empty array disables it.",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "outputs": {
+              "type": "array",
+              "description": "Repository-root-relative globs written by the release build. They are cleaned before the build and exempted from the ignored-input and pack-input guards.",
+              "items": { "type": "string", "minLength": 1, "not": { "pattern": "^[/.]" } },
+              "uniqueItems": true
+            },
+            "root": {
+              "type": "array",
+              "description": "Argv arrays run once at the repository root before the first package is packed.",
+              "items": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        },
         "createRelease": { "type": "boolean" },
         "npm": { "type": "boolean" },
         "push": { "type": "boolean" },

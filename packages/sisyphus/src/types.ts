@@ -2,7 +2,15 @@ export type LastStone = { commit: string; date: string };
 
 export type CommitConfig = { author: string; email?: string; message: string };
 
-export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolean; tags: boolean };
+export type ReleaseBuildConfig = { command: string[]; outputs: string[]; root: string[][] };
+
+export type ReleaseConfig = {
+  build: ReleaseBuildConfig;
+  createRelease: boolean;
+  npm: boolean;
+  push: boolean;
+  tags: boolean;
+};
 
 export type PackageRelease = { oldVersion: string; newVersion: string };
 

@@ -14,6 +14,7 @@ import {
   makePackage,
   makePendingStone,
   makePublishPackage,
+  makeRootBuildScript,
   PUBLISH_SCRIPT,
   RELEASE_TAG,
   STONE_FILE,
@@ -605,6 +606,173 @@ describe("ReleaseOrchestrator npm publication", () => {
     } finally {
       unexpectedRegistry.stop(true);
     }
+  });
+
+  test("runs the configured root build once and packs its declared outputs", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const first = makePublishPackage(root, "packages/public", "@fixture/public");
+    const second = makePublishPackage(root, "packages/other", "@fixture/other");
+
+    for (const [directory, pkg] of [
+      ["packages/public", first],
+      ["packages/other", second],
+    ] as const) {
+      const manifestPath = join(root, pkg.file);
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+      writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, files: ["dist"] }, null, 2)}\n`);
+      writeFileSync(join(root, directory, ".gitignore"), "build-count.txt\ndist\n");
+    }
+    writeFileSync(join(root, ".gitignore"), "root-build-count.txt\n");
+    const rootCommand = makeRootBuildScript(root, {
+      "packages/other/dist/types.d.ts": "export {};\n",
+      "packages/public/dist/types.d.ts": "export {};\n",
+    });
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { outputs: ["packages/*/dist/**", "root-build-count.txt"], root: [rootCommand] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "declare build outputs"`.quiet();
+
+    await orchestrator.initializeExternalRelease([first, second], [], true);
+    await orchestrator.finalizeExternalRelease([first, second], []);
+    await orchestrator.publishToNpm([first, second]);
+
+    expect(published.sort()).toEqual(["@fixture/other", "@fixture/public"]);
+    expect(readFileSync(join(root, "root-build-count.txt"), "utf-8")).toBe("1");
+    expect(existsSync(join(root, "packages/public/dist/types.d.ts"))).toBe(true);
+  });
+
+  test("still rejects ignored files that are not declared build outputs", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\ndist\npayload.txt\n");
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { outputs: ["packages/*/dist/**"] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "declare ignores"`.quiet();
+    writeFileSync(join(root, "packages/public/payload.txt"), "unbound payload\n");
+
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Repository contains 1 ignored build input(s) outside node_modules",
+    );
+    expect(published).toEqual([]);
+  });
+
+  test("rejects a declared build output that Git tracks", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { outputs: ["packages/public/prepare.ts"] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "commit sources"`.quiet();
+
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
+      "Declared build output packages/public/prepare.ts is tracked by Git",
+    );
+    expect(published).toEqual([]);
+    expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
+  });
+
+  test("removes stale declared build outputs before the root build", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\ndist\n");
+    writeFileSync(join(root, ".gitignore"), "root-build-count.txt\n");
+    const rootCommand = makeRootBuildScript(root, { "packages/public/dist/fresh.js": "export const fresh = 1;\n" });
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { outputs: ["packages/*/dist/**", "root-build-count.txt"], root: [rootCommand] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "declare build outputs"`.quiet();
+    mkdirSync(join(root, "packages/public/dist"), { recursive: true });
+    writeFileSync(join(root, "packages/public/dist/stale.js"), "export const stale = 1;\n");
+
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+    await orchestrator.prepareNpmPublish([pkg]);
+
+    expect(existsSync(join(root, "packages/public/dist/stale.js"))).toBe(false);
+    expect(existsSync(join(root, "packages/public/dist/fresh.js"))).toBe(true);
+  });
+
+  test("passes build command arguments verbatim without shell interpretation", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\ndist\n");
+    writeFileSync(
+      join(root, "record-args.ts"),
+      'await Bun.write("packages/public/dist/args.json", JSON.stringify(process.argv.slice(2)));\n',
+    );
+    writeFileSync(join(root, ".gitignore"), "root-build-count.txt\n");
+    const argv = ["bun", "record-args.ts", "a b", "$(echo pwned)", "*", ";rm -rf /"];
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { command: [], outputs: ["packages/*/dist/**"], root: [argv] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "add arg recorder"`.quiet();
+
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+    await orchestrator.prepareNpmPublish([pkg]);
+
+    const recorded = JSON.parse(readFileSync(join(root, "packages/public/dist/args.json"), "utf-8"));
+    expect(recorded).toEqual(argv.slice(2));
+  });
+
+  test("fails the release when a root build command exits non-zero", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    writeFileSync(join(root, "failing-build.ts"), "process.exit(1);\n");
+    const orchestrator = makeOrchestrator(
+      root,
+      { changelog: false, npm: true, tags: false },
+      { root: [["bun", "failing-build.ts"]] },
+    );
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "add failing build"`.quiet();
+
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+
+    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow("Failed to run release root build command 0");
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
   });
 });
 

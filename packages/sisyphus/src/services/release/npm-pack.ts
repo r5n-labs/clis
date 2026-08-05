@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import type { Package } from "../../domain";
 import { canonicalizeJson, isEscapingPath } from "../ReleaseSource";
+import { type BuildOutputMatcher, EMPTY_BUILD_OUTPUT_MATCHER } from "./build-output-matcher";
 
 export type PackedPackageIdentity = { name: string; version: string };
 
@@ -102,6 +103,7 @@ export async function validateExistingPackInputs(
   pkg: Package,
   packageDirectory: string,
   repositoryRoot: string,
+  matcher: BuildOutputMatcher = EMPTY_BUILD_OUTPUT_MATCHER,
 ): Promise<void> {
   const [paths, trackedPaths] = await Promise.all([
     listPackFilePaths(pkg, packageDirectory),
@@ -110,24 +112,35 @@ export async function validateExistingPackInputs(
 
   for (const path of paths) {
     const repositoryPath = relative(repositoryRoot, resolve(packageDirectory, path)).split(sep).join("/");
-    if (!trackedPaths.has(repositoryPath)) {
+    if (!trackedPaths.has(repositoryPath) && !matcher.isOutput(repositoryPath)) {
       throw new Exit(`Package ${pkg.name} includes an untracked or ignored pre-build file: ${path}`);
     }
   }
 }
 
-export async function validateRepositoryIgnoredInputs(root: string, prefix: string): Promise<void> {
-  const [ignoredResult, indexResult] = await Promise.all([
-    Bun.$`git ls-files --others --ignored --exclude-standard -z`.cwd(root).quiet(),
-    Bun.$`git ls-files --stage -z --cached`.cwd(root).quiet(),
-  ]);
-  const ignoredInputs = ignoredResult.stdout
+export async function listIgnoredInputs(root: string, prefix: string): Promise<string[]> {
+  const result = await Bun.$`git ls-files --others --ignored --exclude-standard -z`.cwd(root).quiet();
+
+  return result.stdout
     .toString()
     .split("\0")
     .filter(Boolean)
-    .filter((path) => !path.split("/").includes("node_modules"));
+    .filter((path) => !path.split("/").includes("node_modules"))
+    .map((path) => `${prefix}${path}`);
+}
+
+export async function validateRepositoryIgnoredInputs(
+  root: string,
+  prefix: string,
+  matcher: BuildOutputMatcher = EMPTY_BUILD_OUTPUT_MATCHER,
+): Promise<void> {
+  const [ignoredPaths, indexResult] = await Promise.all([
+    listIgnoredInputs(root, prefix),
+    Bun.$`git ls-files --stage -z --cached`.cwd(root).quiet(),
+  ]);
+  const ignoredInputs = ignoredPaths.filter((path) => !matcher.isOutput(path));
   if (ignoredInputs.length > 0) {
-    const shown = ignoredInputs.slice(0, MAX_REPORTED_IGNORED_INPUTS).map((path) => `${prefix}${path}`);
+    const shown = ignoredInputs.slice(0, MAX_REPORTED_IGNORED_INPUTS);
     const hidden = ignoredInputs.length - shown.length;
     throw new Exit(
       `Repository contains ${ignoredInputs.length} ignored build input(s) outside node_modules`,
@@ -136,7 +149,7 @@ export async function validateRepositoryIgnoredInputs(root: string, prefix: stri
   }
 
   for (const { mode, path } of parseIndexRecords(indexResult.stdout.toString())) {
-    if (mode === "160000") await validateRepositoryIgnoredInputs(resolve(root, path), `${prefix}${path}/`);
+    if (mode === "160000") await validateRepositoryIgnoredInputs(resolve(root, path), `${prefix}${path}/`, matcher);
   }
 }
 
