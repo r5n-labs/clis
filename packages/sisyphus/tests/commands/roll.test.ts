@@ -613,4 +613,101 @@ describe("RollCommand release metadata", () => {
 
     expect(await ReleaseLedger.loadActive(root)).not.toBeNull();
   });
+
+  test("--json emits exactly one document and no clack output", async () => {
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+    const stdoutWrite = spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    try {
+      await new RollCommand().execute(makeCtx(config, { dryRun: true, json: true, tags: true }));
+    } finally {
+      consoleLog.mockRestore();
+      stdoutWrite.mockRestore();
+    }
+
+    expect(logged).toHaveLength(1);
+    expect(stdoutWrite).not.toHaveBeenCalled();
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report).toMatchObject({
+      command: "roll",
+      mode: "dry-run",
+      published: false,
+      publishedPackages: [],
+      releaseId: null,
+      schemaVersion: 1,
+      status: "planned",
+      stones: [STONE_ID],
+      tags: [RELEASE_TAG],
+    });
+    expect(report.packages).toEqual([
+      {
+        integrity: null,
+        name: PACKAGE_NAME,
+        newVersion: "1.0.1",
+        oldVersion: "1.0.0",
+        private: true,
+        published: false,
+        registry: null,
+        tag: null,
+      },
+    ]);
+    expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toContain('"version": "1.0.0"');
+  });
+
+  test("--json reports a failure on stdout and exits non-zero", async () => {
+    rmSync(join(root, STONE_FILE));
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+    const errors: string[] = [];
+    const consoleError = spyOn(console, "error").mockImplementation((value) => {
+      errors.push(String(value));
+    });
+    const exit = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    try {
+      await expect(new RollCommand().execute(makeCtx(config, { json: true }))).rejects.toThrow("exit:1");
+    } finally {
+      consoleLog.mockRestore();
+      consoleError.mockRestore();
+      exit.mockRestore();
+    }
+
+    const report = JSON.parse(logged[0] as string);
+    expect(report).toMatchObject({ published: false, status: "failed" });
+    expect(report.error.message).toBe("No pending stones found");
+    expect(errors).toContain("No pending stones found");
+  });
+
+  test("--json is accepted alongside every mode flag", async () => {
+    const logged: string[] = [];
+    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+      logged.push(String(value));
+    });
+    const consoleError = spyOn(console, "error").mockImplementation(() => undefined);
+    const exit = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    try {
+      for (const args of [{ abort: true }, { resume: true }, { publishOnly: true }]) {
+        await expect(new RollCommand().execute(makeCtx(config, { json: true, ...args }))).rejects.toThrow("exit:1");
+      }
+    } finally {
+      consoleLog.mockRestore();
+      consoleError.mockRestore();
+      exit.mockRestore();
+    }
+
+    const modes = logged.map((entry) => JSON.parse(entry).mode);
+    expect(modes).toEqual(["abort", "resume", "publish-only"]);
+    expect(logged.every((entry) => JSON.parse(entry).status === "failed")).toBe(true);
+  });
 });

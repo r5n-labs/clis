@@ -99,7 +99,7 @@ export type ReleaseOptions = {
 
 type PreparedNpmPackage = { artifactPath: string; pkg: Package };
 type PreparedNpmPublish = { key: string; packages: PreparedNpmPackage[] };
-type ResumeResult = { packages: Package[] };
+type ResumeResult = { ledger: ReleaseLedgerData | null; packages: Package[]; stones: Stone[] };
 
 export class ReleaseOrchestrator {
   private packageUpdater = new PackageUpdater();
@@ -163,7 +163,7 @@ export class ReleaseOrchestrator {
 
     if (data.phase === "completed") {
       await ledger.complete();
-      return { packages };
+      return { ledger: orchestrator.getLedgerSnapshot(), packages, stones };
     }
 
     try {
@@ -179,7 +179,7 @@ export class ReleaseOrchestrator {
       }
       if (ledger.phase === "planned") await ledger.setPhase("local-ready");
       await orchestrator.resumeExternalOperations(packages, stones);
-      return { packages };
+      return { ledger: orchestrator.getLedgerSnapshot(), packages, stones };
     } catch (error) {
       if (error instanceof Exit || !orchestrator.hasCrossedIrreversibleBoundary()) throw error;
       throw orchestrator.createIncompleteReleaseError(error);
@@ -973,6 +973,10 @@ export class ReleaseOrchestrator {
     if (this.ignoredBuildInputsValidated) return;
     await validateRepositoryIgnoredInputs(await this.getRepositoryRoot(), "", this.getBuildConfig().matcher);
     this.ignoredBuildInputsValidated = true;
+  }
+
+  getLedgerSnapshot(): ReleaseLedgerData | null {
+    return this.ledger?.data ?? null;
   }
 
   private getBuildConfig(): ResolvedBuildConfig {

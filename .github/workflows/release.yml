@@ -17,6 +17,9 @@ jobs:
     name: Release
     runs-on: r5n-m2-ultra
     if: "!contains(github.event.head_commit.message, 'release(🎉):')"
+    outputs:
+      published: ${{ steps.roll.outputs.published }}
+      publishedPackages: ${{ steps.roll.outputs.publishedPackages }}
 
     steps:
       - uses: actions/checkout@v7
@@ -50,18 +53,27 @@ jobs:
           echo "STONES_COUNT=$STONES_COUNT" >> $GITHUB_ENV
 
       - name: Roll release
+        id: roll
         if: env.STONES_COUNT != '0'
         run: |
+          set -eo pipefail
           NPM_DIR="$RUNNER_TEMP/npm11"
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
           npm --version
           RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          REPORT="$RUNNER_TEMP/release.json"
           if [ -f "$RELEASE_DIR/active.json" ]; then
-            bun sis roll --resume
+            bun sis roll --resume --json > "$REPORT"
           else
-            bun release:roll
+            bun sis roll --json --yes > "$REPORT"
           fi
+          {
+            echo "published=$(jq -r '.published' "$REPORT")"
+            echo "publishedPackages<<SIS_JSON_EOF"
+            jq -c '.publishedPackages' "$REPORT"
+            echo "SIS_JSON_EOF"
+          } >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production

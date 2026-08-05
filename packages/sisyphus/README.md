@@ -98,6 +98,7 @@ sisyphus roll --resume
 - `--noCommit` — skip the release commit (also disables tags, push, and provider release)
 - `--preview` — write changelogs, show them, then offer to revert
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
+- `-j, --json` — print a machine-readable release report on stdout instead of the interactive output
 - `--resume` — reconcile and continue the active incomplete release
 - `--abort` — abandon the incomplete release if nothing external has started; releases with external progress must use `--resume`
 - `-d, --dryRun`, `-y, --yes`
@@ -180,7 +181,9 @@ Create or edit `.sisyphus/config.json`. Flag-driven when invoked directly (the i
 - `commit` — release commit author/email and message template; `{message}` and `{packages}` are substituted; a valid `email` is required whenever `author` is set
 - `changelog` — `sections` maps conventional commit types (`feat`, `fix`, `breaking`, ...) to headings; `root` adds a combined root changelog; `packageHeader`/`rootHeader` support `{emoji}`, `{version}`, `{date}`, `{packages}`
 - `commits.skip` / `pr.skip` — filters for `version --fromCommits` and `pr`
-- `release` — defaults for the corresponding `roll` flags
+- `release` — defaults for the corresponding `roll` flags, plus `release.build` (see below)
+- `dependents` — which manifest sections pull a dependent into a release (`kinds`) and whether dependents are always released or only when their published range no longer admits the new version (`updateInternal`)
+- `ignore` — package names or globs that are never released; they are skipped when selecting packages, never pulled in as dependents, and never traversed through
 - `sisyphusDir` / `stonesPath` — relocate the config directory or stone storage
 - `lastStone`, `stones`, `currentRelease` — managed by the CLI; don't edit by hand
 
@@ -199,7 +202,53 @@ Each stone is a JSON file at `.sisyphus/stones/<id>.json`, safe to commit and re
 }
 ```
 
-Stones may also carry a `tag` (prerelease) and the `commits` they were generated from. `roll` merges every pending stone, keeping the highest bump per package.
+Stones may also carry a `tag` (prerelease) and the `commits` they were generated from. `roll` merges every pending stone, keeping the highest bump per package. Every pending stone must agree on the prerelease tag, and a package cannot be both a snapshot and a normal release in one roll.
+
+## Dependents
+
+Selecting a package pulls in everything that depends on it, transitively, as a `dependency` bump. Edges come from the manifest sections listed in `dependents.kinds`; the default includes `devDependencies` because bundled packages inline their workspace dependencies at build time. Drop it when only the published manifest matters:
+
+```json
+{
+  "dependents": {
+    "kinds": ["dependencies", "optionalDependencies", "peerDependencies"],
+    "updateInternal": "always"
+  }
+}
+```
+
+`updateInternal: "outOfRange"` releases a dependent only when its published range would no longer admit the new version — `workspace:*` is always invalidated, `workspace:^` survives a minor bump above 0.x, `workspace:~` survives a patch, and a literal `workspace:<range>` is never rewritten so it never triggers a release. Releases are ordered so a dependency is tagged and published before the dependent that pins it.
+
+## Prereleases
+
+Pass `--tag` to `version` to open a prerelease channel. The base version is bumped first, so the prerelease always sorts above the last stable release:
+
+| current | stone | result |
+| --- | --- | --- |
+| `1.0.0` | minor + `--tag beta` | `1.1.0-beta.0` |
+| `1.1.0-beta.0` | patch + `--tag beta` | `1.1.0-beta.1` |
+| `1.1.0-beta.1` | major + `--tag beta` | `2.0.0-beta.0` |
+| `1.1.0-beta.1` | patch, no tag | `1.1.0` |
+
+Omitting `--tag` leaves the channel and lands on the accumulated stable target. The npm dist-tag follows the channel, so prereleases never publish as `latest`; a roll that mixes stable and prerelease packages is rejected.
+
+## Build
+
+`roll` builds each package before packing it. By default that is `bun run build` in the package directory:
+
+```json
+{
+  "release": {
+    "build": {
+      "command": ["bun", "run", "build"],
+      "root": [["bun", "run", "build:dts"]],
+      "outputs": ["packages/*/dist/**"]
+    }
+  }
+}
+```
+
+`root` runs once at the repository root before the first package is packed — for declarations or bundles generated centrally. `command: []` disables the per-package build. `outputs` declares the gitignored paths the build writes: they are removed before the build and exempted from the guards that otherwise reject untracked and ignored files, while everything else stays rejected. A declared output that Git tracks is refused before any build runs. Commands are executed directly, never through a shell.
 
 ## GitHub Actions
 
