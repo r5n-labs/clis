@@ -63,10 +63,18 @@ export class PrCommand extends BaseCommand {
     }
 
     const bumpType = await this.determineBumpType(ctx, result.suggestedBump, result.pr.labels);
-    const packages = await this.determinePackages(ctx, result.packages);
+    const selected = await this.determinePackages(ctx, result.packages);
+
+    if (selected.length === 0) {
+      throw new Exit("No packages selected");
+    }
+
+    const ignore = ctx.config.get("ignore") ?? [];
+    const packages = selected.filter((name) => !isIgnoredPackage(name, ignore));
 
     if (packages.length === 0) {
-      throw new Exit("No packages selected");
+      log.info(color.dim("Skipping: every affected package is excluded by config.ignore"));
+      return;
     }
 
     const { packages: allPackages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
@@ -235,13 +243,7 @@ export class PrCommand extends BaseCommand {
     description: string | undefined;
     commits: readonly CommitInfo[] | undefined;
   }): StoneData {
-    const { allPackages, bump, commits, dependents, description, message } = options;
-    const packages = options.packages.filter((name) => !isIgnoredPackage(name, dependents.ignore ?? []));
-
-    if (packages.length === 0) {
-      throw new Exit("No packages selected", "Every affected package is excluded by config.ignore");
-    }
-
+    const { allPackages, bump, commits, dependents, description, message, packages } = options;
     const data: StoneData = { commits: intersectCommitPackages(commits, packages), description, message };
 
     if (bump === BumpType.Major) data.major = packages;

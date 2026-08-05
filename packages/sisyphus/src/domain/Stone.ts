@@ -98,10 +98,11 @@ export class Stone {
       tag,
     });
 
-    return { conflicts: [...new Set(conflicts)], errors, stone };
+    return { conflicts: [...new Set(conflicts)], errors: [...new Set(errors)], stone };
   }
 
-  private static resolveTag(stones: Stone[], errors: string[]): string | undefined {
+  private static resolveTag(allStones: Stone[], errors: string[]): string | undefined {
+    const stones = allStones.filter((stone) => !stone.isEmpty);
     const tagged = new Map<string, string[]>();
     for (const stone of stones) {
       if (!stone.tag) continue;
@@ -126,11 +127,11 @@ export class Stone {
     for (const commit of stones.flatMap((stone) => stone.commits ?? [])) {
       const existing = byHash.get(commit.hash);
       if (!existing) {
-        byHash.set(commit.hash, { ...commit, packages: [...commit.packages] });
+        byHash.set(commit.hash, { ...commit, packages: [...(commit.packages ?? [])] });
         continue;
       }
 
-      const packages = new Set([...existing.packages, ...commit.packages]);
+      const packages = new Set([...existing.packages, ...(commit.packages ?? [])]);
       byHash.set(commit.hash, { ...existing, packages: [...packages] });
     }
 

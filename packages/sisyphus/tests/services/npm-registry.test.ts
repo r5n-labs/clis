@@ -41,3 +41,27 @@ describe("resolveReleaseNpmTag", () => {
     expect(resolveReleaseNpmTag([makePackage("a", "1.1.0-beta.0", true)], "next")).toBe("next");
   });
 });
+
+describe("resolveReleaseNpmTag channel extraction", () => {
+  test("keeps a hyphenated prerelease tag intact", () => {
+    expect(resolveReleaseNpmTag([makePackage("a", "1.0.0-next-major.0")], "latest")).toBe("next-major");
+  });
+
+  test("does not collapse two hyphenated channels into one", () => {
+    const packages = [makePackage("a", "1.0.0-next-major.0"), makePackage("b", "1.0.0-next-minor.0")];
+
+    expect(() => resolveReleaseNpmTag(packages, "latest")).toThrow("Release mixes npm dist-tags");
+  });
+
+  test("rejects a prerelease identifier that is not a valid dist-tag", () => {
+    expect(() => resolveReleaseNpmTag([makePackage("a", "2.0.0-v2.0")], "latest")).toThrow(
+      "Cannot derive an npm dist-tag",
+    );
+  });
+
+  test("rejects a version that is not valid SemVer", () => {
+    expect(() => resolveReleaseNpmTag([makePackage("a", "not-a-version")], "latest")).toThrow(
+      "Cannot derive an npm dist-tag",
+    );
+  });
+});

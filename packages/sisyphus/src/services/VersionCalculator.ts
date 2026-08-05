@@ -18,7 +18,8 @@ const PRERELEASE_INITIAL = 0;
 const SNAPSHOT_DATE_REGEX = /[.ZT:-]/g;
 const SNAPSHOT_DATE_LENGTH = 14;
 const SNAPSHOT_BASE_VERSION = "0.0.0";
-const SNAPSHOT_VERSION_PATTERN = /^0\.0\.0-[0-9A-Za-z-]+-\d{14,}$/;
+const SNAPSHOT_VERSION_PATTERN = /^0\.0\.0-[0-9A-Za-z.-]+-\d{14,}$/;
+const PRERELEASE_IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/;
 const DEFAULT_SNAPSHOT_TAG = "nightly";
 
 const BUMP_RELEASE: Partial<Record<BumpType, SemverRelease>> = {
@@ -29,7 +30,7 @@ const BUMP_RELEASE: Partial<Record<BumpType, SemverRelease>> = {
 };
 
 export class VersionCalculator {
-  static bump(version: string, bump: BumpType, tag?: string): string {
+  static bump(version: string, bump: BumpType, tag?: string, graduating = false): string {
     if (bump === BumpType.Snapshot) {
       return VersionCalculator.formatSnapshot(tag);
     }
@@ -48,8 +49,10 @@ export class VersionCalculator {
     }
 
     const current = requireSemver(version, operation);
+    const effectiveTag = VersionCalculator.resolveTag(current, bump, tag, graduating);
     const target = incrementSemver(current, release);
-    const next = tag === undefined ? target : VersionCalculator.applyPrerelease(target, current, tag, version);
+    const next =
+      effectiveTag === undefined ? target : VersionCalculator.applyPrerelease(target, current, effectiveTag, version);
 
     if (compareSemver(next, current) <= 0) {
       throw new Exit(
@@ -71,7 +74,26 @@ export class VersionCalculator {
     return SNAPSHOT_VERSION_PATTERN.test(version);
   }
 
+  private static resolveTag(
+    current: Semver,
+    bump: BumpType,
+    tag: string | undefined,
+    graduating: boolean,
+  ): string | undefined {
+    if (tag !== undefined) return tag;
+    if (graduating || bump !== BumpType.Dependency) return undefined;
+
+    return prereleaseTag(current);
+  }
+
   private static applyPrerelease(target: Semver, current: Semver, tag: string, version: string): Semver {
+    if (!PRERELEASE_IDENTIFIER_PATTERN.test(tag)) {
+      throw new Exit(
+        `Invalid prerelease tag "${tag}"`,
+        "A prerelease tag must be a single identifier of letters, digits, or hyphens",
+      );
+    }
+
     if (!hasSameCore(target, current)) {
       return withPrerelease(target, tag, PRERELEASE_INITIAL);
     }

@@ -3,10 +3,11 @@ import { dirname } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { DEFAULT_NPM_TAG } from "../../constants";
 import type { Package } from "../../domain";
-import { parseSemver } from "../../domain/semver";
+import { parseSemver, prereleaseTag, type Semver } from "../../domain/semver";
 import { getErrorDetail } from "./run";
 
 const NPM_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z._-]*$/;
+const SNAPSHOT_TIMESTAMP_SUFFIX = /-\d{14,}$/;
 const SEMVER_LIKE_NPM_TAG_PATTERN =
   /^(?:[vV]?\d+(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?|[xX])$/;
 
@@ -31,8 +32,31 @@ export function resolveReleaseNpmTag(packages: readonly Package[], configuredTag
 
   for (const pkg of packages) {
     if (pkg.isPrivate) continue;
-    const channel = prereleaseChannel(pkg.newVersion ?? pkg.version);
-    channels.add(channel ?? configured);
+
+    const version = pkg.newVersion ?? pkg.version;
+    const parsed = parseSemver(version);
+
+    if (!parsed) {
+      throw new Exit(
+        `Cannot derive an npm dist-tag for ${pkg.name}@${version}`,
+        "The version is not valid SemVer; fix it before publishing",
+      );
+    }
+
+    if (parsed.prerelease.length === 0) {
+      channels.add(configured);
+      continue;
+    }
+
+    const channel = prereleaseChannel(parsed);
+    if (!channel || !isValidNpmTag(channel)) {
+      throw new Exit(
+        `Cannot derive an npm dist-tag for ${pkg.name}@${version}`,
+        "Use a prerelease identifier that is also a valid npm dist-tag, or set release.tag explicitly",
+      );
+    }
+
+    channels.add(channel);
   }
 
   if (channels.size <= 1) return [...channels][0] ?? configured;
@@ -43,15 +67,14 @@ export function resolveReleaseNpmTag(packages: readonly Package[], configuredTag
   );
 }
 
-function prereleaseChannel(version: string): string | undefined {
-  const parsed = parseSemver(version);
-  if (!parsed || parsed.prerelease.length === 0) return undefined;
+function prereleaseChannel(parsed: Semver): string | undefined {
+  const canonical = prereleaseTag(parsed);
+  if (canonical) return canonical;
 
   const [identifier] = parsed.prerelease;
   if (typeof identifier !== "string") return undefined;
 
-  const channel = identifier.split("-")[0];
-  return channel && isValidNpmTag(channel) ? channel : undefined;
+  return identifier.replace(SNAPSHOT_TIMESTAMP_SUFFIX, "");
 }
 
 export function getPackageScope(packageName: string): string | undefined {

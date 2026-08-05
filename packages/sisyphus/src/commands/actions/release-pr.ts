@@ -1,4 +1,4 @@
-import { args, color, Exit, log, spinner } from "@r5n/cli-core";
+import { args, color, log, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
@@ -108,7 +108,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
 
     if (ordered.length === 0) {
-      throw new Exit("No packages to update", "Stones don't reference any known packages");
+      log.warn(color.yellow("Pending stones reference no releasable packages"));
+      return { packages: [], stones: [] };
     }
 
     return { packages: ordered, stones };

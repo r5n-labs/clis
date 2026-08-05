@@ -184,8 +184,8 @@ describe("Stone.merge()", () => {
   });
 
   test("reports an error when tags conflict", () => {
-    const stoneA = Stone.create({ message: "A", tag: "alpha" });
-    const stoneB = Stone.create({ message: "B", tag: "beta" });
+    const stoneA = Stone.create({ message: "A", patch: ["@app/core"], tag: "alpha" });
+    const stoneB = Stone.create({ message: "B", patch: ["@app/cli"], tag: "beta" });
 
     const { errors } = Stone.merge([stoneA, stoneB], "merged");
 
@@ -196,13 +196,23 @@ describe("Stone.merge()", () => {
   });
 
   test("reports an error when a tagged stone is merged with an untagged one", () => {
-    const stoneA = Stone.create({ message: "A", tag: "beta" });
-    const stoneB = Stone.create({ message: "B" });
+    const stoneA = Stone.create({ message: "A", patch: ["@app/core"], tag: "beta" });
+    const stoneB = Stone.create({ message: "B", patch: ["@app/cli"] });
 
     const { errors } = Stone.merge([stoneA, stoneB], "merged");
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("no tag");
+  });
+
+  test("a stone emptied by config.ignore does not constrain the prerelease tag", () => {
+    const stoneA = Stone.create({ message: "A", patch: ["@app/core"], tag: "beta" });
+    const stoneB = Stone.create({ message: "B" });
+
+    const { errors, stone } = Stone.merge([stoneA, stoneB], "merged");
+
+    expect(errors).toEqual([]);
+    expect(stone.tag).toBe("beta");
   });
 
   test("accepts a homogeneous tag across every stone", () => {

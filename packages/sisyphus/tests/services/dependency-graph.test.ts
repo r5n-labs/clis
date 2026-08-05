@@ -295,3 +295,10 @@ describe("excludeIgnoredFromStone", () => {
     expect(excludeIgnoredFromStone(stone, []).stone).toBe(stone);
   });
 });
+
+describe("isRangeInvalidated for 0.0.x carets", () => {
+  test("a minor bump leaves a 0.0.x caret range", () => {
+    expect(isRangeInvalidated("workspace:^", "0.0.0", "0.1.0")).toBe(true);
+    expect(isRangeInvalidated("workspace:^", "0.0.3", "0.1.3")).toBe(true);
+  });
+});

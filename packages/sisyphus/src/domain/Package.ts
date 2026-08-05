@@ -1,8 +1,11 @@
 import { DEFAULT_VERSION } from "../constants";
 import { VersionCalculator } from "../services/VersionCalculator";
 import type { DependencyKind } from "../types";
-import { BUMP_ORDER, type BumpType } from "./BumpType";
+import { BUMP_ORDER, BumpType } from "./BumpType";
 import type { Stone } from "./Stone";
+import { isPrerelease, parseSemver, type Semver } from "./semver";
+
+const EMPTY_SEMVER: Semver = { build: [], major: 0, minor: 0, patch: 0, prerelease: [] };
 
 export const WORKSPACE_PREFIX = "workspace:";
 
@@ -83,17 +86,29 @@ export class Package {
   static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
     const updated: Package[] = [];
     const seen = new Set<string>();
+    const graduating = Package.leavesPrerelease(stone, packages);
 
     for (const bump of BUMP_ORDER) {
       for (const name of stone.getPackages(bump)) {
         const pkg = packages.get(name);
         if (!pkg || seen.has(name)) continue;
         seen.add(name);
-        updated.push(pkg.withBump(bump, stone.tag));
+        updated.push(pkg.withBump(bump, stone.tag, graduating));
       }
     }
 
     return updated;
+  }
+
+  private static leavesPrerelease(stone: Stone, packages: Map<string, Package>): boolean {
+    if (stone.tag !== undefined) return false;
+
+    return BUMP_ORDER.filter((bump) => bump !== BumpType.Dependency && bump !== BumpType.Snapshot).some((bump) =>
+      stone.getPackages(bump).some((name) => {
+        const version = packages.get(name)?.version;
+        return version !== undefined && isPrerelease(parseSemver(version) ?? EMPTY_SEMVER);
+      }),
+    );
   }
 
   get newVersion(): string | undefined {
@@ -107,8 +122,13 @@ export class Package {
     return VersionCalculator.formatLabel(this.name, this.version, this.bump, this.tag, this._newVersion);
   }
 
-  withBump(bump: BumpType, tag?: string): Package {
-    return new Package({ ...this.toOptions(), bump, newVersion: VersionCalculator.bump(this.version, bump, tag), tag });
+  withBump(bump: BumpType, tag?: string, graduating = false): Package {
+    return new Package({
+      ...this.toOptions(),
+      bump,
+      newVersion: VersionCalculator.bump(this.version, bump, tag, graduating),
+      tag,
+    });
   }
 
   withVersions(oldVersion: string, newVersion: string): Package {

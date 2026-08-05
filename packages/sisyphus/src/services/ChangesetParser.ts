@@ -93,7 +93,7 @@ export class ChangesetParser {
       const packages: Record<string, string> = {};
 
       for (const line of frontmatterLines) {
-        const match = line.match(/^"(.+)":\s*(major|minor|patch)$/);
+        const match = line.match(/^"(.+)":\s*(\S+)$/);
         if (match?.[1] && match[2]) {
           packages[match[1]] = match[2];
         }

@@ -64,7 +64,7 @@ export function isRangeInvalidated(specifier: string, oldVersion: string, newVer
   if (previous.major !== 0) return false;
   if (previous.minor !== 0) return previous.minor !== next.minor;
 
-  return previous.patch !== next.patch;
+  return previous.minor !== next.minor || previous.patch !== next.patch;
 }
 
 export function collectDependents(

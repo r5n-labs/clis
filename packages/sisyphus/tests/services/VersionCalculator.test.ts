@@ -96,8 +96,16 @@ describe("VersionCalculator", () => {
       expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency, "rc")).toBe("1.0.0-rc.3");
     });
 
-    test("an untagged dependency bump leaves the channel with its dependency: 1.0.0-rc.2 => 1.0.0", () => {
-      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency)).toBe("1.0.0");
+    test("an untagged dependency bump keeps an unrelated channel: 1.0.0-rc.2 => 1.0.0-rc.3", () => {
+      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency)).toBe("1.0.0-rc.3");
+    });
+
+    test("a graduating release takes dependents out of the channel: 1.0.0-rc.2 => 1.0.0", () => {
+      expect(VersionCalculator.bump("1.0.0-rc.2", BumpType.Dependency, undefined, true)).toBe("1.0.0");
+    });
+
+    test.each(["beta.4", "", "with space", "beta/rc"])("rejects the prerelease tag %p", (tag) => {
+      expect(() => VersionCalculator.bump("1.0.0", BumpType.Minor, tag)).toThrow("Invalid prerelease tag");
     });
 
     test("dependency bump without tag on non-prerelease acts as patch", () => {

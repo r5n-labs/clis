@@ -8,7 +8,6 @@ import {
   buildReleaseReport,
   ChangelogGenerator,
   excludeIgnored,
-  getNpmTag,
   hashReleasePlan,
   hashReleaseSource,
   orderForRelease,
@@ -18,6 +17,7 @@ import {
   type ReleaseReportInput,
   type ReleaseReportMode,
   type ReleaseReportStatus,
+  resolveReleaseNpmTag,
   StoneManager,
   WorkspaceScanner,
 } from "../services";
@@ -148,7 +148,7 @@ export class RollCommand extends BaseCommand {
 
     this.reportContext = {
       mode: options.dryRun ? "dry-run" : ctx.args.preview ? "preview" : "release",
-      npmTag: options.npm ? getNpmTag(ctx.config.get("tag")) : DEFAULT_NPM_TAG,
+      npmTag: options.npm ? resolveReleaseNpmTag(updatedPackages, ctx.config.get("tag")) : DEFAULT_NPM_TAG,
       packages: updatedPackages,
       stones,
       tagsEnabled: options.tags,
@@ -626,7 +626,7 @@ export class RollCommand extends BaseCommand {
 
     this.reportContext = {
       mode: "publish-only",
-      npmTag: options.npm ? getNpmTag(ctx.config.get("tag")) : DEFAULT_NPM_TAG,
+      npmTag: options.npm ? resolveReleaseNpmTag(ordered, ctx.config.get("tag")) : DEFAULT_NPM_TAG,
       packages: ordered,
       stones: releaseStones,
       tagsEnabled: options.tags,

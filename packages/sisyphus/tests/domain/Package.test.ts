@@ -254,3 +254,34 @@ describe("applyStone pattern — applying bumps from stone to matching packages"
     expect(result[1]).toMatchObject({ bump: undefined, newVersion: undefined });
   });
 });
+
+describe("Package.applyStone() prerelease channels", () => {
+  const packages = (versions: Record<string, string>) =>
+    new Map(
+      Object.entries(versions).map(([name, version]) => [
+        name,
+        Package.fromJson({ name, version }, `packages/${name}/package.json`),
+      ]),
+    );
+
+  test("dependents leave the channel when the release itself graduates", () => {
+    const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"] });
+    const applied = Package.applyStone(stone, packages({ "@app/cli": "1.0.2-beta.3", "@app/core": "2.0.0-beta.0" }));
+
+    expect(applied.map((pkg) => pkg.newVersion)).toEqual(["2.0.0", "1.0.2"]);
+  });
+
+  test("dependents keep an unrelated channel when the release is plain stable", () => {
+    const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"] });
+    const applied = Package.applyStone(stone, packages({ "@app/cli": "2.0.0-rc.3", "@app/core": "1.0.0" }));
+
+    expect(applied.map((pkg) => pkg.newVersion)).toEqual(["1.0.1", "2.0.0-rc.4"]);
+  });
+
+  test("a tagged release puts every package on the channel", () => {
+    const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"], tag: "beta" });
+    const applied = Package.applyStone(stone, packages({ "@app/cli": "1.0.1", "@app/core": "1.0.0" }));
+
+    expect(applied.map((pkg) => pkg.newVersion)).toEqual(["1.0.1-beta.0", "1.0.2-beta.0"]);
+  });
+});

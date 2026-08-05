@@ -25,13 +25,18 @@ export function parseSemver(version: string): Semver | null {
   if (!match) return null;
 
   const [, major = "0", minor = "0", patch = "0", prerelease, build] = match;
+  const core = [major, minor, patch].map((part) => Number.parseInt(part, DECIMAL_RADIX));
+  const identifiers = prerelease ? prerelease.split(".").map(toIdentifier) : [];
+
+  if (core.some((part) => !Number.isSafeInteger(part))) return null;
+  if (identifiers.some((part) => typeof part === "number" && !Number.isSafeInteger(part))) return null;
 
   return {
     build: build ? build.split(".") : [],
-    major: Number.parseInt(major, DECIMAL_RADIX),
-    minor: Number.parseInt(minor, DECIMAL_RADIX),
-    patch: Number.parseInt(patch, DECIMAL_RADIX),
-    prerelease: prerelease ? prerelease.split(".").map(toIdentifier) : [],
+    major: core[0] as number,
+    minor: core[1] as number,
+    patch: core[2] as number,
+    prerelease: identifiers,
   };
 }
 
