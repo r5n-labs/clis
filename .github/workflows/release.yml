@@ -50,7 +50,7 @@ jobs:
           fi
           STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length')
           echo "Found $STONES_COUNT pending stones"
-          echo "STONES_COUNT=$STONES_COUNT" >> $GITHUB_ENV
+          echo "STONES_COUNT=$STONES_COUNT" >> "$GITHUB_ENV"
 
       - name: Roll release
         id: roll
