@@ -135,7 +135,7 @@ export class CheckCommand extends BaseCommand {
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, test, build, integration (built CLI smoke) and a release check on the self-hosted `r5n-m2-ultra` runner. Pull requests check out `github.head_ref`. `actionlint` knows the runner label through `.github/actionlint.yaml`.
+`.github/workflows/ci.yml` runs lint, type-check, test, build, integration (built CLI smoke) and a release check on the self-hosted `r5n-m2-ultra` runner. `tools/github/setup` installs Bun beneath each job's `runner.temp` to avoid shared executable writes. Pull requests check out `github.head_ref`. `actionlint` knows the runner label through `.github/actionlint.yaml`.
 
 ## Releases
 

@@ -26,13 +26,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Run linter
         run: bun lint
@@ -53,13 +50,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Run type check
         run: bun type-check
@@ -80,13 +74,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Run tests
         run: bun test --pass-with-no-tests
@@ -107,13 +98,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Build all packages
         run: bun run build
@@ -146,13 +134,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Build all packages
         run: bun run build
@@ -192,13 +177,10 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup workspace
+        uses: ./tools/github/setup
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Check for pending releases
         run: bun release:check
