@@ -112,6 +112,20 @@ export function makePendingStone(): Stone {
   return Stone.fromJson({ id: "0001-testtest", message: "ship it", patch: [PACKAGE_NAME] });
 }
 
+const PACK_STAGE_PREFIX = "sisyphus-package-stage-";
+const PACK_WATCHER_TIMEOUT_MS = 10_000;
+const PACK_WATCHER_POLL_MS = 5;
+const PACK_WATCHER_WAIT = [
+  'import { readdirSync } from "node:fs";',
+  'import { tmpdir } from "node:os";',
+  `const isStage = (name) => name.startsWith("${PACK_STAGE_PREFIX}");`,
+  "const before = new Set(readdirSync(tmpdir()).filter(isStage));",
+  `const deadline = Date.now() + ${PACK_WATCHER_TIMEOUT_MS};`,
+  "while (Date.now() < deadline && !readdirSync(tmpdir()).some((name) => isStage(name) && !before.has(name))) {",
+  `  await Bun.sleep(${PACK_WATCHER_POLL_MS});`,
+  "}",
+];
+
 export type PublishPackageOptions = {
   commitChanges?: boolean;
   packManifestChanges?: boolean;
@@ -156,7 +170,7 @@ export function makePublishPackage(
           'await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
         ]
       : ['await Bun.write("source.ts", "export const changed = true;\\n");'];
-    writeFileSync(join(root, directory, "pack-watcher.ts"), ["await Bun.sleep(100);", ...mutation].join("\n"));
+    writeFileSync(join(root, directory, "pack-watcher.ts"), [...PACK_WATCHER_WAIT, ...mutation].join("\n"));
   }
   writeFileSync(
     join(root, file),
