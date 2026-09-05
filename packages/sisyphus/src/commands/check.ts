@@ -2,7 +2,8 @@ import { args, color, log, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import type { Package, Stone } from "../domain";
 import { BUMP_COLORS, BUMP_EMOJI } from "../domain";
-import { isIgnoredPackage, predictStoneVersions, StoneManager, WorkspaceScanner } from "../services";
+import { dependentsOptions, isIgnoredPackage, predictStoneVersions, StoneManager, WorkspaceScanner } from "../services";
+import type { DependencyKind } from "../types";
 
 const checkArgs = args({
   config: { alias: "c", default: false, description: "Include config in output", type: "boolean" },
@@ -32,6 +33,7 @@ type CheckData = {
   packageNames: readonly string[];
   stones: Stone[];
   ignore: readonly string[];
+  kinds: readonly DependencyKind[];
   config?: object;
 };
 
@@ -63,7 +65,15 @@ export class CheckCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const stones = await manager.list();
 
-    return { config: ctx.args.config ? ctx.config.getAll() : undefined, ignore, packageNames, packages, root, stones };
+    return {
+      config: ctx.args.config ? ctx.config.getAll() : undefined,
+      ignore,
+      kinds: dependentsOptions(ctx.config).kinds,
+      packageNames,
+      packages,
+      root,
+      stones,
+    };
   }
 
   private printJson(data: CheckData) {
@@ -71,14 +81,14 @@ export class CheckCommand extends BaseCommand {
       config: data.config,
       packages: data.packageNames.map((name) => ({ name, version: data.packages.get(name)?.version ?? "0.0.0" })),
       root: { name: data.root?.name ?? "", version: data.root?.version ?? "0.0.0" },
-      stones: data.stones.map((stone) => this.stoneToJson(stone, data.packages, data.ignore)),
+      stones: data.stones.map((stone) => this.stoneToJson(stone, data)),
     };
 
     console.log(JSON.stringify(output, null, 2));
   }
 
-  private stoneToJson(stone: Stone, packages: Map<string, Package>, ignore: readonly string[]): JsonStone {
-    const prediction = predictStoneVersions(stone, packages, ignore);
+  private stoneToJson(stone: Stone, data: CheckData): JsonStone {
+    const prediction = predictStoneVersions(stone, data.packages, data.ignore, data.kinds);
 
     if (prediction.kind === "invalid") {
       return { id: stone.id, invalid: prediction.message, message: stone.message, packages: [], tag: stone.tag };
@@ -92,7 +102,7 @@ export class CheckCommand extends BaseCommand {
     this.printPackages(data);
 
     if (data.stones.length > 0) {
-      this.printStones(data.stones, data.packages, data.ignore);
+      this.printStones(data);
     }
 
     if (data.config) {
@@ -126,12 +136,12 @@ export class CheckCommand extends BaseCommand {
     log.step(lines.join("\n"));
   }
 
-  private printStones(stones: Stone[], packages: Map<string, Package>, ignore: readonly string[]) {
-    const allStones = stones.map((stone) => this.formatStone(stone, packages, ignore)).join("\n\n");
+  private printStones(data: CheckData) {
+    const allStones = data.stones.map((stone) => this.formatStone(stone, data)).join("\n\n");
     log.step(`${color.bold(color.green("Stones:"))}\n\n${allStones}`);
   }
 
-  private formatStone(stone: Stone, packages: Map<string, Package>, ignore: readonly string[]): string {
+  private formatStone(stone: Stone, data: CheckData): string {
     const lines: string[] = [];
 
     lines.push(`${color.bold("Stone:")} ${color.cyan(stone.id)}`);
@@ -139,7 +149,7 @@ export class CheckCommand extends BaseCommand {
     lines.push(`${color.dim("Message:")} ${stone.message}`);
     lines.push(`${color.bold("Packages:")}`);
 
-    const prediction = predictStoneVersions(stone, packages, ignore);
+    const prediction = predictStoneVersions(stone, data.packages, data.ignore, data.kinds);
 
     if (prediction.kind === "invalid") {
       lines.push(`  ${color.yellow(`invalid: ${prediction.message}`)}`);

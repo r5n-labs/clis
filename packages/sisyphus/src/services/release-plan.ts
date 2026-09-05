@@ -1,6 +1,7 @@
 import { Exit } from "@r5n/cli-core";
 import type { BumpType, Stone } from "../domain";
 import { Package } from "../domain";
+import type { DependencyKind } from "../types";
 import { excludeIgnoredFromStone, isIgnoredPackage } from "./dependency-graph";
 
 const PR_TITLE_MAX_ENTRIES = 6;
@@ -39,11 +40,16 @@ export function predictStoneVersions(
   stone: Stone,
   packages: Map<string, Package>,
   ignore: readonly string[],
+  kinds?: readonly DependencyKind[],
 ): StonePrediction {
   const { stone: stripped } = excludeIgnoredFromStone(stone, ignore);
+  const reason = explainEmptyRelease(stripped, packages, ignore);
+  if (reason.kind === "unknown-packages") {
+    return { kind: "invalid", message: `Pending stones reference unknown packages: ${reason.names.join(", ")}` };
+  }
 
   try {
-    const predicted = Package.applyStone(stripped, packages).flatMap((pkg) =>
+    const predicted = Package.applyStone(stripped, packages, kinds).flatMap((pkg) =>
       pkg.bump && pkg.newVersion
         ? [{ bump: pkg.bump, name: pkg.name, newVersion: pkg.newVersion, version: pkg.version }]
         : [],

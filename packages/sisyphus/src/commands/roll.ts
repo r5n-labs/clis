@@ -1,12 +1,13 @@
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { args, color, confirm, Exit, log, note } from "@r5n/cli-core";
+import { args, color, confirm, Exit, log, note, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_NPM_TAG } from "../constants";
 import { BumpType, Package, Stone } from "../domain";
 import {
   buildReleaseReport,
   ChangelogGenerator,
+  dependentsOptions,
   excludeIgnored,
   explainEmptyRelease,
   getNpmTag,
@@ -132,6 +133,7 @@ export class RollCommand extends BaseCommand {
   }
 
   private async run(ctx: RollCtx) {
+    validateKnownArgs(ctx.args, rollArgs, "Run 'sis roll --help' for supported options");
     this.validateModeFlags(ctx);
 
     if (ctx.args.abort) {
@@ -169,17 +171,20 @@ export class RollCommand extends BaseCommand {
     if (skipped.length > 0) this.recordWarning(ctx, `Excluded by config.ignore: ${skipped.join(", ")}`);
 
     const mergedStone = Stone.mergeAll(plannedStones);
-    const updatedPackages = this.planPackages(ctx, Package.applyStone(mergedStone, packages));
+    const reason = explainEmptyRelease(mergedStone, packages, ignore);
+    if (reason.kind === "unknown-packages") {
+      throw new Exit(
+        `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
+        "Remove the stale stones or restore the packages before rolling",
+      );
+    }
+    const updatedPackages = this.planPackages(
+      ctx,
+      Package.applyStone(mergedStone, packages, dependentsOptions(ctx.config).kinds),
+    );
     const mode: ReleaseReportMode = options.dryRun ? "dry-run" : ctx.args.preview ? "preview" : "release";
 
     if (updatedPackages.length === 0) {
-      const reason = explainEmptyRelease(mergedStone, packages, ignore);
-      if (reason.kind === "unknown-packages") {
-        throw new Exit(
-          `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
-          "Remove the stale stones or restore the packages before rolling",
-        );
-      }
       this.recordWarning(ctx, IGNORED_ONLY_WARNING);
       this.reportContext = { mode, npmTag: DEFAULT_NPM_TAG, packages: [], stones, tagsEnabled: options.tags };
       this.emit(ctx, "planned");
@@ -657,7 +662,7 @@ export class RollCommand extends BaseCommand {
       }
       packagesToPublish.push(pkg.withVersions(oldVersion, newVersion));
     }
-    this.validateArchivedPackagePlan(releaseStones, currentRelease.packages);
+    this.validateArchivedPackagePlan(ctx, releaseStones, currentRelease.packages, packagesToPublish);
 
     const reporter = createRollReporter(ctx.args.json);
     const { cycle, ordered } = orderForRelease(packagesToPublish);
@@ -851,8 +856,10 @@ export class RollCommand extends BaseCommand {
   }
 
   private validateArchivedPackagePlan(
+    ctx: RollCtx,
     stones: Stone[],
     releases: Record<string, { oldVersion: string; newVersion: string }>,
+    packages: Package[],
   ) {
     const mergedStone = Stone.mergeAll(stones);
     const releaseNames = Object.keys(releases).sort();
@@ -864,13 +871,11 @@ export class RollCommand extends BaseCommand {
       );
     }
 
-    const packages = new Map(
-      Object.entries(releases).map(([name, release]) => [
-        name,
-        new Package({ file: `${name}/package.json`, name, version: release.oldVersion }),
-      ]),
+    const expected = Package.applyStone(
+      mergedStone,
+      new Map(packages.map((pkg) => [pkg.name, pkg])),
+      dependentsOptions(ctx.config).kinds,
     );
-    const expected = Package.applyStone(mergedStone, packages);
     for (const pkg of expected) {
       const releaseVersion = releases[pkg.name]?.newVersion;
       const expectedVersion =

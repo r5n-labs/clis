@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ConfigManager } from "@r5n/cli-core";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
+import { Commit } from "../../src/domain/Commit";
 import { CommitAnalyzer } from "../../src/services/CommitAnalyzer";
 import { dependentsOptions } from "../../src/services/dependency-graph";
 import { StoneManager } from "../../src/services/StoneManager";
@@ -80,6 +81,19 @@ describe("CommitAnalyzer", () => {
     const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(config));
     expect(stoneData.patch).toEqual(["@fixture/foo"]);
     expect(stoneData.dependency).toEqual(["@fixture/bar"]);
+  });
+
+  test("rejects a missing configured baseline rather than analysing the whole history", async () => {
+    config.set("lastStone", { commit: "missing-baseline", date: "2026-07-21" });
+    await expect(new CommitAnalyzer(config).analyze()).rejects.toThrow("Failed to read commits since missing-baseline");
+  });
+
+  test("preserves an empty range when the baseline is already HEAD", async () => {
+    expect(await Commit.since(await runGit(root, ["rev-parse", "HEAD"]))).toEqual([]);
+  });
+
+  test("rejects an explicitly empty baseline", async () => {
+    await expect(Commit.since("")).rejects.toThrow("Failed to read commits since");
   });
 });
 

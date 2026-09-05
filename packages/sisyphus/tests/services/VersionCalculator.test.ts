@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { BumpType } from "../../src/domain/BumpType";
+import { Stone } from "../../src/domain/Stone";
 import { VersionCalculator } from "../../src/services/VersionCalculator";
 
 describe("VersionCalculator", () => {
+  test.each(["0", "01", "beta.4", "with space", "", null, false, []].map((tag) => ({ tag })))(
+    "rejects unsupported snapshot tags read from stone JSON: %p",
+    ({ tag }) => {
+      const json = JSON.parse(JSON.stringify({ id: "invalid-snapshot", message: "Snapshot", snapshot: ["pkg"], tag }));
+      expect(() => Stone.fromJson(json)).toThrow("Invalid prerelease tag");
+    },
+  );
+
   describe("bump", () => {
     test("major bump resets minor and patch: 1.2.3 => 2.0.0", () => {
       expect(VersionCalculator.bump("1.2.3", BumpType.Major)).toBe("2.0.0");
@@ -117,9 +126,19 @@ describe("VersionCalculator", () => {
       expect(VersionCalculator.bump("1.0.0-alpha", BumpType.Dependency, undefined, true)).toBe("1.0.0");
     });
 
-    test.each(["beta.4", "", "with space", "beta/rc"])("rejects the prerelease tag %p", (tag) => {
-      expect(() => VersionCalculator.bump("1.0.0", BumpType.Minor, tag)).toThrow("Invalid prerelease tag");
-    });
+    test.each(["beta.4", "", "with space", "beta/rc", "0", "01", "12", "beta-test"])(
+      "rejects the prerelease tag %p",
+      (tag) => {
+        expect(() => VersionCalculator.bump("1.0.0", BumpType.Minor, tag)).toThrow("Invalid prerelease tag");
+      },
+    );
+
+    test.each(["beta.4", "", "with space", "beta/rc", "0", "01", "12", "beta-test"])(
+      "rejects the snapshot tag %p",
+      (tag) => {
+        expect(() => VersionCalculator.bump("1.0.0", BumpType.Snapshot, tag)).toThrow("Invalid prerelease tag");
+      },
+    );
 
     test("dependency bump without tag on non-prerelease acts as patch", () => {
       expect(VersionCalculator.bump("2.0.0", BumpType.Dependency)).toBe("2.0.1");

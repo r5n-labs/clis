@@ -83,10 +83,14 @@ export class Package {
     });
   }
 
-  static applyStone(stone: Stone, packages: Map<string, Package>): Package[] {
+  static applyStone(
+    stone: Stone,
+    packages: Map<string, Package>,
+    kinds: readonly DependencyKind[] = DEPENDENCY_KINDS,
+  ): Package[] {
     const updated: Package[] = [];
     const seen = new Set<string>();
-    const graduating = Package.graduatingPackages(stone, packages);
+    const graduating = Package.graduatingPackages(stone, packages, new Set(kinds));
 
     for (const bump of BUMP_ORDER) {
       for (const name of stone.getPackages(bump)) {
@@ -100,7 +104,11 @@ export class Package {
     return updated;
   }
 
-  private static graduatingPackages(stone: Stone, packages: Map<string, Package>): ReadonlySet<string> {
+  private static graduatingPackages(
+    stone: Stone,
+    packages: Map<string, Package>,
+    kinds: ReadonlySet<DependencyKind>,
+  ): ReadonlySet<string> {
     const graduating = new Set<string>();
     if (stone.tag !== undefined) return graduating;
 
@@ -122,7 +130,11 @@ export class Package {
 
       for (const pkg of candidates) {
         if (graduating.has(pkg.name)) continue;
-        if (!pkg.workspaceDependencies.some((dependency) => graduating.has(dependency.name))) continue;
+        if (
+          !pkg.workspaceDependencies.some((dependency) => kinds.has(dependency.kind) && graduating.has(dependency.name))
+        ) {
+          continue;
+        }
 
         graduating.add(pkg.name);
         changed = true;

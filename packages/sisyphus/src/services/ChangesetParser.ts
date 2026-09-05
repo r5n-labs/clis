@@ -1,10 +1,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Exit } from "@r5n/cli-core";
+import { record, string } from "banditypes";
 import { nonEmpty, type StoneData } from "../domain";
 
 const CHANGESET_DIR = ".changeset";
 const CONFIG_FILE = "config.json";
+const changesetPackagesSchema = record(string());
+const FRONTMATTER_START = 0;
+const FRONTMATTER_CONTENT = 1;
 
 export type ChangesetContent = { packages: Record<string, string>; summary: string; filename: string };
 
@@ -76,28 +80,12 @@ export class ChangesetParser {
       const content = await readFile(filePath, "utf-8");
       const lines = content.split("\n");
 
-      let inFrontmatter = false;
-      const frontmatterLines: string[] = [];
-      const summaryLines: string[] = [];
-
-      for (const line of lines) {
-        if (line.trim() === "---") {
-          inFrontmatter = !inFrontmatter;
-        } else if (inFrontmatter) {
-          frontmatterLines.push(line);
-        } else if (frontmatterLines.length > 0) {
-          summaryLines.push(line);
-        }
-      }
-
-      const packages: Record<string, string> = {};
-
-      for (const line of frontmatterLines) {
-        const match = line.match(/^"(.+)":\s*(\S+)$/);
-        if (match?.[1] && match[2]) {
-          packages[match[1]] = match[2];
-        }
-      }
+      if (lines[FRONTMATTER_START]?.trim() !== "---") return null;
+      const closing = lines.findIndex((line, index) => index > FRONTMATTER_START && line.trim() === "---");
+      if (closing < FRONTMATTER_CONTENT) return null;
+      const frontmatter = Bun.YAML.parse(lines.slice(FRONTMATTER_CONTENT, closing).join("\n"));
+      if (Array.isArray(frontmatter)) return null;
+      const packages = changesetPackagesSchema(frontmatter);
 
       if (Object.keys(packages).length === 0) {
         return null;
@@ -105,7 +93,14 @@ export class ChangesetParser {
 
       const filename = filePath.split("/").pop() ?? "";
 
-      return { filename, packages, summary: summaryLines.join("\n").trim() };
+      return {
+        filename,
+        packages,
+        summary: lines
+          .slice(closing + FRONTMATTER_CONTENT)
+          .join("\n")
+          .trim(),
+      };
     } catch {
       return null;
     }

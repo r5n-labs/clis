@@ -56,6 +56,15 @@ describe("explainEmptyRelease", () => {
 });
 
 describe("predictStoneVersions", () => {
+  test("reports a mixed known and unknown stone as invalid", () => {
+    const stone = Stone.create({ message: "m", patch: ["@app/core", "@app/gone"] });
+
+    expect(predictStoneVersions(stone, makePackages(["@app/core"]), [])).toEqual({
+      kind: "invalid",
+      message: "Pending stones reference unknown packages: @app/gone",
+    });
+  });
+
   test("graduates prerelease dependents instead of continuing the prerelease channel", () => {
     const packages = packagesFromJson([
       { name: "@app/core", version: "1.0.0-beta.0" },

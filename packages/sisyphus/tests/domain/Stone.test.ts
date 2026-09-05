@@ -21,7 +21,7 @@ const baseData: StoneData = {
   minor: ["@app/utils"],
   patch: ["@app/cli"],
   snapshot: ["@app/snapshot"],
-  tag: "v1.0.0",
+  tag: "alpha",
 };
 
 describe("Stone.create()", () => {
@@ -44,12 +44,28 @@ describe("Stone.create()", () => {
       minor: ["@app/utils"],
       patch: ["@app/cli"],
       snapshot: ["@app/snapshot"],
-      tag: "v1.0.0",
+      tag: "alpha",
     });
   });
 });
 
 describe("Stone.fromJson() / toJson()", () => {
+  test.each(["major", "minor", "patch", "dependency", "snapshot"])(
+    "rejects a scalar %s field rather than treating its characters as packages",
+    (bump) => {
+      const json = JSON.parse(JSON.stringify({ id: "invalid-shape", message: "Invalid", [bump]: "@fixture/pkg" }));
+      expect(() => Stone.fromJson(json)).toThrow(`Invalid ${bump} packages`);
+    },
+  );
+
+  test.each([null, ["valid", 42], { name: "pkg" }].map((packages) => ({ packages })))(
+    "rejects malformed package lists: %p",
+    ({ packages }) => {
+      const json = JSON.parse(JSON.stringify({ id: "invalid-shape", message: "Invalid", patch: packages }));
+      expect(() => Stone.fromJson(json)).toThrow("Invalid patch packages");
+    },
+  );
+
   test("roundtrip preserves all data", () => {
     const original = Stone.create(baseData, 5);
     const restored = Stone.fromJson(original.toJson());
@@ -298,10 +314,10 @@ describe("immutable update methods", () => {
 
   test("withTag() returns new stone with updated tag, original unchanged", () => {
     const original = Stone.create(baseData);
-    const updated = original.withTag("v2.0.0");
+    const updated = original.withTag("beta");
 
-    expect(updated).toMatchObject({ id: original.id, tag: "v2.0.0" });
-    expect(original.tag).toBe("v1.0.0");
+    expect(updated).toMatchObject({ id: original.id, tag: "beta" });
+    expect(original.tag).toBe("alpha");
   });
 
   test("withTag(undefined) clears the tag", () => {

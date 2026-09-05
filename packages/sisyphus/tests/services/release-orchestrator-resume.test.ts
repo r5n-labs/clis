@@ -22,6 +22,17 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
+async function writePackedArtifact(root: string, artifactPath: string, manifest: object): Promise<void> {
+  const source = join(root, ".git/artifact-fixture");
+  try {
+    mkdirSync(join(source, "package"), { recursive: true });
+    writeFileSync(join(source, "package/package.json"), JSON.stringify(manifest));
+    await Bun.$`tar czf ${artifactPath} -C ${source} package`.quiet();
+  } finally {
+    rmSync(source, { force: true, recursive: true });
+  }
+}
+
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
   const originalRegistry = process.env.BUN_CONFIG_REGISTRY;
@@ -479,7 +490,7 @@ describe("ReleaseOrchestrator release resume", () => {
     process.chdir(root);
     const pkg = makePublishPackage(root, "packages/public", "@fixture/public").withVersions("1.0.0", "1.0.1");
     const artifactSource = join(root, "published.tgz");
-    writeFileSync(artifactSource, "published artifact");
+    await writePackedArtifact(root, artifactSource, { name: pkg.name, version: "1.0.1" });
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
@@ -541,7 +552,7 @@ describe("ReleaseOrchestrator release resume", () => {
     mkdirSync(join(root, "packages/public/dist"), { recursive: true });
     writeFileSync(join(root, "packages/public/dist/stale.js"), "export const stale = 1;\n");
     const artifactSource = join(root, ".git/published.tgz");
-    writeFileSync(artifactSource, "published artifact");
+    await writePackedArtifact(root, artifactSource, { name: pkg.name, version: "1.0.1" });
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
@@ -613,7 +624,7 @@ describe("ReleaseOrchestrator release resume", () => {
     mkdirSync(join(root, "packages/other/dist"), { recursive: true });
     writeFileSync(join(root, "packages/other/dist/stale.js"), "export const stale = 1;\n");
     const artifactSource = join(root, ".git/published.tgz");
-    writeFileSync(artifactSource, "published artifact");
+    await writePackedArtifact(root, artifactSource, { name: publicPkg.name, version: "1.0.1" });
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
@@ -674,6 +685,62 @@ describe("ReleaseOrchestrator release resume", () => {
     expect(readFileSync(join(root, "packages/other/build-count.txt"), "utf-8")).toBe("1");
     expect(published).toEqual(["@fixture/other"]);
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test("rejects invalid access in a reused artifact before starting push or npm publication", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root, remote } = fixture;
+    process.chdir(root);
+    const remoteBefore = await gitText(root, ["ls-remote", remote]);
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add package"`.quiet();
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: true,
+          npmTag: "latest",
+          publishOnly: true,
+          push: true,
+          tags: true,
+        },
+        packages: [pkg],
+        stones: [],
+      },
+      root,
+    );
+    await recordReleaseCommit(ledger, root, head);
+    const artifactSource = join(root, ".git/invalid-access.tgz");
+    await writePackedArtifact(root, artifactSource, {
+      name: pkg.name,
+      version: pkg.version,
+      publishConfig: { access: "restriced" },
+    });
+    await ledger.setArtifact(pkg.name, artifactSource);
+    const requests: string[] = [];
+    registry = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push(request.method);
+        return Response.json({ error: "unexpected request" }, { status: 500 });
+      },
+    });
+    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    await ledger.setPhase("local-ready");
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("Invalid publishConfig.access");
+
+    const remaining = await ReleaseLedger.loadActive(root);
+    expect(remaining?.data.phase).toBe("local-ready");
+    expect(remaining?.data.operations.push?.state).toBe("pending");
+    expect(remaining?.data.operations.npm[pkg.name]?.state).toBe("pending");
+    expect(await gitText(root, ["ls-remote", remote])).toBe(remoteBefore);
+    expect(requests).toEqual([]);
+    expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
   });
 
   test("refuses to build a missing resume artifact from dirty root metadata", async () => {

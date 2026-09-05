@@ -2,6 +2,7 @@ import { args, color, confirm, Exit, log, multiselect, note, positionals, text }
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import { BUMP_COLORS, BumpType, nonEmpty, Package, Stone, type StoneData } from "../domain";
+import { requirePrereleaseTag } from "../domain/prerelease-tag";
 import {
   CommitAnalyzer,
   collectDependents,
@@ -10,8 +11,6 @@ import {
   StoneManager,
   WorkspaceScanner,
 } from "../services";
-
-const PRERELEASE_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z]*$/;
 
 const versionPositionals = positionals({
   message: { description: "Stone message (commit message)" },
@@ -115,13 +114,7 @@ export class VersionCommand extends BaseCommand {
   private normalizeTag(value: string | undefined): string | undefined {
     const tag = this.normalizeNonEmptyValue(value, "--tag");
     if (tag === undefined) return undefined;
-    if (!PRERELEASE_TAG_PATTERN.test(tag)) {
-      throw new Exit(
-        "--tag must be a supported prerelease identifier",
-        "Start with a letter and use only letters or numbers",
-      );
-    }
-    return tag;
+    return requirePrereleaseTag(tag, "--tag must be a supported prerelease identifier");
   }
 
   private parsePackageList(value: string | undefined, flag: string): string[] {
@@ -310,7 +303,7 @@ export class VersionCommand extends BaseCommand {
       const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(ctx.config, input.tag));
 
       if (ctx.args.dryRun) {
-        this.logPreview(stoneData, packages, true);
+        this.logPreview(ctx, stoneData, packages);
       } else {
         const stone = await manager.create(stoneData);
         createdCount++;
@@ -427,7 +420,7 @@ export class VersionCommand extends BaseCommand {
   private async createStone(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>) {
     const manager = new StoneManager(ctx.config);
 
-    this.logPreview(data, packages, ctx.args.dryRun);
+    this.logPreview(ctx, data, packages);
 
     if (ctx.args.dryRun) {
       return;
@@ -447,28 +440,28 @@ export class VersionCommand extends BaseCommand {
     );
   }
 
-  private logPreview(data: StoneData, packages: Map<string, Package>, dryRun: boolean) {
+  private logPreview(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>) {
     const lines: string[] = [];
 
-    if (dryRun) {
+    if (ctx.args.dryRun) {
       lines.push(color.bold(color.yellow("[dry-run]")));
     }
 
     lines.push(`${color.dim("Stone:")} ${color.bold(data.message)}`);
     if (data.tag) lines.push(`${color.dim("Tag:")} ${data.tag}`);
 
-    for (const label of this.previewLabels(data, packages)) {
+    for (const label of this.previewLabels(ctx, data, packages)) {
       lines.push(`  ${label}`);
     }
 
     log.step(lines.join("\n"));
   }
 
-  private previewLabels(data: StoneData, packages: Map<string, Package>): string[] {
+  private previewLabels(ctx: VersionCtx, data: StoneData, packages: Map<string, Package>): string[] {
     const stone = Stone.create(data);
 
     try {
-      return Package.applyStone(stone, packages).map((pkg) => pkg.label);
+      return Package.applyStone(stone, packages, dependentsOptions(ctx.config).kinds).map((pkg) => pkg.label);
     } catch (error) {
       if (error instanceof Exit) return stone.allPackages.filter((name) => packages.has(name));
       throw error;

@@ -1,5 +1,6 @@
 import { Exit } from "@r5n/cli-core";
 import { BUMP_EMOJI, BumpType } from "../domain/BumpType";
+import { requirePrereleaseTag } from "../domain/prerelease-tag";
 import {
   compareSemver,
   formatSemver,
@@ -20,7 +21,6 @@ const SNAPSHOT_DATE_REGEX = /[.ZT:-]/g;
 const SNAPSHOT_DATE_LENGTH = 14;
 const SNAPSHOT_BASE_VERSION = "0.0.0";
 const SNAPSHOT_VERSION_PATTERN = /^0\.0\.0-[0-9A-Za-z.-]+-\d{14,}$/;
-const PRERELEASE_IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/;
 const DEFAULT_SNAPSHOT_TAG = "nightly";
 
 const BUMP_RELEASE: Partial<Record<BumpType, SemverRelease>> = {
@@ -32,6 +32,7 @@ const BUMP_RELEASE: Partial<Record<BumpType, SemverRelease>> = {
 
 export class VersionCalculator {
   static bump(version: string, bump: BumpType, tag?: string, graduating = false): string {
+    if (tag !== undefined) requirePrereleaseTag(tag);
     if (bump === BumpType.Snapshot) {
       return VersionCalculator.formatSnapshot(tag);
     }
@@ -96,12 +97,7 @@ export class VersionCalculator {
   }
 
   private static applyPrerelease(target: Semver, current: Semver, tag: string, version: string): Semver {
-    if (!PRERELEASE_IDENTIFIER_PATTERN.test(tag)) {
-      throw new Exit(
-        `Invalid prerelease tag "${tag}"`,
-        "A prerelease tag must be a single identifier of letters, digits, or hyphens",
-      );
-    }
+    requirePrereleaseTag(tag);
 
     if (!hasSameCore(target, current)) {
       return withPrerelease(target, tag, PRERELEASE_INITIAL);

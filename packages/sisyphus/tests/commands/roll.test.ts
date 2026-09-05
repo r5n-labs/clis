@@ -5,8 +5,15 @@ import { join } from "node:path";
 import { ConfigManager } from "@r5n/cli-core";
 import { RollCommand } from "../../src/commands/roll";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
-import { Stone } from "../../src/domain";
-import { hashReleasePlan, hashReleaseSource, ReleaseOrchestrator, StoneManager } from "../../src/services";
+import { Package, Stone } from "../../src/domain";
+import {
+  hashReleasePlan,
+  hashReleaseSource,
+  PackageUpdater,
+  ReleaseOrchestrator,
+  StoneManager,
+  WorkspaceScanner,
+} from "../../src/services";
 import { ReleaseLedger } from "../../src/services/release-ledger";
 import type { SisyphusConfig } from "../../src/types";
 
@@ -463,6 +470,76 @@ describe("RollCommand release metadata", () => {
     await expect(
       new RollCommand().execute(makeCtx(config, { dryRun: true, publishOnly: true, tags: true })),
     ).rejects.toThrow("Prepared release plan has changed");
+  });
+
+  test("publish-only preserves workspace edges when validating archived prerelease graduation", async () => {
+    writeFileSync(
+      join(root, PACKAGE_FILE),
+      `${JSON.stringify({ name: PACKAGE_NAME, private: true, version: "1.0.0-beta.1" }, null, 2)}\n`,
+    );
+    const dependentName = "@fixture/bar";
+    mkdirSync(join(root, "packages/bar"), { recursive: true });
+    writeFileSync(
+      join(root, "packages/bar/package.json"),
+      `${JSON.stringify(
+        {
+          dependencies: { [PACKAGE_NAME]: "workspace:*" },
+          name: dependentName,
+          private: true,
+          version: "2.0.0-beta.2",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const manager = new StoneManager(config);
+    const stone = Stone.fromJson({
+      dependency: [dependentName],
+      id: STONE_ID,
+      message: "Graduate the dependency chain",
+      patch: [PACKAGE_NAME],
+    });
+    await manager.save(stone);
+    const { packages } = await WorkspaceScanner.scan();
+    const planned = Package.applyStone(stone, packages);
+    expect(planned.map((pkg) => pkg.newVersion)).toEqual(["1.0.0", "2.0.0"]);
+    await new PackageUpdater().updateAll(planned);
+    const timestamp = await manager.archive([stone]);
+    await Bun.$`git add -A`.cwd(root).quiet();
+    const sourceHash = await hashReleaseSource(".sisyphus");
+    const plan = {
+      packages: Object.fromEntries(
+        planned.map((pkg) => [pkg.name, { newVersion: pkg.newVersion as string, oldVersion: pkg.version }]),
+      ),
+      sourceHash,
+      stoneIds: [stone.id],
+      timestamp,
+    };
+    config.set("currentRelease", { ...plan, planHash: hashReleasePlan(plan, [stone.toJson()]) });
+    await Bun.$`git add -A`.cwd(root).quiet();
+    await Bun.$`git commit -q -m "prepare graduating release"`.cwd(root).quiet();
+
+    await expect(
+      new RollCommand().execute(makeCtx(config, { dryRun: true, publishOnly: true, tags: true })),
+    ).resolves.toBeUndefined();
+    expect(await gitText(root, ["status", "--porcelain"])).toBe("");
+  });
+
+  test("rejects mixed known and unknown stone packages before changing the release", async () => {
+    const manager = new StoneManager(config);
+    await manager.save(
+      Stone.fromJson({ id: STONE_ID, message: "Release renamed package", patch: [PACKAGE_NAME, "@fixture/gone"] }),
+    );
+    await Bun.$`git add -A`.cwd(root).quiet();
+    await Bun.$`git commit -q -m "record stale package reference"`.cwd(root).quiet();
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await expect(new RollCommand().execute(makeCtx(config))).rejects.toThrow(
+      "Pending stones reference unknown packages: @fixture/gone",
+    );
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    expect(await gitText(root, ["status", "--porcelain"])).toBe("");
+    expect(existsSync(join(root, STONE_FILE))).toBe(true);
   });
 
   test("non-TTY roll without --yes proceeds without prompting", async () => {

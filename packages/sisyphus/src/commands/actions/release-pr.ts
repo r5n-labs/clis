@@ -45,7 +45,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   async execute(ctx: ReleasePrCtx) {
-    const baseBranch = await this.checkoutReleaseBranch();
+    const originalRef = await this.checkoutReleaseBranch();
 
     try {
       const { stones, packages } = await this.collectReleaseData(ctx);
@@ -71,19 +71,28 @@ export class ActionsReleasePrCommand extends BaseCommand {
       await this.commitAndPushChanges(ctx, stones, packages);
       await this.createOrUpdatePr(prTitle, prBody);
     } finally {
-      await this.restoreMainBranch(baseBranch);
+      await this.restoreBranch(originalRef);
     }
   }
 
   private async checkoutReleaseBranch(): Promise<string> {
+    const status = await Bun.$`git status --porcelain=v1 --untracked-files=all`.quiet();
+    if (status.stdout.length > 0) {
+      throw new Exit(
+        "Working tree must be clean before preparing a release PR",
+        "Commit or stash your changes before running sis actions release-pr",
+      );
+    }
+    const branch = await Bun.$`git branch --show-current`.quiet();
+    const originalRef =
+      branch.stdout.toString().trim() || (await Bun.$`git rev-parse HEAD`.quiet()).stdout.toString().trim();
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git fetch origin ${baseBranch}`;
-    await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
-    return baseBranch;
+    return originalRef;
   }
 
   private async collectReleaseData(ctx: ReleasePrCtx): Promise<{ stones: Stone[]; packages: Package[] }> {
@@ -102,20 +111,21 @@ export class ActionsReleasePrCommand extends BaseCommand {
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const mergedStone = Stone.mergeAll(stones);
-    const { cycle, ordered } = orderForRelease(Package.applyStone(mergedStone, packages));
+    const reason = explainEmptyRelease(mergedStone, packages, ignore);
+    if (reason.kind === "unknown-packages") {
+      throw new Exit(
+        `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
+        "Remove or update the stale stones before creating a release PR",
+      );
+    }
+    const { cycle, ordered } = orderForRelease(
+      Package.applyStone(mergedStone, packages, dependentsOptions(ctx.config).kinds),
+    );
     if (cycle.length > 0) {
       log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
     }
 
     if (ordered.length === 0) {
-      const reason = explainEmptyRelease(mergedStone, packages, ignore);
-      if (reason.kind === "unknown-packages") {
-        throw new Exit(
-          `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
-          "Remove or update the stale stones before creating a release PR",
-        );
-      }
-
       log.warn(color.yellow("Pending stones reference no releasable packages"));
       return { packages: [], stones: [] };
     }
@@ -257,14 +267,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return result.stdout.toString().trim() || null;
   }
 
-  private async stashChanges() {
-    await Bun.$`git stash --include-untracked`.nothrow();
-  }
-
   private async stageFiles(files: string[]) {
-    for (const file of files) {
-      await Bun.$`git add ${file}`.nothrow();
-    }
+    await Bun.$`git --literal-pathspecs add -- ${files}`;
   }
 
   private async updatePackages(packages: Package[]): Promise<string[]> {
@@ -344,9 +348,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await provider.updatePr(prNumber, { body, title });
   }
 
-  private async restoreMainBranch(baseBranch: string) {
+  private async restoreBranch(originalRef: string) {
     try {
-      await Bun.$`git checkout ${baseBranch}`.quiet();
+      await Bun.$`git checkout ${originalRef}`.quiet();
     } catch (error) {
       log.warn(color.dim(`Failed to restore branch: ${error}`));
     }

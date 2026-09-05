@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { Exit } from "@r5n/cli-core";
+import { array, string } from "banditypes";
 import { SHORT_UUID_LENGTH, STONE_ID_PAD_LENGTH } from "../constants";
 import { BUMP_ORDER, BumpType, higherBump } from "./BumpType";
 import type { CommitInfo } from "./Commit";
 import { nonEmpty } from "./helpers";
+import { requirePrereleaseTag } from "./prerelease-tag";
+
+const packageNamesSchema = array(string());
 
 export type StoneData = {
   message: string;
@@ -42,7 +46,7 @@ export class Stone {
   private constructor(options: StoneOptions) {
     this.id = options.id;
     this.message = options.message;
-    this.tag = options.tag;
+    this.tag = options.tag === undefined ? undefined : requirePrereleaseTag(options.tag);
     this.description = options.description;
     this.commits = options.commits;
     this._packages = options.packages;
@@ -184,11 +188,17 @@ export class Stone {
 
   private static fromData(id: string, data: StoneData): Stone {
     const packages = new Map<BumpType, readonly string[]>();
-    packages.set(BumpType.Major, data.major ?? []);
-    packages.set(BumpType.Minor, data.minor ?? []);
-    packages.set(BumpType.Patch, data.patch ?? []);
-    packages.set(BumpType.Dependency, data.dependency ?? []);
-    packages.set(BumpType.Snapshot, data.snapshot ?? []);
+    for (const bump of BUMP_ORDER) {
+      const names = data[bump];
+      try {
+        packages.set(bump, names === undefined ? [] : packageNamesSchema(names));
+      } catch {
+        throw new Exit(
+          `Invalid ${bump} packages in stone ${id}`,
+          "Each bump field must contain an array of package names",
+        );
+      }
+    }
 
     return new Stone({
       commits: data.commits,

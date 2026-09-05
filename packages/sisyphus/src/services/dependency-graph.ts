@@ -94,15 +94,25 @@ export function collectDependents(
     if (!pkg || !bump || !edges) continue;
 
     const rangeAware = options.updateInternal === "outOfRange";
-    const newVersion = rangeAware ? VersionCalculator.bump(pkg.version, bump, options.tag) : pkg.version;
+    const parsedVersion = parseSemver(pkg.version);
+    const prerelease = parsedVersion !== null && isPrerelease(parsedVersion);
+    const newVersion = rangeAware && !prerelease ? VersionCalculator.bump(pkg.version, bump, options.tag) : pkg.version;
 
     for (const edge of edges) {
-      if (rangeAware && !isRangeInvalidated(edge.specifier, pkg.version, newVersion)) continue;
+      const invalidated = prerelease
+        ? isWorkspaceAlias(edge.specifier)
+        : isRangeInvalidated(edge.specifier, pkg.version, newVersion);
+      if (rangeAware && !invalidated) continue;
       if (raiseBump(bumps, edge.dependent, BumpType.Dependency)) enqueue(queue, edge.dependent);
     }
   }
 
   return [...bumps.keys()].filter((name) => !seeded.has(name)).sort(compareNames);
+}
+
+function isWorkspaceAlias(specifier: string): boolean {
+  const range = specifier.slice(WORKSPACE_PREFIX.length);
+  return range === EXACT_RANGE || range === CARET_RANGE || range === TILDE_RANGE;
 }
 
 export function excludeIgnoredFromStone(stone: Stone, ignore: readonly string[]): { stone: Stone; skipped: string[] } {
@@ -150,6 +160,7 @@ export function orderForRelease(packages: readonly Package[]): ReleaseOrder {
   for (const name of names) {
     const dependencies = new Set(
       (selected.get(name)?.workspaceDependencies ?? [])
+        .filter((dependency) => dependency.kind !== "devDependencies")
         .map((dependency) => dependency.name)
         .filter((dependency) => dependency !== name && selected.has(dependency)),
     );
@@ -198,7 +209,7 @@ function breakCycle(
   dependents: ReadonlyMap<string, string[]>,
   dependencies: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | undefined {
-  const members = cycleMembers(names, emitted, dependents, dependencies);
+  const members = cycleMembers(names, emitted, dependencies);
   const candidates = members.size > 0 ? names.filter((name) => members.has(name)) : names;
   let best: string | undefined;
   let bestBlocked = -1;
@@ -219,26 +230,56 @@ function breakCycle(
 function cycleMembers(
   names: readonly string[],
   emitted: ReadonlySet<string>,
-  dependents: ReadonlyMap<string, string[]>,
   dependencies: ReadonlyMap<string, ReadonlySet<string>>,
 ): ReadonlySet<string> {
-  const active = new Set(names.filter((name) => !emitted.has(name)));
-  let changed = true;
+  const indices = new Map<string, number>();
+  const lowLinks = new Map<string, number>();
+  const stack: string[] = [];
+  const stacked = new Set<string>();
+  const eligible = new Set<string>();
 
-  while (changed) {
-    changed = false;
+  const visit = (name: string): void => {
+    const index = indices.size;
+    indices.set(name, index);
+    lowLinks.set(name, index);
+    stack.push(name);
+    stacked.add(name);
 
-    for (const name of [...active]) {
-      const hasDependent = (dependents.get(name) ?? []).some((dependent) => active.has(dependent));
-      const hasDependency = [...(dependencies.get(name) ?? [])].some((dependency) => active.has(dependency));
-      if (hasDependent && hasDependency) continue;
+    for (const dependency of dependencies.get(name) ?? []) {
+      if (emitted.has(dependency)) continue;
 
-      active.delete(name);
-      changed = true;
+      if (!indices.has(dependency)) {
+        visit(dependency);
+        lowLinks.set(name, Math.min(lowLinks.get(name) ?? index, lowLinks.get(dependency) ?? index));
+      } else if (stacked.has(dependency)) {
+        lowLinks.set(name, Math.min(lowLinks.get(name) ?? index, indices.get(dependency) ?? index));
+      }
     }
+
+    if (lowLinks.get(name) !== index) return;
+
+    const component = new Set<string>();
+    let member: string | undefined;
+    do {
+      member = stack.pop();
+      if (member === undefined) break;
+      stacked.delete(member);
+      component.add(member);
+    } while (member !== name);
+
+    const hasExternalDependency = [...component].some((pkg) =>
+      [...(dependencies.get(pkg) ?? [])].some((dependency) => !emitted.has(dependency) && !component.has(dependency)),
+    );
+    if (hasExternalDependency) return;
+
+    for (const pkg of component) eligible.add(pkg);
+  };
+
+  for (const name of names) {
+    if (!emitted.has(name) && !indices.has(name)) visit(name);
   }
 
-  return active;
+  return eligible;
 }
 
 function buildReverseIndex(

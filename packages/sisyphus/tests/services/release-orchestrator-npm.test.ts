@@ -43,7 +43,7 @@ describe("ReleaseOrchestrator npm publication", () => {
   let fixture: Fixture | undefined;
   let registry: ReturnType<typeof Bun.serve> | undefined;
 
-  function startRegistry(failingPackage?: string): string[] {
+  function startRegistry(failingPackage?: string, accessLevels: string[] = []): string[] {
     const requests: string[] = [];
     registry = Bun.serve({
       port: 0,
@@ -51,7 +51,8 @@ describe("ReleaseOrchestrator npm publication", () => {
         const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
         if (request.method === "GET") return Response.json({ error: "not found" }, { status: 404 });
         requests.push(packageName);
-        await request.arrayBuffer();
+        const publication = (await request.json()) as { access: string };
+        accessLevels.push(publication.access);
         return Response.json(
           { ok: packageName !== failingPackage },
           { status: packageName === failingPackage ? 500 : 201 },
@@ -118,6 +119,28 @@ describe("ReleaseOrchestrator npm publication", () => {
     expect(published).toEqual(["@fixture/public"]);
   });
 
+  test("preserves restricted publication access from the immutable artifact", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const accessLevels: string[] = [];
+    const published = startRegistry(undefined, accessLevels);
+    const pkg = makePublishPackage(root, "packages/restricted", "@fixture/restricted");
+    const manifestPath = join(root, pkg.file);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, publishConfig: { access: "restricted" } }));
+    await Bun.$`git add packages/restricted`.quiet();
+    await Bun.$`git commit -q -m "add restricted package"`.quiet();
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+
+    await orchestrator.publishToNpm([pkg]);
+
+    expect(published).toEqual(["@fixture/restricted"]);
+    expect(accessLevels).toEqual(["restricted"]);
+  });
+
   test("does not cross the npm boundary when all packages are private", async () => {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
@@ -137,6 +160,27 @@ describe("ReleaseOrchestrator npm publication", () => {
     expect(existsSync(join(root, "packages/private-a/build-count.txt"))).toBe(false);
     expect(existsSync(join(root, "packages/private-b/build-count.txt"))).toBe(false);
     expect(await orchestrator.rollback()).toBe(true);
+  });
+
+  test("rejects invalid publication access before recording an external operation", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const published = startRegistry();
+    const pkg = makePublishPackage(root, "packages/invalid-access", "@fixture/invalid-access");
+    const manifestPath = join(root, pkg.file);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, publishConfig: { access: "restriced" } }));
+    await Bun.$`git add packages/invalid-access`.quiet();
+    await Bun.$`git commit -q -m "add invalid access"`.quiet();
+    const orchestrator = makeOrchestrator(root, { changelog: false, npm: true, tags: false });
+    await orchestrator.initializeExternalRelease([pkg], [], true);
+    await orchestrator.finalizeExternalRelease([pkg], []);
+
+    await expect(orchestrator.prepareNpmPublish([pkg])).rejects.toThrow("Failed to prepare @fixture/invalid-access");
+
+    expect(published).toEqual([]);
+    expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
   });
 
   test("publishes the immutable prepared artifact when the source manifest changes", async () => {

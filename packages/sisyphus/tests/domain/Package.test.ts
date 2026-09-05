@@ -298,6 +298,26 @@ describe("Package.applyStone() prerelease channels", () => {
     expect(byName.get("@app/ui-z")).toBe("4.0.0-alpha.2");
   });
 
+  test("excluded development edges cannot graduate a prerelease dependent", () => {
+    const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core", "@app/tools"] });
+    const applied = Package.applyStone(
+      stone,
+      packages([
+        { name: "@app/core", version: "1.0.0" },
+        { name: "@app/tools", version: "1.0.0-beta.2" },
+        {
+          dependencies: { "@app/core": "workspace:*" },
+          devDependencies: { "@app/tools": "workspace:*" },
+          name: "@app/cli",
+          version: "2.0.0-beta.3",
+        },
+      ]),
+      ["dependencies", "optionalDependencies", "peerDependencies"],
+    );
+
+    expect(applied.find((pkg) => pkg.name === "@app/cli")?.newVersion).toBe("2.0.0-beta.4");
+  });
+
   test("graduation propagates transitively through prerelease dependents", () => {
     const stone = Stone.create({ dependency: ["@app/b", "@app/c"], message: "ship", minor: ["@app/a"] });
     const applied = Package.applyStone(

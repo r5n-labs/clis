@@ -160,6 +160,29 @@ describe("collectDependents", () => {
       "@app/b",
     ]);
   });
+
+  test.each(["workspace:*", "workspace:^", "workspace:~"])(
+    "outOfRange follows %s through non-canonical prereleases that graduate in the release plan",
+    (specifier) => {
+      const packages = makePackages([
+        { name: "@app/a", version: "1.0.0-rc.1" },
+        { dependencies: { "@app/a": specifier }, name: "@app/b", version: "1.0.0-alpha" },
+        { dependencies: { "@app/b": specifier }, name: "@app/c", version: "1.0.0" },
+        { dependencies: { "@app/b": "workspace:^1.0.0" }, name: "@app/literal", version: "1.0.0" },
+      ]);
+      const dependency = collectDependents([{ bump: BumpType.Patch, name: "@app/a" }], packages, {
+        kinds: PUBLISHED_KINDS,
+        updateInternal: "outOfRange",
+      });
+
+      expect(dependency).toEqual(["@app/b", "@app/c"]);
+      const stone = Stone.create({ dependency, message: "Graduate the channel", patch: ["@app/a"] });
+      const versions = Object.fromEntries(
+        Package.applyStone(stone, packages, PUBLISHED_KINDS).map((pkg) => [pkg.name, pkg.newVersion]),
+      );
+      expect(versions).toEqual({ "@app/a": "1.0.0", "@app/b": "1.0.0", "@app/c": "1.0.1" });
+    },
+  );
 });
 
 describe("isRangeInvalidated", () => {
@@ -196,6 +219,38 @@ describe("isRangeInvalidated", () => {
 });
 
 describe("orderForRelease", () => {
+  test("ignores development back-edges when ordering published dependencies", () => {
+    const packages = makePackages([
+      { dependencies: { "@app/b": "workspace:*" }, name: "@app/a", version: "1.0.0" },
+      { devDependencies: { "@app/a": "workspace:*" }, name: "@app/b", version: "1.0.0" },
+    ]);
+
+    const result = orderForRelease([...packages.values()]);
+
+    expect(result.ordered.map((pkg) => pkg.name)).toEqual(["@app/b", "@app/a"]);
+    expect(result.cycle).toEqual([]);
+  });
+
+  test("breaks upstream cycles before bridge packages and downstream cycles", () => {
+    const packages = makePackages([
+      { dependencies: { "@app/b": "workspace:*" }, name: "@app/a", version: "1.0.0" },
+      { dependencies: { "@app/a": "workspace:*" }, name: "@app/b", version: "1.0.0" },
+      { dependencies: { "@app/a": "workspace:*" }, name: "@app/c", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*", "@app/e": "workspace:*" }, name: "@app/d", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*", "@app/f": "workspace:*" }, name: "@app/e", version: "1.0.0" },
+      { dependencies: { "@app/c": "workspace:*", "@app/d": "workspace:*" }, name: "@app/f", version: "1.0.0" },
+    ]);
+
+    const result = orderForRelease([...packages.values()]);
+    const order = result.ordered.map((pkg) => pkg.name);
+
+    expect(result.cycle).not.toContain("@app/c");
+    expect(order.indexOf("@app/a")).toBeLessThan(order.indexOf("@app/c"));
+    for (const dependent of ["@app/d", "@app/e", "@app/f"]) {
+      expect(order.indexOf("@app/c")).toBeLessThan(order.indexOf(dependent));
+    }
+  });
+
   test("orders dependencies before dependents", () => {
     const packages = chain();
     const ordered = orderForRelease([

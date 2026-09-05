@@ -81,6 +81,17 @@ export class InitCommand extends BaseCommand {
             initialValue: currentConfig.changelog?.generate ?? true,
             message: "Generate changelog for release?",
           }),
+        configureCommit: () =>
+          confirm({
+            active: "Yes, configure commit",
+            inactive: "Skip commit config",
+            initialValue: !!(
+              currentConfig.commit?.author ||
+              currentConfig.commit?.email ||
+              currentConfig.commit?.message
+            ),
+            message: "Configure commit for release? Default commit message is `release: <packageName@version>`",
+          }),
         commitAuthor: ({ results: { configureCommit } }) =>
           configureCommit
             ? text({
@@ -105,17 +116,6 @@ export class InitCommand extends BaseCommand {
                 placeholder: "release: <packageName@version>",
               })
             : undefined,
-        configureCommit: () =>
-          confirm({
-            active: "Yes, configure commit",
-            inactive: "Skip commit config",
-            initialValue: !!(
-              currentConfig.commit?.author ||
-              currentConfig.commit?.email ||
-              currentConfig.commit?.message
-            ),
-            message: "Configure commit for release? Default commit message is `release: <packageName@version>`",
-          }),
         createRelease: () =>
           confirm({
             active: "Yes, create a release",

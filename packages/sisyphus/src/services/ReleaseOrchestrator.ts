@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
+import { resolveNpmAccess } from "@r5n/tools/scripts/npm-access";
 import { DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE, DEFAULT_NPM_TAG } from "../constants";
 import { Package, Stone } from "../domain";
 import { createGitProvider, type GitProvider } from "../providers";
@@ -54,13 +55,14 @@ import {
   validateExistingPackInputs,
   validateRepositoryIgnoredInputs,
 } from "./release/npm-pack";
+import { reconcileNpmPublication } from "./release/npm-reconcile";
 import {
   getPublishablePackages,
   getScopeRegistryArgs,
-  readPublishedPackage,
   resolveNpmRegistry,
   resolveReleaseNpmTag,
 } from "./release/npm-registry";
+import { reconcileReleasePush } from "./release/push-reconcile";
 import { getProviderRelease } from "./release/release-notes";
 import {
   getCurrentBranchName,
@@ -68,7 +70,6 @@ import {
   getSinglePushUrl,
   getValidatedPushUrl,
   performAtomicPush,
-  readRemoteRefs,
   resolvePushRemote,
   resolvePushTarget,
   resolveRemoteDestination,
@@ -80,7 +81,6 @@ import {
   ReleaseLedger,
   type ReleaseLedgerData,
   type ReleaseLedgerProviderReleaseOperation,
-  type ReleaseLedgerPushOperation,
   type ReleaseLedgerRemoteDestination,
 } from "./release-ledger";
 import { StoneManager } from "./StoneManager";
@@ -382,7 +382,9 @@ export class ReleaseOrchestrator {
           await runInContext(() => this.prepareNpmArtifact(pkg, artifactPath), `Failed to prepare ${pkg.name}`);
           await ledger.setArtifact(pkg.name, artifactPath);
         }
-        preparedPackages.push({ artifactPath: ledger.resolveArtifactPath(pkg.name), pkg });
+        const artifactPath = ledger.resolveArtifactPath(pkg.name);
+        resolveNpmAccess(await readPackedManifest(artifactPath));
+        preparedPackages.push({ artifactPath, pkg });
       }
     } finally {
       await rm(tempDir, { force: true, recursive: true });
@@ -669,35 +671,13 @@ export class ReleaseOrchestrator {
     await getValidatedPushUrl(operation, () => this.getRepositoryRoot());
 
     if (operation.state === "started") {
-      await this.reconcileStartedPush(operation);
+      await reconcileReleasePush(ledger, operation, () => this.getRepositoryRoot());
       return;
     }
 
     await ledger.setPhase("external");
     await ledger.markPush("started");
     this.crossIrreversibleBoundary("remote push");
-    await performAtomicPush(operation, () => this.getRepositoryRoot());
-    await ledger.markPush("completed");
-  }
-
-  private async reconcileStartedPush(operation: ReleaseLedgerPushOperation): Promise<void> {
-    const ledger = this.requireLedger("reconcile the release push");
-    const remoteRefs = await readRemoteRefs(operation, operation.refs, () => this.getRepositoryRoot());
-    const mismatch = operation.refs.find((ref) => remoteRefs.get(ref.destination) !== ref.oid);
-    if (!mismatch) {
-      await ledger.markPush("completed");
-      return;
-    }
-
-    const tagRefs = operation.refs.filter((ref) => ref.destination.startsWith("refs/tags/"));
-    const pushNeverApplied = tagRefs.length > 0 && tagRefs.every((ref) => !remoteRefs.has(ref.destination));
-    if (!pushNeverApplied) {
-      throw new Exit(
-        `Cannot safely resume remote push: ${mismatch.destination} is not at ${mismatch.oid}`,
-        "The previous push may not have completed; inspect the remote refs manually",
-      );
-    }
-
     await performAtomicPush(operation, () => this.getRepositoryRoot());
     await ledger.markPush("completed");
   }
@@ -709,7 +689,7 @@ export class ReleaseOrchestrator {
     if (operation.state === "completed") return;
 
     if (operation.state === "started") {
-      await this.reconcileStartedNpmPublish(prepared);
+      await reconcileNpmPublication(ledger, prepared.pkg);
       return;
     }
 
@@ -717,55 +697,6 @@ export class ReleaseOrchestrator {
     await ledger.markNpm(prepared.pkg.name, "started");
     this.crossIrreversibleBoundary("npm publication");
     await this.publishPackage(prepared);
-    await ledger.markNpm(prepared.pkg.name, "completed");
-  }
-
-  private async reconcileStartedNpmPublish(prepared: PreparedNpmPackage): Promise<void> {
-    const ledger = this.requireLedger(`reconcile the npm publication for ${prepared.pkg.name}`);
-    const artifact = ledger.data.artifacts[prepared.pkg.name];
-    if (!artifact) throw new Error(`Release artifact is missing for ${prepared.pkg.name}`);
-    const registry = ledger.data.operations.npmRegistries[prepared.pkg.name];
-    if (!registry) throw new Error(`Npm registry is not configured for ${prepared.pkg.name}`);
-    const version = prepared.pkg.newVersion ?? prepared.pkg.version;
-    const packageSpec = `${prepared.pkg.name}@${version}`;
-    const scopeRegistryArgs = getScopeRegistryArgs(prepared.pkg.name, registry);
-    const result = await Bun.$`npm view ${packageSpec} --json --registry ${registry} ${scopeRegistryArgs}`
-      .cwd(dirname(prepared.pkg.file))
-      .quiet()
-      .nothrow();
-
-    if (result.exitCode !== 0) {
-      throw new Exit(
-        `Cannot safely resume npm publication for ${packageSpec}`,
-        `The registry at ${registry} does not confirm ${packageSpec}; if the version is truly absent, publish the durable artifact at ${ledger.resolveArtifactPath(prepared.pkg.name)} manually and re-run sis roll --resume`,
-      );
-    }
-
-    let metadata: unknown;
-    try {
-      metadata = JSON.parse(result.stdout.toString());
-    } catch {
-      throw new Exit(`Cannot safely resume npm publication for ${packageSpec}`, "Registry metadata is not valid JSON");
-    }
-
-    const published = readPublishedPackage(metadata);
-    if (!published) {
-      throw new Exit(
-        `Cannot safely resume npm publication for ${packageSpec}`,
-        "Registry metadata does not report name, version, and dist.integrity; verify the upload manually",
-      );
-    }
-    if (
-      published.name !== prepared.pkg.name ||
-      published.version !== version ||
-      published.integrity !== artifact.integrity
-    ) {
-      throw new Exit(
-        `Cannot safely resume npm publication for ${packageSpec}: artifact integrity does not match`,
-        "Do not republish this version; compare the registry artifact with the durable release artifact",
-      );
-    }
-
     await ledger.markNpm(prepared.pkg.name, "completed");
   }
 
@@ -895,12 +826,13 @@ export class ReleaseOrchestrator {
   private async publishPackage(prepared: PreparedNpmPackage): Promise<void> {
     const ledger = this.requireLedger(`publish ${prepared.pkg.name}`);
     const tag = ledger.data.options.npmTag;
+    const access = resolveNpmAccess(await readPackedManifest(prepared.artifactPath));
     const registry = ledger.data.operations.npmRegistries[prepared.pkg.name];
     if (!registry) throw new Error(`Npm registry is not configured for ${prepared.pkg.name}`);
     const scopeRegistryArgs = getScopeRegistryArgs(prepared.pkg.name, registry);
     await runInContext(
       () =>
-        Bun.$`npm publish ${prepared.artifactPath} --tag ${tag} --access public --ignore-scripts --registry ${registry} ${scopeRegistryArgs}`
+        Bun.$`npm publish ${prepared.artifactPath} --tag ${tag} --access ${access} --ignore-scripts --registry ${registry} ${scopeRegistryArgs}`
           .cwd(dirname(prepared.pkg.file))
           .quiet(),
       `Failed to publish ${prepared.pkg.name}`,
@@ -933,6 +865,7 @@ export class ReleaseOrchestrator {
       const builtText = await readFile(pkg.file, "utf-8");
       const { catalogs, workspaceVersions } = await this.getPublishContext();
       const publishText = renderPublishManifest(builtText, catalogs, workspaceVersions);
+      resolveNpmAccess(publishText);
       const publishManifest = JSON.parse(publishText) as { name?: unknown; version?: unknown };
       const expectedVersion = pkg.newVersion ?? pkg.version;
       if (publishManifest.name !== pkg.name || publishManifest.version !== expectedVersion) {

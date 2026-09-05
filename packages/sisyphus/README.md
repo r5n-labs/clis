@@ -107,6 +107,8 @@ Provider releases require tags to be pushed to the same repository first, so nor
 
 Publishing builds each public package, rewrites its `package.json` to a clean publish manifest, and packs an immutable tarball before any package is uploaded. `workspace:` specifiers are resolved against actual workspace versions (`workspace:*` pins the exact version and `workspace:^`/`workspace:~` become ranges), `catalog:` specifiers are resolved from the root `catalog`/`catalogs`, and `devDependencies` are stripped. The source manifest is restored after packing, even if preparation fails. Private packages (`"private": true`) are skipped.
 
+Publication defaults to public access and honours `publishConfig.access: "restricted"` from the immutable package manifest. Invalid access values fail before publication.
+
 For releases with external operations, Sisyphus stores the plan, immutable artifacts, exact Git refs, and per-operation progress below Git's worktree-specific administrative directory. `--resume` verifies an ambiguous npm upload by SHA-512 integrity, verifies an ambiguous push from exact remote refs, and verifies provider releases by tag, title, and notes. If the external system cannot confirm the expected state, resume stops rather than repeating the operation.
 
 Npm publication requires a release commit, so it cannot be combined with `--noCommit`. Publish-only releases verify the source hash recorded by `actions release-pr`, the exact package versions, and the complete archived-stone set before creating tags or artifacts.
@@ -126,6 +128,10 @@ Convert an existing `.changeset/` directory to stones and map supported changese
 ### `sisyphus actions`
 
 CI integration. `actions init` detects your provider (GitHub Actions or GitLab CI) and installs workflow templates: a create-stone workflow that turns merged PRs into stones and maintains a release PR, and a release workflow that publishes when the release PR merges (`--all`, `--createStone`, `--release`, `-d`, `-y`). `actions release-pr` creates or updates the `sisyphus/release` branch and PR from pending stones, archives the stones to `.sisyphus/released/<timestamp>/`, and records `currentRelease` in the config for a later `roll --publishOnly`.
+
+Run `actions release-pr` from a clean working tree; commit or stash local changes first. It returns to the original branch after preparing or previewing the release PR.
+
+The generated GitLab workflows require `GITLAB_TOKEN` with API access and repository write permission; `SIS_PUSH_TOKEN` can supply a separate repository write credential. They configure a credential-free origin URL and a credential helper for both stone and release-branch pushes. Automatic MR detection expects GitLab's standard merge commit title and `See merge request <project>!<number>` footer. Use merge commits for release merge requests; squash, rebase and custom commit messages require adapting the rules or running the release job manually.
 
 ### `sisyphus init`
 
@@ -217,7 +223,9 @@ Selecting a package pulls in everything that depends on it, transitively, as a `
 }
 ```
 
-`updateInternal: "outOfRange"` releases a dependent only when its published range would no longer admit the new version — `workspace:*` is always invalidated, `workspace:^` survives a minor bump above 0.x, `workspace:~` survives a patch, and a literal `workspace:<range>` is never rewritten so it never triggers a release. Releases are ordered so a dependency is tagged and published before the dependent that pins it.
+`updateInternal: "outOfRange"` releases a dependent only when its published range would no longer admit the new version — `workspace:*` is always invalidated, `workspace:^` survives a minor bump above 0.x, `workspace:~` survives a patch, and a literal `workspace:<range>` is never rewritten so it never triggers a release. Releases are ordered so a dependency is tagged and published before the dependent that pins it. Publication order follows runtime, optional and peer dependencies; development dependencies are removed from the published manifest and do not constrain that order.
+
+When an untagged release graduates a prerelease package, selected prerelease dependents connected through the sections in `dependents.kinds` graduate with it. Excluded sections cannot cause a dependent to leave its prerelease channel.
 
 ## Prereleases
 
