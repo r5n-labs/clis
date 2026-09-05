@@ -125,7 +125,7 @@ export class CheckCommand extends BaseCommand {
 
 - `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.
-- `bunfig.toml` sets the per-test timeout to 30 s; release tests need it.
+- `bunfig.toml` preloads `test-setup.ts`, which sets the per-test timeout to 30 s through `bun:test`; release tests need it. Bun 1.3.14 ignores the TOML `test.timeout` setting.
 - Prerequisites on PATH: `git`, `npm` (11 or 12). Provider tests use local command shims; they never contact real GitHub or GitLab services.
 - Prefer integration tests over broad mocking; pin every bug fix with a regression test that fails on the previous behaviour.
 
