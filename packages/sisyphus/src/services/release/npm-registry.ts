@@ -167,10 +167,11 @@ export function parseNpmRegistry(value: string): string | undefined {
 export function readPublishedPackage(
   metadata: unknown,
 ): { integrity: string; name: string; version: string } | undefined {
-  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return undefined;
-  const name = Reflect.get(metadata, "name");
-  const version = Reflect.get(metadata, "version");
-  const dist = Reflect.get(metadata, "dist");
+  const entry = Array.isArray(metadata) ? (metadata.length === 1 ? metadata[0] : undefined) : metadata;
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+  const name = Reflect.get(entry, "name");
+  const version = Reflect.get(entry, "version");
+  const dist = Reflect.get(entry, "dist");
   if (typeof dist !== "object" || dist === null || Array.isArray(dist)) return undefined;
   const integrity = Reflect.get(dist, "integrity");
   if (typeof name !== "string" || typeof version !== "string" || typeof integrity !== "string") return undefined;

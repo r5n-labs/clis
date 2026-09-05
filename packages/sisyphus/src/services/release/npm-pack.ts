@@ -17,17 +17,25 @@ const TAR_PREFIX_LENGTH = 155;
 const PACKED_MANIFEST_PATH = "package/package.json";
 const MAX_REPORTED_IGNORED_INPUTS = 20;
 
+export type NpmPackEntry = { files?: unknown; filename?: unknown; name?: unknown; version?: unknown };
+
+export function parseNpmPackOutput(stdout: string): NpmPackEntry | undefined {
+  const parsed: unknown = JSON.parse(stdout);
+  const entries: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? Object.values(parsed)
+      : [];
+  const [entry] = entries;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as NpmPackEntry) : undefined;
+}
+
 export async function packNpmArtifact(packageDirectory: string, artifactPath: string): Promise<PackedPackageIdentity> {
   const artifactDirectory = dirname(artifactPath);
   const result = await Bun.$`npm pack --ignore-scripts --json --pack-destination ${artifactDirectory}`
     .cwd(packageDirectory)
     .quiet();
-  const output = JSON.parse(result.stdout.toString()) as Array<{
-    filename?: unknown;
-    name?: unknown;
-    version?: unknown;
-  }>;
-  const packed = output[0];
+  const packed = parseNpmPackOutput(result.stdout.toString());
   if (
     typeof packed?.filename !== "string" ||
     !packed.filename ||
@@ -49,8 +57,7 @@ export async function packNpmArtifact(packageDirectory: string, artifactPath: st
 
 export async function listPackFilePaths(pkg: Package, packageDirectory: string): Promise<string[]> {
   const result = await Bun.$`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet();
-  const output = JSON.parse(result.stdout.toString()) as Array<{ files?: unknown }>;
-  const files = output[0]?.files;
+  const files = parseNpmPackOutput(result.stdout.toString())?.files;
   if (!Array.isArray(files)) throw new Error(`npm pack did not return a file list for ${pkg.name}`);
 
   return files.map((file) => {

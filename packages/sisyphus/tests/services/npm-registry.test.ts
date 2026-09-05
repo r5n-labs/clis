@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
-import { resolveReleaseNpmTag } from "../../src/services/release/npm-registry";
+import { readPublishedPackage, resolveReleaseNpmTag } from "../../src/services/release/npm-registry";
 
 function makePackage(name: string, newVersion: string, isPrivate = false): Package {
   return new Package({ file: `packages/${name}/package.json`, isPrivate, name, newVersion, version: "1.0.0" });
@@ -76,5 +76,33 @@ describe("resolveReleaseNpmTag channel extraction", () => {
     expect(() => resolveReleaseNpmTag([makePackage("a", "not-a-version")], "latest")).toThrow(
       "Cannot derive an npm dist-tag",
     );
+  });
+});
+
+describe("readPublishedPackage", () => {
+  const published = { dist: { integrity: "sha512-abc" }, name: "@fixture/public", version: "1.0.1" };
+
+  test("reads the object document emitted by npm 11 for an exact spec", () => {
+    expect(readPublishedPackage(published)).toEqual({
+      integrity: "sha512-abc",
+      name: "@fixture/public",
+      version: "1.0.1",
+    });
+  });
+
+  test("reads the single-element array emitted by npm 12 for an exact spec", () => {
+    expect(readPublishedPackage([published])).toEqual({
+      integrity: "sha512-abc",
+      name: "@fixture/public",
+      version: "1.0.1",
+    });
+  });
+
+  test("rejects ambiguous, empty or incomplete documents", () => {
+    expect(readPublishedPackage([published, published])).toBeUndefined();
+    expect(readPublishedPackage([])).toBeUndefined();
+    expect(readPublishedPackage(null)).toBeUndefined();
+    expect(readPublishedPackage({ name: "@fixture/public", version: "1.0.1" })).toBeUndefined();
+    expect(readPublishedPackage({ ...published, dist: { integrity: 1 } })).toBeUndefined();
   });
 });

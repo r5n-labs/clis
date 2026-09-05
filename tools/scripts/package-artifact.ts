@@ -24,6 +24,19 @@ const TAR_PREFIX_OFFSET = 345;
 const TAR_PREFIX_LENGTH = 155;
 const PACKED_MANIFEST_PATH = "package/package.json";
 
+export type NpmPackEntry = { files?: unknown; filename?: unknown; name?: unknown; version?: unknown };
+
+export function parseNpmPackOutput(stdout: string): NpmPackEntry | undefined {
+  const parsed: unknown = JSON.parse(stdout);
+  const entries: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? Object.values(parsed)
+      : [];
+  const [entry] = entries;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as NpmPackEntry) : undefined;
+}
+
 export async function preparePackageArtifact(packageDir: string, artifactPath: string): Promise<void> {
   const pkgDir = await realpath(resolve(packageDir));
   const pkgJsonPath = resolve(pkgDir, "package.json");
@@ -53,12 +66,7 @@ export async function preparePackageArtifact(packageDir: string, artifactPath: s
     const result = await $`npm pack --ignore-scripts --json --pack-destination ${artifactDirectory}`
       .cwd(pkgDir)
       .quiet();
-    const output = JSON.parse(result.stdout.toString()) as Array<{
-      filename?: unknown;
-      name?: unknown;
-      version?: unknown;
-    }>;
-    const packed = output[0];
+    const packed = parseNpmPackOutput(result.stdout.toString());
     if (
       typeof packed?.filename !== "string" ||
       !packed.filename ||
@@ -268,8 +276,7 @@ async function validateExistingPackInputs(packageDirectory: string, repositoryRo
     $`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet(),
     collectTrackedPaths(repositoryRoot),
   ]);
-  const packOutput = JSON.parse(packResult.stdout.toString()) as Array<{ files?: unknown }>;
-  const files = packOutput[0]?.files;
+  const files = parseNpmPackOutput(packResult.stdout.toString())?.files;
   if (!Array.isArray(files)) throw new Error("npm pack did not return a package file list");
 
   for (const file of files) {

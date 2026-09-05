@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { preparePackageArtifact } from "./package-artifact";
+import { parseNpmPackOutput, preparePackageArtifact } from "./package-artifact";
 
 const roots: string[] = [];
 const PACK_DELAY_FILE_SIZE = 16 * 1024 * 1024;
@@ -50,7 +51,7 @@ async function createPackageFixture(
     ].join("\n"),
   );
   if (options.packManifestChanges) {
-    writeFileSync(join(packageDirectory, "large.bin"), Buffer.alloc(PACK_DELAY_FILE_SIZE));
+    writeFileSync(join(packageDirectory, "large.bin"), randomBytes(PACK_DELAY_FILE_SIZE));
     writeFileSync(
       join(packageDirectory, "manifest-watcher.ts"),
       [
@@ -286,5 +287,28 @@ describe("preparePackageArtifact", () => {
     );
 
     expect(existsSync(fixture.artifactPath)).toBe(false);
+  });
+});
+
+describe("parseNpmPackOutput", () => {
+  const entry = {
+    filename: "probe-pkg-1.0.0.tgz",
+    files: [{ path: "index.js" }],
+    name: "@probe/pkg",
+    version: "1.0.0",
+  };
+
+  test("reads the array document emitted by npm 11", () => {
+    expect(parseNpmPackOutput(JSON.stringify([entry]))).toEqual(entry);
+  });
+
+  test("reads the package-keyed document emitted by npm 12", () => {
+    expect(parseNpmPackOutput(JSON.stringify({ "@probe/pkg": entry }))).toEqual(entry);
+  });
+
+  test("returns undefined for empty or scalar documents", () => {
+    expect(parseNpmPackOutput("[]")).toBeUndefined();
+    expect(parseNpmPackOutput("{}")).toBeUndefined();
+    expect(parseNpmPackOutput("null")).toBeUndefined();
   });
 });
