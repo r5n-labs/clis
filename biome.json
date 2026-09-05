@@ -1,5 +1,6 @@
 {
   "extends": ["./tools/biome.json"],
+  "vcs": { "clientKind": "git", "enabled": true, "useIgnoreFile": true },
   "files": {
     "includes": [
       "**/*.{ts,tsx,js,jsx,json}",

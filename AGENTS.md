@@ -11,7 +11,7 @@ Bun + TypeScript monorepo of zero-dependency, single-file CLIs built on one priv
 | Lint and format (writes) | `bun lint` |
 | Lint read-only | `bun biome check` |
 | Type check every workspace | `bun type-check` |
-| Run all tests (sequential, ~65 s) | `bun test` |
+| Run all tests (sequential) | `bun test` |
 | Run one test file | `bun test packages/sisyphus/tests/domain/semver.test.ts` |
 | Run tests by name | `bun test -t "pattern"` |
 | Lint workflows | `actionlint` (config in `.github/actionlint.yaml`) |
@@ -23,7 +23,7 @@ Bun + TypeScript monorepo of zero-dependency, single-file CLIs built on one priv
 
 - **Runtime:** use `bun` for every script, install and test. Never `npm`, `yarn`, `pnpm` or `bunx`. The release path and its tests shell out to the real `git` and `npm` binaries by design; never publish by hand with bare `npm publish`.
 - **Formatting:** Biome owns formatting and import order. `bun lint` rewrites files (`--write --unsafe`); CI runs the same command, so use `bun biome check` when you need a read-only verdict.
-- **Validation:** `banditypes` (imported from `banditypes`), never Zod. Today only atlas validates its config with it; new runtime validation must use it too.
+- **Validation:** `banditypes` (imported from `banditypes`), never Zod. Core validates persisted config objects, Atlas validates its config, Sisyphus validates stones and tags, and tools validates npm access settings with it. New runtime validation must use it too.
 - **Architecture:** each CLI bundles `@r5n/cli-core` and `@r5n/tools` at build time and ships one executable file with no runtime dependencies.
 - **Comments:** none unless explicitly requested; code must be self-documenting.
 - **File size:** files over ~1000 lines are unacceptable; split along module seams.
@@ -109,15 +109,15 @@ export class CheckCommand extends BaseCommand {
 }
 ```
 
-- `ctx.interactive` is `command.prompts && no positionals`; the framework does not check for a TTY. Commands that prompt must guard with `process.stdout.isTTY` before blocking (see `version.ts` and `roll.ts`).
-- Global flags are `--help/-h`, `--interactive/-i`, `--version/-v`; `mri` accepts unknown flags silently, so validate anything security-relevant yourself.
+- `ctx.interactive` requires `command.prompts`, no positionals and a stdout TTY. Explicit interactive routing also requires a TTY. Commands that prompt directly must guard their own prompts (see `version.ts` and `roll.ts`).
+- Global flags are `--help/-h`, `--interactive/-i`, `--version/-v`. Misplaced flags and malformed numeric values fail early. Command parsing remains permissive for unknown flags; destructive commands validate them inside their own error-reporting boundary.
 - Enums carry associated data through `Record<Enum, T>` maps and `isX(value): value is X` type guards.
 
 ## Sisyphus Internals
 
 - `domain/`: `semver` (strict parser and `inc`), `BumpType`, `Commit`, `Package` (workspace edges, `applyStone` with prerelease graduation), `Stone` (parse, serialise, merge, tag homogeneity).
 - `services/`: `StoneManager` (stones in `.sisyphus/stones/`, archived on roll), `VersionCalculator`, `dependency-graph` (transitive dependents, `config.ignore`, topological order, cycle breaking), `release-plan`, `release-report` (the `roll --json` document), `ChangelogGenerator`, `CommitAnalyzer`, `PullRequestAnalyzer`, `PublishManifest`.
-- `services/ReleaseOrchestrator.ts` plus `services/release/*` run the roll: verified release commit, tags, root and per-package build with declared outputs, immutable `npm pack` artifacts in a staging directory, atomic push, `npm publish --access public --ignore-scripts`, optional provider release. Every irreversible step is recorded in a ledger under `.git/sisyphus/release/` (`services/release-ledger/*`) so `sis roll --resume` and `--abort` can reconcile.
+- `services/ReleaseOrchestrator.ts` plus `services/release/*` run the roll: verified release commit, tags, root and per-package build with declared outputs, immutable `npm pack` artifacts in a staging directory, atomic push, `npm publish --ignore-scripts`, optional provider release. npm access defaults to public and honours `publishConfig.access` from the packed manifest. Every irreversible step is recorded in a ledger under `.git/sisyphus/release/` (`services/release-ledger/*`) so `sis roll --resume` and `--abort` can reconcile.
 - `providers/`: GitHub via `gh`, GitLab via `GITLAB_TOKEN` or `glab`, Bitbucket unsupported.
 - `commands/actions/templates/` ships the GitHub and GitLab CI workflows that `sis actions init` installs; `build.ts` copies them into `dist/templates`.
 
@@ -126,7 +126,7 @@ export class CheckCommand extends BaseCommand {
 - `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.
 - `bunfig.toml` sets the per-test timeout to 30 s; release tests need it.
-- Prerequisites on PATH: `git`, `npm` (11 or 12). `gh` and `glab` are never invoked by tests.
+- Prerequisites on PATH: `git`, `npm` (11 or 12). Provider tests use local command shims; they never contact real GitHub or GitLab services.
 - Prefer integration tests over broad mocking; pin every bug fix with a regression test that fails on the previous behaviour.
 
 ## Git Hooks
