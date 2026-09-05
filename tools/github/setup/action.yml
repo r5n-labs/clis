@@ -28,10 +28,6 @@ runs:
         retry_wait_seconds: 1
         retry_on: error
         command: bun install --frozen-lockfile
-        new_command_on_retry: |
-          git checkout .
-          rm -rf bun.lock
-          bun clean
 
     - name: 📦 Install dependencies
       if: inputs.install-retry == 'false'

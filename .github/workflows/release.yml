@@ -51,10 +51,16 @@ jobs:
           STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length')
           echo "Found $STONES_COUNT pending stones"
           echo "STONES_COUNT=$STONES_COUNT" >> "$GITHUB_ENV"
+          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          if [ "$STONES_COUNT" -gt 0 ] || [ -f "$RELEASE_DIR/active.json" ]; then
+            echo "RELEASE_PENDING=true" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_PENDING=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Roll release
         id: roll
-        if: env.STONES_COUNT != '0'
+        if: env.RELEASE_PENDING == 'true'
         run: |
           set -eo pipefail
           NPM_DIR="$RUNNER_TEMP/npm11"

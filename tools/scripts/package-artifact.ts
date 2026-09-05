@@ -1,6 +1,8 @@
 import { lstat, readlink, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { $ } from "bun";
+import { resolveNpmAccess } from "./npm-access";
+import { inferNpmPrereleaseTag } from "./npm-tag";
 
 type PublishArtifactOptions = { cwd?: string; dryRun?: boolean };
 
@@ -451,6 +453,12 @@ export async function publishPackageArtifact(
 ): Promise<void> {
   const resolvedArtifactPath = resolve(artifactPath);
   const cwd = resolve(options.cwd ?? ".");
-  const dryRunArgs = options.dryRun ? ["--dry-run", "--force"] : [];
-  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access public ${dryRunArgs}`.cwd(cwd);
+  const manifestText = await readPackedManifest(resolvedArtifactPath);
+  const access = resolveNpmAccess(manifestText);
+  const { version } = readPackageIdentity(manifestText, resolvedArtifactPath);
+  const manifest = JSON.parse(manifestText) as { publishConfig?: { tag?: unknown } };
+  const inferredTag = manifest.publishConfig?.tag ? undefined : inferNpmPrereleaseTag(version);
+  const tagArgs = inferredTag === undefined ? [] : ["--tag", inferredTag];
+  const dryRunArgs = options.dryRun ? ["--dry-run", "--offline"] : [];
+  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access ${access} ${tagArgs} ${dryRunArgs}`.cwd(cwd);
 }

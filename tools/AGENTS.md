@@ -1,27 +1,31 @@
-# AGENTS.md - R5N Tools Repository
+# R5N Tools - Agent Guidelines
 
-## Essential Commands
-```bash
-bun lint                    # Run Biome linting/formatting with auto-fix
-bun setup-monorepo          # Set up a new monorepo with default config
-bun test                    # No test command configured (add tests as needed)
-```
+`tools/` is the private `@r5n/tools` workspace in the CLI monorepo. The root `AGENTS.md` applies here. This is an ordinary tracked directory; the old submodule entry does not manage it.
 
-## Code Style Guidelines
-- **Runtime**: Always use `bun` instead of npm/yarn/pnpm
-- **Imports**: Use ESM imports with `.ts` extensions allowed, organize imports alphabetically
-- **Formatting**: 2 spaces, 100 char line width, semicolons always, LF line endings
-- **TypeScript**: Strict mode enabled, ESNext target, no implicit any, use const assertions
-- **Naming**: Use camelCase for variables/functions, PascalCase for types/classes/enums
-- **Error Handling**: Always handle errors explicitly, use AggregateError for multiple errors
-- **Logging**: Use `createLogger({ prefix: "name" })` pattern from utils/logger.ts
-- **Exports**: Prefer named exports, barrel exports allowed from index files
-- **Promises**: No floating promises, always await or handle async operations
-- **Types**: Avoid inferrable types, use explicit return types for public APIs
-- **Comments**: Minimal comments, code should be self-documenting
+## Commands
 
-## Project Structure
-- `/builder/` - Build utilities using Bun.build API
-- `/scripts/` - Automation scripts for monorepo setup
-- `/utils/` - Shared utilities (colors, logger) exported from index.ts
-- `/typescript/` - Shared TypeScript configuration (strict, ESNext, Bun support)
+Run these from the repository root:
+
+| Task | Command |
+|------|---------|
+| Type-check tools and their tests | `bun --filter @r5n/tools type-check` |
+| Test the builder and scripts | `bun test tools` |
+| Check formatting without writing | `bun biome check tools` |
+| Initialise a monorepo | `bun --filter @r5n/tools setup-monorepo` |
+
+The setup command writes missing configuration files, extends workspace membership and installs dependencies. Existing scripts and workspace catalogues are preserved. Run it only when setting up a repository.
+
+## Structure
+
+- `builder/index.ts`: shared Bun builder, type-check gate, bundle budgets and optional README badge updates. CLI packages import `@r5n/tools/builder` and bundle their runtime dependencies.
+- `scripts/setup-monorepo.ts`: monorepo scaffolding and setup commands. Installation failures must fail the setup; retries must preserve the lockfile.
+- `scripts/prepare-publish.ts` and `publish-manifest.ts`: resolve workspace and catalogue dependencies for publication.
+- `scripts/publish-package.ts` and `package-artifact.ts`: verify committed source, prepare an immutable tarball, restore the manifest and publish that artifact. Use the package's `package:dryRun` or `package:publish` script.
+- `github/setup/action.yml`: composite action for Bun setup and frozen dependency installation.
+- `biome.json` and `typescript/base.json`: shared formatting, lint and strict TypeScript configuration.
+
+## Conventions
+
+Use Bun for scripts and tests. Biome owns formatting and import order: two spaces, 120 columns, double quotes and semicolons. Prefer named exports and explicit return types on public APIs. Add no comments unless requested.
+
+Tests live beside builder and script modules. Publishing tests use real Git repositories and npm subprocesses; preserve source-integrity checks and cleanup. Both npm 11 and npm 12 JSON output shapes are supported. Use fixture directories outside the checkout and remove them after each test.

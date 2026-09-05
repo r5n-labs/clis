@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 const PREFIX = "[setup-monorepo]";
 const log = (...args: unknown[]) => console.log(PREFIX, ...args);
@@ -122,7 +123,7 @@ const VSCODE_SETTINGS_CONTENT = `{
 `;
 
 const cwd = process.cwd();
-const isInToolsDir = cwd.endsWith("tools");
+const isInToolsDir = basename(cwd) === "tools";
 const monorepoRoot = join(cwd, isInToolsDir ? ".." : "");
 const packageJsonPath = join(monorepoRoot, "package.json");
 const configFiles = {
@@ -144,7 +145,7 @@ async function setupConfigFiles() {
       continue;
     }
 
-    await Bun.$`mkdir -p ${{ raw: path.split("/").slice(0, -1).join("/") }}`.quiet();
+    await mkdir(dirname(path), { recursive: true });
     await Bun.write(path, content);
     log(`✅ Created ${path}`);
   }
@@ -159,13 +160,13 @@ async function readOrCreatePackageJson() {
     return await packageJsonFile.json();
   }
 
-  const folderName = monorepoRoot.split("/").pop() || "monorepo";
+  const folderName = basename(monorepoRoot) || "monorepo";
   log("Creating new package.json");
 
   return {
     license: "Apache-2.0",
     name: `@${folderName}/monorepo`,
-    packageManager: `bun@^${Bun.version}`,
+    packageManager: `bun@${Bun.version}`,
     private: true,
     version: "0.0.0",
   };
@@ -184,10 +185,9 @@ function mergeArrayField(existing: string[] | undefined, additions: string[]): s
 async function runSetupCommands() {
   const devDependencies = ["@biomejs/biome", "lefthook", "typescript"];
   const commands = {
-    install: { command: "bun install", description: "Install dependencies" },
-    installDevDependencies: {
+    install: {
       command: `bun add -d ${devDependencies.join(" ")}`,
-      description: "Install devDependencies",
+      description: "Install dependencies and development tools",
     },
     lint: { command: "bun biome check --write --unsafe", description: "Run linting with --unsafe for initial setup" },
     typecheck: { command: "bun type-check", description: "Run type-checking for initial setup" },
@@ -198,8 +198,8 @@ async function runSetupCommands() {
       log(`Running ${key}: ${description}`);
       await Bun.$`${{ raw: command }}`.cwd(monorepoRoot);
       log(`✅ ${key} completed`);
-    } catch (err) {
-      logError(`❌ ${key} failed: ${err instanceof Error ? err.message : String(err)}`);
+    } catch (cause) {
+      throw new Error(`${key} failed: ${description}`, { cause });
     }
   }
 }
@@ -209,21 +209,23 @@ async function main() {
   const trustedDependencies = ["@biomejs/biome", "lefthook"];
   const workspaces = ["packages/*", "tools"];
   const scripts = {
-    bootstrap: "bun clean; bun install",
-    clean: "bun --filter '*' clean && rm -rf bun.lock node_modules build; bun install",
+    bootstrap: "bun install",
+    clean: "rm -rf node_modules build && bun install --frozen-lockfile",
     lint: "bun biome check --write",
     "lint:ci": "bun biome check",
-    "lint:ws": "bunx sherif@latest",
-    postinstall: "bun lefthook install; bun lint:ws",
+    postinstall: "bun lefthook install",
     test: "bun test",
     "type-check": "bun --elide-lines=0 --filter '*' type-check",
   };
 
   const updatedPackageJson = {
     ...packageJson,
-    scripts: { ...packageJson.scripts, ...scripts },
+    scripts: { ...scripts, ...packageJson.scripts },
     trustedDependencies: mergeArrayField(packageJson.trustedDependencies, trustedDependencies),
-    workspaces: mergeArrayField(packageJson.workspaces, workspaces),
+    workspaces:
+      Array.isArray(packageJson.workspaces) || !packageJson.workspaces
+        ? mergeArrayField(packageJson.workspaces, workspaces)
+        : { ...packageJson.workspaces, packages: mergeArrayField(packageJson.workspaces.packages, workspaces) },
   };
 
   await Bun.write(packageJsonPath, `${JSON.stringify(updatedPackageJson, null, 2)}\n`);
