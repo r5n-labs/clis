@@ -236,6 +236,7 @@ describe("preparePackageArtifact", () => {
     const originalManifest = readFileSync(fixture.manifestPath, "utf-8");
     const shimRoot = mkdtempSync(join(tmpdir(), "package-artifact-npm-"));
     roots.push(shimRoot);
+    const originalPath = process.env.PATH ?? "";
     const npmPath = Bun.which("npm");
     if (!npmPath) throw new Error("npm is required for package artifact tests");
     writeFileSync(
@@ -247,7 +248,7 @@ describe("preparePackageArtifact", () => {
         '  const manifest = await Bun.file("package.json").json();',
         '  await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
         "}",
-        `const child = Bun.spawn([${JSON.stringify(npmPath)}, ...args], { stderr: "inherit", stdout: "inherit" });`,
+        `const child = Bun.spawn([${JSON.stringify(npmPath)}, ...args], { env: { ...process.env, PATH: ${JSON.stringify(originalPath)} }, stderr: "inherit", stdout: "inherit" });`,
         "process.exit(await child.exited);",
       ].join("\n"),
     );
@@ -255,17 +256,20 @@ describe("preparePackageArtifact", () => {
     const invocation = `import { preparePackageArtifact } from ${JSON.stringify(join(import.meta.dir, "package-artifact.ts"))}; await preparePackageArtifact(${JSON.stringify(fixture.packageDirectory)}, ${JSON.stringify(fixture.artifactPath)});`;
     const child = Bun.spawn([process.execPath, "-e", invocation], {
       cwd: fixture.packageDirectory,
-      env: { ...process.env, PATH: `${shimRoot}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${shimRoot}:${originalPath}` },
       stderr: "pipe",
       stdout: "pipe",
     });
-    const [exitCode, stderr] = await Promise.all([
+    const [exitCode, stderr, stdout] = await Promise.all([
       child.exited,
       new Response(child.stderr).text(),
       new Response(child.stdout).text(),
     ]);
 
-    expect(exitCode).toBe(1);
+    expect(
+      exitCode,
+      `Artifact subprocess failed (Bun: ${process.execPath}; npm: ${npmPath})\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+    ).toBe(1);
     expect(stderr).toContain("Packed manifest does not match the prepared package manifest");
     expect(stderr).toContain("Package manifest changed concurrently");
 
