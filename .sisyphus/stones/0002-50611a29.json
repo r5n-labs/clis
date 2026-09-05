@@ -1,0 +1,115 @@
+{
+  "commits": [
+    {
+      "body": "Keep prerelease graduation and dependency ordering consistent across previews, release PRs and archived plans. Reject invalid stones, tags, commit baselines and foreign PR URLs before they can produce incomplete releases. Recover interrupted pushes without overwriting divergent refs, validate immutable publication settings before external actions, and preserve local work during CI release preparation.",
+      "hash": "eafb119",
+      "message": "preserve release plans and reconcile interrupted publication",
+      "packages": ["@r5n/sisyphus", "@r5n/tools"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): preserve release plans and reconcile interrupted publication",
+      "type": "fix"
+    },
+    {
+      "body": "Track completed registrations and removals as they happen so partial failures remain recoverable. Publish only complete downloads, stop the selected detached process group, update each stale runner and reject unknown options before mutation. Keep runner binaries under explicit Hydra update control.",
+      "hash": "a34aee1",
+      "message": "preserve runner state across lifecycle failures",
+      "packages": ["@r5n/hydra"],
+      "scope": "hydra",
+      "subject": "fix(hydra): preserve runner state across lifecycle failures",
+      "type": "fix"
+    },
+    {
+      "body": "Reject malformed numeric options and unsafe interactive routing before commands can apply destructive defaults. Preserve declared negated aliases and provide command-scoped option checks without breaking passthrough. Save configuration atomically, retain unreadable files and isolate nested defaults; include framework tests in type checking.",
+      "hash": "d6804ce",
+      "message": "validate CLI input and preserve persisted configuration",
+      "packages": ["@r5n/cli-core"],
+      "scope": "core",
+      "subject": "fix(core): validate CLI input and preserve persisted configuration",
+      "type": "fix"
+    },
+    {
+      "body": "Keep frozen lockfiles during retries, install setup dependencies before hooks run, and preserve existing workspace catalogues and scripts. Honour access and prerelease channels from packed manifests, keep dry runs offline, and make builder and packing failures deterministic and recoverable. Resume saved releases even after their pending stones have been archived.",
+      "hash": "cb068b9",
+      "message": "preserve setup state and immutable publication settings",
+      "packages": ["@r5n/tools"],
+      "scope": "tools",
+      "subject": "fix(tools): preserve setup state and immutable publication settings",
+      "type": "fix"
+    },
+    {
+      "body": "Reject misspelled options and malformed profile references before selecting defaults or writing files. Preserve existing files on failed writes, report configuration errors consistently in JSON mode, and distinguish missing commands from invalid working directories.",
+      "hash": "d0892b1",
+      "message": "validate command inputs and write private files atomically",
+      "packages": ["@r5n/atlas"],
+      "scope": "atlas",
+      "subject": "fix(atlas): validate command inputs and write private files atomically",
+      "type": "fix"
+    },
+    {
+      "body": "npm 12 changed `npm pack --json` from an array to an object keyed by\npackage name, and `npm view <name@version> --json` from a single object\nto a one-element array. Both parsers assumed the npm 11 shape, so every\npack guard and the started-publish reconciliation failed outright on a\nmachine with npm 12, and the packed 16 MB zero-filled fixture tripped\nnpm 12's tar decompression-ratio guard.\n\nNormalise both documents through a shared parser that accepts either\nshape, unwrap a single-element view result, and fill the pack-delay\nfixture with random bytes so it still packs slowly without looking like\na decompression bomb. The tools script gets the same parser because it\nruns standalone outside the sisyphus bundle.",
+      "hash": "2f45243",
+      "message": "read the npm 12 pack and view document shapes",
+      "packages": ["@r5n/sisyphus", "@r5n/tools"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): read the npm 12 pack and view document shapes",
+      "type": "fix"
+    },
+    {
+      "body": "Graduation is now decided per package, not per stone. applyStone seeds\nthe graduating set from explicitly bumped packages that are leaving a\nprerelease and closes it transitively over workspace dependencies, so\nmerging an unrelated graduating stone can no longer promote an\nindependent mid-prerelease dependent to a stable version. An untagged\ndependency bump on a non-canonical prerelease now fails closed instead\nof silently graduating.\n\nbreakCycle trims the stuck subgraph to genuine cycle members before\nchoosing what to force, so an acyclic package behind a cycle is no\nlonger published before its own dependency or reported as cyclic.\n\nroll strips config.ignore before merging stones, so an ignored-only\nstone can neither trigger the tag-homogeneity error nor brick release CI;\nan empty release distinguishes ignored-only (graceful skip) from stale\nstones referencing unknown packages (hard error naming them). The same\ndistinction now guards release-pr via shared release-plan helpers, and\nits PR title is capped instead of unbounded.\n\ncheck and the version previews predict versions through applyStone, so\nwhat the user is shown matches what roll will produce, and one invalid\nmanifest degrades a single row instead of killing the command. pr now\nrejects explicitly requested ignored packages, and migrate validates\nevery changeset before writing any stone.\n\nroll --json no longer treats the flag as consent: an interactive\nterminal without --yes fails closed. The report gains a required\nwarnings array carrying ignore exclusions, cycle caveats and channel\nproblems; per-package git tags are gated on tagsReady like the tag list;\nthe stdout guard also intercepts console.log; and a mixed-channel plan\ndegrades a dry run to a warning instead of losing the failure report.\n\nBuild outputs declared as bare directories now match their contents, a\nmissing build executable carries its context label, schema.json accepts\nhidden-directory outputs it previously rejected, hydra's tests are back\nunder type-check, and the resume path's root-build skip/re-run behaviour\nis pinned by tests.",
+      "hash": "5092729",
+      "message": "close the gauntlet findings across planning, previews and reporting",
+      "packages": ["@r5n/hydra", "@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): close the gauntlet findings across planning, previews and reporting",
+      "type": "fix"
+    },
+    {
+      "body": "Three unrelated code paths wrote to stdout during a JSON roll — an\nunguarded cycle warning in publish-only, StoneManager's malformed-stone\nwarning, and a gh release create call missing .quiet() — any of which\ncorrupted the document a CI job parses. Rather than chase each caller,\nJSON mode now routes stdout to stderr for the duration of the run and\nrestores it only to print the report, so no library can pollute it. The\ngh call is quietened regardless.\n\nA --resume that failed reported an empty release: the report context was\nassigned only after resume() returned, so a partial publish emitted\npublished:false with no packages while versions were live on the\nregistry. The failure path now falls back to the active ledger.\n\nThe report also claimed tags that were never created, because the ledger\nrecords them at plan time; it now reports them only once tagging is\nconfirmed. Failure reports carry the cause chain, which previously\nexisted only on the human path via logErrorCauses.\n\nThe release workflow no longer discards the report when the roll fails —\nit prints it, still writes the job outputs, and then exits with the\nroll's status, so a partial publish is visible instead of vanishing with\nthe runner temp directory.\n\nAlso: the release build config validates array shape and rejects '..'\ninside output globs, the cycle fallback in orderForRelease breaks the\nmost-blocking node instead of dumping the remainder alphabetically (so a\nsatisfiable constraint is no longer violated and only forced nodes are\nreported), and packages/sisyphus/tsconfig.json finally includes tests/ —\nwhich was hiding six type errors, one of them the reason the new build\ntests never exercised a configured build.",
+      "hash": "20eb27e",
+      "message": "make roll --json output trustworthy",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): make roll --json output trustworthy",
+      "type": "fix"
+    },
+    {
+      "body": "Archived stones are now written from the planned stone rather than\nrenamed from disk, so a stone that config.ignore strips still hashes\nidentically when roll --publishOnly replays it. Without this, any\nrepository using ignore hit \"Prepared release plan has changed\" after\nits release PR merged.\n\nAn emptied stone no longer constrains the release channel, and a release\nPR whose stones reference nothing releasable now skips instead of\nfailing the job. sis pr skips the same way when every affected package\nis ignored.\n\nLeaving a prerelease is decided per release, not per package: a\ndependency bump keeps its channel unless the release itself is\ngraduating, which it is when an explicitly selected package is leaving a\nprerelease. The previous commit graduated unconditionally, which would\nhave shipped an unrelated in-flight rc as stable; before that,\ndependents were stranded on the channel their dependency had left.\n\nThe npm dist-tag derivation no longer truncates hyphenated tags into a\nshared channel, and refuses to fall back to the configured stable tag\nwhen a prerelease has no valid dist-tag, instead of silently publishing\na prerelease as latest.\n\nAlso: a caret range on a 0.0.x version is invalidated by a minor bump; a\nprerelease tag must be a single identifier, so \"beta.4\" can no longer\nproduce a version lower than the current one; commits without a package\nlist no longer crash the merge; semver rejects numeric identifiers past\nMAX_SAFE_INTEGER; changeset migration reports unsupported bump types\ninstead of dropping the package; and roll --json reports the dist-tag\nthe release will actually publish with.",
+      "hash": "dd05b10",
+      "message": "close defects found reviewing the release-correctness work",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): close defects found reviewing the release-correctness work",
+      "type": "fix"
+    },
+    {
+      "body": "A dependency bump preserved whatever prerelease channel the package was\nalready on, so an untagged release moved the directly selected packages\nto stable while every induced dependent stayed on the channel. A stable\n2.0.0 shipped alongside dependents pinned to it at 1.0.2-beta.3.\n\nSince a merged release must now agree on one prerelease tag, an untagged\nstone unambiguously means \"go stable\", and every package in it should\nleave the channel. Drop the special case: a dependency bump follows the\nrelease channel like any other bump.",
+      "hash": "a86ea07",
+      "message": "graduate dependents when a release leaves a prerelease",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): graduate dependents when a release leaves a prerelease",
+      "type": "fix"
+    },
+    {
+      "body": "VersionCalculator passed the base version through untouched whenever a\nprerelease tag was present and never read the bump at all, so 1.0.0 with\na minor bump and a beta tag produced 1.0.0-beta.1: a version that sorts\nbelow the already published 1.0.0, and one where a breaking change was\nindistinguishable from a typo fix. Parsing was split() and parseInt with\nno validation, so \"invalid\" produced NaN.0.1 and PackageUpdater wrote it\nstraight into package.json.\n\nAdd a strict semver module and rebuild the calculator on node-semver inc\nsemantics, where a release-level increment applied to a version that\nalready carries a prerelease drops the prerelease onto the core instead\nof advancing it. Because the core already encodes base plus accumulated\nbump, entering, continuing, escalating and leaving a prerelease all come\nout right with no persisted state:\n\n  1.0.0        + minor + beta => 1.1.0-beta.0\n  1.1.0-beta.0 + patch + beta => 1.1.0-beta.1\n  1.1.0-beta.1 + major + beta => 2.0.0-beta.0\n  1.1.0-beta.1 + patch        => 1.1.0\n\nEvery stable path is unchanged. Invalid versions, unknown bump types, a\nnormal bump applied to a snapshot version, and a prerelease tag that\nwould move a version backwards are now rejected before anything is\nwritten.\n\nStone.merge omitted Snapshot from its collect loop, so snapshot packages\nvanished whenever a second stone was pending, and it resolved\nconflicting prerelease tags by silently taking the first, applying it to\nevery package in the merge. Snapshots are now collected, a package\nrequested as both a snapshot and a normal release is a hard error, and\nthe merge set must be tag homogeneous. Commits dedupe by hash with their\npackage attribution unioned, and mergeAll no longer short-circuits on a\nsingle stone, so one stone listing a package under two bump keys can no\nlonger produce a duplicate git tag mid-release.\n\nThe npm dist-tag now follows the release channel instead of publishing\nevery prerelease as latest.",
+      "hash": "74707c5",
+      "message": "correct prerelease arithmetic and stone merging",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): correct prerelease arithmetic and stone merging",
+      "type": "fix"
+    },
+    {
+      "body": "Dependent discovery walked exactly one hop from the initially selected\npackages, so a change to a package deep in the graph left its indirect\nconsumers pinned to a stale version. It also derived edges from\ndependencies and devDependencies only, ignoring peerDependencies and\noptionalDependencies, which PublishManifest resolves at pack time.\n\nReplace findDependencyPackages with a worklist that runs to a fixed\npoint over the bump lattice, so cycles terminate and output is sorted.\nPackage now carries the workspace edges it declares, with the kind and\nthe specifier retained, and WorkspaceScanner no longer owns graph\nsemantics.\n\nRelease-bearing edge kinds and range awareness are configurable via the\nnew dependents config. Both defaults reproduce today's release sets:\nevery kind is release bearing, and every dependent is released\nregardless of whether its published range still admits the new version.\ndevDependencies stay in the defaults because bundled CLIs inline their\nworkspace dependencies at build time.\n\nconfig.ignore was written by migrate but read nowhere. It is now\nenforced when seeding, when propagating, and when materialising a\nrelease plan, and propagation never traverses through an ignored\npackage.\n\nRelease sets are now topologically ordered so a dependency is tagged and\npublished before the dependent that pins it.",
+      "hash": "d5ff33e",
+      "message": "propagate dependents transitively and honour ignore",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "fix(sisyphus): propagate dependents transitively and honour ignore",
+      "type": "fix"
+    }
+  ],
+  "id": "0002-50611a29",
+  "message": "Bug fixes",
+  "patch": ["@r5n/sisyphus", "@r5n/tools", "@r5n/hydra", "@r5n/cli-core", "@r5n/atlas"]
+}

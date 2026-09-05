@@ -1,0 +1,25 @@
+{
+  "commits": [
+    {
+      "body": "The pack watcher slept 100 ms and hoped the orchestrator was mid-pack by\nthen; under load the mutation landed before the post-build source check\nand the test reported the wrong guard. Wait for the staging directory\nthe orchestrator creates right before packing instead, which pins the\nmutation to the window the test is actually about.\n\nRaise the bun test timeout to 30 s: the release suites spawn git, npm and\nbun per test and exceed the 5 s default on a busy runner.",
+      "hash": "6b41476",
+      "message": "make the pack-race fixtures deterministic",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "test(sisyphus): make the pack-race fixtures deterministic",
+      "type": "test"
+    },
+    {
+      "body": "The archive fix shipped without a regression test; add one that fails\nagainst the previous rename-the-file behaviour and passes against the\nwritten-from-plan behaviour.\n\nAlso: drop the unreachable Exit around Bun.Glob matching rather than\nleave dead error handling, kill the build subprocess if draining its\nstreams rejects, and report the release commit for a release that\ncreates no ledger, so a tags-only roll --json no longer says null.",
+      "hash": "5353552",
+      "message": "pin the archived-stone fix and close review leftovers",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "test(sisyphus): pin the archived-stone fix and close review leftovers",
+      "type": "test"
+    }
+  ],
+  "id": "0003-eea83819",
+  "message": "Tests",
+  "patch": ["@r5n/sisyphus"]
+}

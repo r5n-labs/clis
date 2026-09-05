@@ -34,6 +34,10 @@
       "messagePatterns": ["^chore\\(release\\):", "^chore: add stone"]
     }
   },
+  "dependents": {
+    "kinds": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],
+    "updateInternal": "always"
+  },
   "ignore": [],
   "lastStone": { "commit": "2916c61decf072aec31198bafbb6b1cfa090aec4", "date": "2026-08-03T09:04:51.461Z" },
   "plugins": [],
@@ -64,6 +68,6 @@
   "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": ["0001-5e767742", "0002-50611a29", "0003-eea83819", "0004-e58292b9", "0005-4e48cbe4"],
   "tag": "latest"
 }
