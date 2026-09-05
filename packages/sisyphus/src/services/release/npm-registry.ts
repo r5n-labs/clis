@@ -3,9 +3,11 @@ import { dirname } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { DEFAULT_NPM_TAG } from "../../constants";
 import type { Package } from "../../domain";
+import { parseSemver, prereleaseTag, type Semver } from "../../domain/semver";
 import { getErrorDetail } from "./run";
 
 const NPM_TAG_PATTERN = /^[A-Za-z][0-9A-Za-z._-]*$/;
+const SNAPSHOT_TIMESTAMP_SUFFIX = /-\d{14,}$/;
 const SEMVER_LIKE_NPM_TAG_PATTERN =
   /^(?:[vV]?\d+(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?|[xX])$/;
 
@@ -22,6 +24,57 @@ export function getNpmTag(configuredTag: string): string {
     );
   }
   return tag;
+}
+
+export function resolveReleaseNpmTag(packages: readonly Package[], configuredTag: string): string {
+  const configured = getNpmTag(configuredTag);
+  const channels = new Set<string>();
+
+  for (const pkg of packages) {
+    if (pkg.isPrivate) continue;
+
+    const version = pkg.newVersion ?? pkg.version;
+    const parsed = parseSemver(version);
+
+    if (!parsed) {
+      throw new Exit(
+        `Cannot derive an npm dist-tag for ${pkg.name}@${version}`,
+        "The version is not valid SemVer; fix it before publishing",
+      );
+    }
+
+    if (parsed.prerelease.length === 0) {
+      channels.add(configured);
+      continue;
+    }
+
+    const channel = prereleaseChannel(parsed);
+    if (!channel || !isValidNpmTag(channel)) {
+      throw new Exit(
+        `Cannot derive an npm dist-tag for ${pkg.name}@${version}`,
+        "Use a prerelease identifier that is a valid npm dist-tag (e.g. beta, rc)",
+      );
+    }
+
+    channels.add(channel);
+  }
+
+  if (channels.size <= 1) return [...channels][0] ?? configured;
+
+  throw new Exit(
+    `Release mixes npm dist-tags (${[...channels].sort().join(", ")})`,
+    "Roll stable and prerelease packages separately, or give every prerelease the same tag",
+  );
+}
+
+function prereleaseChannel(parsed: Semver): string | undefined {
+  const canonical = prereleaseTag(parsed);
+  if (canonical) return canonical;
+
+  const [identifier] = parsed.prerelease;
+  if (typeof identifier !== "string") return undefined;
+
+  return identifier.replace(SNAPSHOT_TIMESTAMP_SUFFIX, "");
 }
 
 export function getPackageScope(packageName: string): string | undefined {
@@ -114,10 +167,11 @@ export function parseNpmRegistry(value: string): string | undefined {
 export function readPublishedPackage(
   metadata: unknown,
 ): { integrity: string; name: string; version: string } | undefined {
-  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return undefined;
-  const name = Reflect.get(metadata, "name");
-  const version = Reflect.get(metadata, "version");
-  const dist = Reflect.get(metadata, "dist");
+  const entry = Array.isArray(metadata) ? (metadata.length === 1 ? metadata[0] : undefined) : metadata;
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+  const name = Reflect.get(entry, "name");
+  const version = Reflect.get(entry, "version");
+  const dist = Reflect.get(entry, "dist");
   if (typeof dist !== "object" || dist === null || Array.isArray(dist)) return undefined;
   const integrity = Reflect.get(dist, "integrity");
   if (typeof name !== "string" || typeof version !== "string" || typeof integrity !== "string") return undefined;

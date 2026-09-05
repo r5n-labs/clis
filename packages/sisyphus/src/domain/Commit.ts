@@ -1,3 +1,4 @@
+import { Exit } from "@r5n/cli-core";
 import { OTHER_COMMIT_TYPE, SHORT_HASH_LENGTH } from "../constants";
 
 const CONVENTIONAL_COMMIT_REGEX = /^(\w+)(?:\(([^)]+)\))?(!)?: (.+)$/;
@@ -63,9 +64,19 @@ export class Commit {
   }
 
   static async since(commitHash?: string): Promise<Commit[]> {
-    if (commitHash) {
-      const commits = await Commit.tryFetchFromRange(`${commitHash}..HEAD`);
-      if (commits) return commits;
+    if (commitHash !== undefined) {
+      try {
+        const resolved = await Bun.$`git rev-parse --verify --end-of-options ${`${commitHash}^{commit}`}`.quiet();
+        const baseline = resolved.stdout.toString().trim();
+        return await Commit.fetchFromRange(`${baseline}..HEAD`);
+      } catch (error) {
+        const failure = new Exit(
+          `Failed to read commits since ${commitHash}`,
+          "Fetch the missing commit or correct the configured baseline before creating stones",
+        );
+        failure.cause = error;
+        throw failure;
+      }
     }
 
     return Commit.fetchFromRange("HEAD");

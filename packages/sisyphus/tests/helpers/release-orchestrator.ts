@@ -8,7 +8,7 @@ import { Package } from "../../src/domain/Package";
 import { Stone } from "../../src/domain/Stone";
 import { type ReleaseOptions, ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import type { ReleaseLedger } from "../../src/services/release-ledger";
-import type { SisyphusConfig } from "../../src/types";
+import type { ReleaseBuildConfig, SisyphusConfig } from "../../src/types";
 
 export const PACKAGE_NAME = "@fixture/foo";
 export const PACKAGE_FILE = "packages/foo/package.json";
@@ -68,12 +68,34 @@ export async function setupReleaseFixture(withChangelog: boolean): Promise<Fixtu
   return { remote, root };
 }
 
-export function makeConfig(root: string): ConfigManager<SisyphusConfig> {
-  return new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), SISYPHUS_DEFAULT_CONFIG);
+export function makeConfig(root: string, build?: Partial<ReleaseBuildConfig>): ConfigManager<SisyphusConfig> {
+  const config = new ConfigManager<SisyphusConfig>(join(root, ".sisyphus/config.json"), SISYPHUS_DEFAULT_CONFIG);
+  if (build) {
+    config.set("release", { ...config.get("release"), build: { ...config.get("release").build, ...build } });
+  }
+  return config;
 }
 
-export function makeOrchestrator(root: string, options: Partial<ReleaseOptions> = {}): ReleaseOrchestrator {
-  return new ReleaseOrchestrator(makeConfig(root), { ...BASE_OPTIONS, ...options });
+export function makeOrchestrator(
+  root: string,
+  options: Partial<ReleaseOptions> = {},
+  build?: Partial<ReleaseBuildConfig>,
+): ReleaseOrchestrator {
+  return new ReleaseOrchestrator(makeConfig(root, build), { ...BASE_OPTIONS, ...options });
+}
+
+export function makeRootBuildScript(root: string, emits: Record<string, string> = {}): string[] {
+  const lines = [
+    'const countFile = Bun.file("root-build-count.txt");',
+    "const count = (await countFile.exists()) ? Number(await countFile.text()) : 0;",
+    "await Bun.write(countFile, String(count + 1));",
+    ...Object.entries(emits).map(
+      ([path, contents]) => `await Bun.write(${JSON.stringify(path)}, ${JSON.stringify(contents)});`,
+    ),
+  ];
+
+  writeFileSync(join(root, "root-build.ts"), `${lines.join("\n")}\n`);
+  return ["bun", "root-build.ts"];
 }
 
 export function makePackage(): Package {
@@ -89,6 +111,20 @@ export function makePackage(): Package {
 export function makePendingStone(): Stone {
   return Stone.fromJson({ id: "0001-testtest", message: "ship it", patch: [PACKAGE_NAME] });
 }
+
+const PACK_STAGE_PREFIX = "sisyphus-package-stage-";
+const PACK_WATCHER_TIMEOUT_MS = 10_000;
+const PACK_WATCHER_POLL_MS = 5;
+const PACK_WATCHER_WAIT = [
+  'import { readdirSync } from "node:fs";',
+  'import { tmpdir } from "node:os";',
+  `const isStage = (name) => name.startsWith("${PACK_STAGE_PREFIX}");`,
+  "const before = new Set(readdirSync(tmpdir()).filter(isStage));",
+  `const deadline = Date.now() + ${PACK_WATCHER_TIMEOUT_MS};`,
+  "while (Date.now() < deadline && !readdirSync(tmpdir()).some((name) => isStage(name) && !before.has(name))) {",
+  `  await Bun.sleep(${PACK_WATCHER_POLL_MS});`,
+  "}",
+];
 
 export type PublishPackageOptions = {
   commitChanges?: boolean;
@@ -134,7 +170,7 @@ export function makePublishPackage(
           'await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
         ]
       : ['await Bun.write("source.ts", "export const changed = true;\\n");'];
-    writeFileSync(join(root, directory, "pack-watcher.ts"), ["await Bun.sleep(100);", ...mutation].join("\n"));
+    writeFileSync(join(root, directory, "pack-watcher.ts"), [...PACK_WATCHER_WAIT, ...mutation].join("\n"));
   }
   writeFileSync(
     join(root, file),

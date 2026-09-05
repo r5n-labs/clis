@@ -212,7 +212,7 @@ export class GitHubProvider extends GitProvider {
   }
 
   async createRelease(options: CreateReleaseOptions): Promise<void> {
-    await Bun.$`gh release create ${options.tag} --repo ${`${this.owner}/${this.repo}`} --title ${options.title} --notes ${options.notes} --verify-tag`;
+    await Bun.$`gh release create ${options.tag} --repo ${`${this.owner}/${this.repo}`} --title ${options.title} --notes ${options.notes} --verify-tag`.quiet();
   }
 
   async deleteRelease(tag: string): Promise<void> {

@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Package } from "../src/domain/Package";
-import { buildPackagePathMap, findAffectedPackages, findDependencyPackages } from "../src/utils";
+import { buildPackagePathMap, findAffectedPackages } from "../src/utils";
 
-const makePackage = (name: string, file: string, dependencyOf?: string[]) =>
-  new Package({ dependencyOf, file, name, version: "1.0.0" });
+const makePackage = (name: string, file: string) => new Package({ file, name, version: "1.0.0" });
 
 describe("buildPackagePathMap", () => {
   test("maps package file paths to directory -> name pairs", () => {
@@ -79,48 +78,5 @@ describe("findAffectedPackages", () => {
     expect(result).toContain("@scope/ui");
     expect(result).toContain("@scope/core");
     expect(result).not.toContain("root");
-  });
-});
-
-describe("findDependencyPackages", () => {
-  test("returns dependents not in selected list", () => {
-    const packages = new Map<string, Package>([
-      ["@scope/utils", makePackage("@scope/utils", "packages/utils/package.json", ["@scope/ui", "@scope/core"])],
-    ]);
-
-    const result = findDependencyPackages(["@scope/utils"], packages);
-
-    expect(result).toEqual(expect.arrayContaining(["@scope/ui", "@scope/core"]));
-    expect(result).toHaveLength(2);
-  });
-
-  test("skips packages already in selectedNames", () => {
-    const packages = new Map<string, Package>([
-      ["@scope/utils", makePackage("@scope/utils", "packages/utils/package.json", ["@scope/ui", "@scope/core"])],
-    ]);
-
-    const result = findDependencyPackages(["@scope/utils", "@scope/ui"], packages);
-
-    expect(result).toContain("@scope/core");
-    expect(result).not.toContain("@scope/ui");
-    expect(result).toHaveLength(1);
-  });
-
-  test("returns empty when no dependencies", () => {
-    const packages = new Map<string, Package>([["@scope/ui", makePackage("@scope/ui", "packages/ui/package.json")]]);
-
-    const result = findDependencyPackages(["@scope/ui"], packages);
-
-    expect(result).toEqual([]);
-  });
-
-  test("handles packages with no dependencyOf field", () => {
-    const packages = new Map<string, Package>([
-      ["@scope/ui", makePackage("@scope/ui", "packages/ui/package.json", undefined)],
-    ]);
-
-    const result = findDependencyPackages(["@scope/ui"], packages);
-
-    expect(result).toEqual([]);
   });
 });

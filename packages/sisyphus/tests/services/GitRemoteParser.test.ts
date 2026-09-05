@@ -1,151 +1,65 @@
 import { describe, expect, test } from "bun:test";
+import { parsePrUrl, parseRemoteUrl } from "../../src/providers";
+import { createCommitUrl } from "../../src/services/GitRemoteParser";
 
-const GITHUB_PATTERN = /github\.com[:/]([^/]+)\/([^/.]+)/;
-const GITLAB_PATTERN = /gitlab\.com[:/]([^/]+)\/([^/.]+)/;
-const BITBUCKET_PATTERN = /bitbucket\.org[:/]([^/]+)\/([^/.]+)/;
-
-type Provider = "github" | "gitlab" | "bitbucket";
-
-const PROVIDER_DOMAIN: Record<Provider, string> = {
-  bitbucket: "bitbucket.org",
-  github: "github.com",
-  gitlab: "gitlab.com",
-};
-
-const COMMIT_PATH: Record<Provider, string> = { bitbucket: "commits", github: "commit", gitlab: "-/commit" };
-
-function parseUrl(
-  url: string,
-): { provider: Provider; owner: string; repo: string; commitUrl: (hash: string) => string } | null {
-  const patterns: [RegExp, Provider][] = [
-    [GITHUB_PATTERN, "github"],
-    [GITLAB_PATTERN, "gitlab"],
-    [BITBUCKET_PATTERN, "bitbucket"],
-  ];
-
-  for (const [pattern, provider] of patterns) {
-    const match = url.match(pattern);
-    if (match) {
-      const [, owner, repo] = match;
-      if (owner && repo) {
-        const domain = PROVIDER_DOMAIN[provider];
-        const commitPath = COMMIT_PATH[provider];
-        const baseUrl = `https://${domain}/${owner}/${repo}`;
-        return { commitUrl: (hash: string) => `${baseUrl}/${commitPath}/${hash}`, owner, provider, repo };
-      }
-    }
-  }
-
-  return null;
-}
-
-describe("GitRemoteParser URL parsing", () => {
-  describe("GitHub", () => {
-    test("parses HTTPS URL with .git suffix", () => {
-      expect(parseUrl("https://github.com/owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "github",
-        repo: "repo",
-      });
-    });
-
-    test("parses SSH URL", () => {
-      expect(parseUrl("git@github.com:owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "github",
-        repo: "repo",
-      });
-    });
-
-    test("parses HTTPS URL without .git suffix", () => {
-      expect(parseUrl("https://github.com/owner/repo")).toMatchObject({
-        owner: "owner",
-        provider: "github",
-        repo: "repo",
-      });
-    });
-
-    test("generates correct commit URL", () => {
-      expect(parseUrl("https://github.com/owner/repo.git")?.commitUrl("abc123")).toBe(
-        "https://github.com/owner/repo/commit/abc123",
-      );
-    });
+describe("production git remote parsing", () => {
+  test.each([
+    ["https://github.com/owner/my.project.git", "github", "owner", "my.project"],
+    ["git@github.com:owner/repo.git", "github", "owner", "repo"],
+    ["ssh://git@github.com/owner/repo.git", "github", "owner", "repo"],
+    ["https://user:token@github.com/owner/repo.git", "github", "owner", "repo"],
+    ["https://gitlab.com/group/subgroup/repo.git", "gitlab", "group/subgroup", "repo"],
+    ["git@gitlab.com:group/subgroup/nested/repo.git", "gitlab", "group/subgroup/nested", "repo"],
+    ["https://bitbucket.org/owner/repo.git", "bitbucket", "owner", "repo"],
+    ["git@bitbucket.org:owner/repo.git", "bitbucket", "owner", "repo"],
+  ] as const)("parses %s", (url, provider, owner, repo) => {
+    expect(parseRemoteUrl(url ?? "")).toEqual({ owner, provider, repo });
   });
 
-  describe("GitLab", () => {
-    test("parses HTTPS URL with .git suffix", () => {
-      expect(parseUrl("https://gitlab.com/owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "gitlab",
-        repo: "repo",
-      });
-    });
-
-    test("parses SSH URL", () => {
-      expect(parseUrl("git@gitlab.com:owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "gitlab",
-        repo: "repo",
-      });
-    });
-
-    test("generates correct commit URL with -/commit path", () => {
-      expect(parseUrl("https://gitlab.com/owner/repo.git")?.commitUrl("def456")).toBe(
-        "https://gitlab.com/owner/repo/-/commit/def456",
-      );
-    });
+  test.each([
+    ["https://github.com/owner/repo.git", "https://github.com/owner/repo/commit/abc123"],
+    ["https://gitlab.com/group/subgroup/repo.git", "https://gitlab.com/group/subgroup/repo/-/commit/abc123"],
+    ["https://bitbucket.org/owner/repo.git", "https://bitbucket.org/owner/repo/commits/abc123"],
+  ])("generates a commit URL from %s", (url, expected) => {
+    const remote = parseRemoteUrl(url ?? "");
+    if (!remote) throw new Error("Expected a parsed remote");
+    expect(createCommitUrl(remote)("abc123")).toBe(expected);
   });
 
-  describe("Bitbucket", () => {
-    test("parses HTTPS URL with .git suffix", () => {
-      expect(parseUrl("https://bitbucket.org/owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "bitbucket",
-        repo: "repo",
-      });
-    });
+  test.each([
+    "https://github.com.example.org/owner/repo.git",
+    "https://example.org/github.com/owner/repo.git",
+    "not-a-url",
+    "",
+  ])("rejects unsupported remote %s", (url) => {
+    expect(parseRemoteUrl(url)).toBeNull();
+  });
+});
 
-    test("parses SSH URL", () => {
-      expect(parseUrl("git@bitbucket.org:owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "bitbucket",
-        repo: "repo",
-      });
-    });
-
-    test("generates correct commit URL with commits path", () => {
-      expect(parseUrl("https://bitbucket.org/owner/repo.git")?.commitUrl("789abc")).toBe(
-        "https://bitbucket.org/owner/repo/commits/789abc",
-      );
-    });
+describe("parsePrUrl", () => {
+  test.each([
+    ["https://github.com/owner/my.project/pull/42", "github", "owner", "my.project"],
+    ["https://gitlab.com/group/subgroup/repo/-/merge_requests/42", "gitlab", "group/subgroup", "repo"],
+    [
+      "https://gitlab.com/group/subgroup/nested/repo/-/merge_requests/42/diffs",
+      "gitlab",
+      "group/subgroup/nested",
+      "repo",
+    ],
+    ["https://bitbucket.org/owner/repo/pull-requests/42?tab=diff", "bitbucket", "owner", "repo"],
+  ] as const)("parses %s", (url, provider, owner, repo) => {
+    expect(parsePrUrl(url ?? "")).toEqual({ number: 42, owner, provider, repo });
   });
 
-  describe("URL with credentials", () => {
-    test("parses HTTPS URL containing user:token credentials", () => {
-      expect(parseUrl("https://user:token@github.com/owner/repo.git")).toMatchObject({
-        owner: "owner",
-        provider: "github",
-        repo: "repo",
-      });
-    });
-  });
-
-  describe("no match cases", () => {
-    test.each(["https://sourcehut.org/owner/repo.git", "not-a-url", ""])("returns null for %j", (url) => {
-      expect(parseUrl(url)).toBeNull();
-    });
-  });
-
-  describe("known bugs", () => {
-    test("BUG: dots in repo names - captures only text before first dot", () => {
-      expect(parseUrl("https://github.com/owner/my.project.git")).toMatchObject({ owner: "owner", repo: "my" });
-    });
-
-    test("BUG: GitLab nested subgroups - captures group as owner, subgroup as repo", () => {
-      expect(parseUrl("https://gitlab.com/group/subgroup/repo.git")).toMatchObject({
-        owner: "group",
-        repo: "subgroup",
-      });
-    });
+  test.each([
+    "https://github.com.example.org/owner/repo/pull/42",
+    "https://example.org/github.com/owner/repo/pull/42",
+    "https://github.com/owner/repo/pull/42abc",
+    "https://github.com/owner/repo/pull/0",
+    "https://github.com/owner/repo/pull/99999999999999999999",
+    "ssh://github.com/owner/repo/pull/42",
+    "not-a-url",
+  ])("rejects unrelated or malformed URL %s", (url) => {
+    expect(parsePrUrl(url)).toBeNull();
   });
 });

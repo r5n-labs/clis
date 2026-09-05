@@ -1,6 +1,23 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { cp, link, mkdir, readdir, readFile, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  link,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  stat,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { Exit } from "@r5n/cli-core";
 import { SHARED_DIR } from "../constants";
 import type { Profile } from "../types";
 import type { GitHubTarget } from "./github-url";
@@ -12,6 +29,11 @@ const RUNNER_REPO = "actions/runner";
 const PLATFORM_MAP = { linux: "linux-x64", osx: "osx-arm64", windows: "win-x64" } as const;
 const HARDLINK_DIRS = ["bin"];
 const SYMLINK_DIRS = ["externals"];
+const FIRST_PROCESS_ID = 1;
+const STOP_TIMEOUT_MS = 5_000;
+const STOP_POLL_MS = 50;
+const DOWNLOAD_LOCK_TIMEOUT_MS = 5_000;
+const DOWNLOAD_LOCK_POLL_MS = 50;
 
 export class GitHubRunnerProvider implements RunnerProvider {
   private sharedPath: string | null = null;
@@ -23,20 +45,30 @@ export class GitHubRunnerProvider implements RunnerProvider {
     const version = await this.getLatestVersion();
     const versionDir = join(SHARED_DIR, "github", version);
 
-    if (existsSync(versionDir)) {
+    if (await this.isCompleteDownload(versionDir)) {
       this.sharedPath = versionDir;
       return { path: versionDir, version };
     }
 
-    await mkdir(versionDir, { recursive: true });
+    const providerDir = join(SHARED_DIR, "github");
+    await mkdir(providerDir, { recursive: true });
+    const stagingDir = await mkdtemp(join(SHARED_DIR, `.github-${version}-`));
 
     const tarball = `actions-runner-${platform}-${version}.tar.gz`;
-    const tarballPath = join(versionDir, tarball);
+    const tarballPath = join(stagingDir, tarball);
     const downloadUrl = `https://github.com/${RUNNER_REPO}/releases/download/v${version}/${tarball}`;
 
-    await Bun.$`curl -sL -o ${tarballPath} ${downloadUrl}`;
-    await Bun.$`tar xzf ${tarballPath} -C ${versionDir}`;
-    await unlink(tarballPath);
+    try {
+      await Bun.$`curl --fail --silent --show-error --location -o ${tarballPath} ${downloadUrl}`;
+      await Bun.$`tar xzf ${tarballPath} -C ${stagingDir}`;
+      await unlink(tarballPath);
+      if (!(await this.isCompleteDownload(stagingDir))) {
+        throw new Exit(`Runner v${version} archive is incomplete`);
+      }
+      await this.publishDownload(stagingDir, versionDir, version);
+    } finally {
+      await rm(stagingDir, { force: true, recursive: true });
+    }
 
     this.sharedPath = versionDir;
     return { path: versionDir, version };
@@ -48,8 +80,21 @@ export class GitHubRunnerProvider implements RunnerProvider {
 
     for (const id of ids) {
       const runnerDir = join(this.profile.directory, id);
-      await this.setupRunnerDir(shared, runnerDir);
-      await this.registerRunner(runnerDir, id);
+      if (existsSync(runnerDir)) {
+        throw new Exit(
+          `Runner directory already exists: ${runnerDir}`,
+          "Remove or recover this runner before creating it again",
+        );
+      }
+      try {
+        await this.setupRunnerDir(shared, runnerDir);
+        await this.registerRunner(runnerDir, id);
+      } catch (error) {
+        if (!existsSync(join(runnerDir, ".runner"))) {
+          await rm(runnerDir, { force: true, recursive: true });
+        }
+        throw error;
+      }
       runners.push({ directory: runnerDir, id, name: id, status: "registered" });
     }
 
@@ -62,7 +107,13 @@ export class GitHubRunnerProvider implements RunnerProvider {
       if (!existsSync(join(runnerDir, ".runner"))) continue;
 
       const token = await this.fetchRemovalToken(runnerDir);
-      await Bun.$`bash ./config.sh remove --token ${token}`.cwd(runnerDir).quiet().nothrow();
+      const result = await Bun.$`bash ./config.sh remove --token ${token}`.cwd(runnerDir).quiet().nothrow();
+      if (result.exitCode !== 0) {
+        throw new Exit(
+          `Failed to deregister runner ${id}`,
+          result.stderr.toString().trim() || "Runner files have been preserved; retry removal",
+        );
+      }
     }
   }
 
@@ -72,7 +123,9 @@ export class GitHubRunnerProvider implements RunnerProvider {
       const existingPid = await this.readPidFile(runnerDir);
       if (existingPid && this.isProcessRunning(existingPid)) continue;
 
-      const proc = Bun.spawn(["bash", "./run.sh"], { cwd: resolve(runnerDir), stderr: "pipe", stdout: "pipe" });
+      const proc = spawn("bash", ["./run.sh"], { cwd: resolve(runnerDir), detached: true, stdio: "ignore" });
+      await once(proc, "spawn");
+      if (proc.pid === undefined) throw new Exit(`Failed to start runner ${id}`);
       proc.unref();
       await this.writePidFile(runnerDir, proc.pid);
     }
@@ -82,10 +135,24 @@ export class GitHubRunnerProvider implements RunnerProvider {
     for (const id of ids) {
       const runnerDir = join(this.profile.directory, id);
       const pid = await this.readPidFile(runnerDir);
-      if (!pid) continue;
-
-      const absDir = resolve(runnerDir);
-      await Bun.$`pkill -f ${absDir}`.quiet().nothrow();
+      if (pid && this.isProcessRunning(pid)) {
+        try {
+          process.kill(-pid, "SIGTERM");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch (cause) {
+            if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause;
+          }
+        }
+        const deadline = Date.now() + STOP_TIMEOUT_MS;
+        while (this.isProcessRunning(pid)) {
+          if (Date.now() >= deadline)
+            throw new Exit(`Runner ${id} did not stop`, "Wait for its current job to finish and retry");
+          await Bun.sleep(STOP_POLL_MS);
+        }
+      }
 
       await this.removePidFile(runnerDir);
     }
@@ -144,6 +211,46 @@ export class GitHubRunnerProvider implements RunnerProvider {
     return path;
   }
 
+  private async isCompleteDownload(directory: string): Promise<boolean> {
+    try {
+      const required = await Promise.all(
+        ["bin", "externals", "config.sh", "run.sh"].map((name) => stat(join(directory, name))),
+      );
+      return required.every((entry, index) =>
+        index < HARDLINK_DIRS.length + SYMLINK_DIRS.length ? entry.isDirectory() : entry.isFile(),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  private async publishDownload(stagingDir: string, versionDir: string, version: string): Promise<void> {
+    const lockPath = join(SHARED_DIR, `.github-${version}.lock`);
+    const deadline = Date.now() + DOWNLOAD_LOCK_TIMEOUT_MS;
+    while (true) {
+      try {
+        await mkdir(lockPath);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (Date.now() >= deadline)
+          throw new Exit(
+            `Runner download is locked: ${lockPath}`,
+            "Retry after other Hydra downloads finish; remove a stale lock only when no download is running",
+          );
+        await Bun.sleep(DOWNLOAD_LOCK_POLL_MS);
+      }
+    }
+    try {
+      if (await this.isCompleteDownload(versionDir)) return;
+      await rm(versionDir, { force: true, recursive: true });
+      await rename(stagingDir, versionDir);
+    } finally {
+      await rm(lockPath, { force: true, recursive: true });
+    }
+  }
+
   private async setupRunnerDir(sharedPath: string, runnerDir: string) {
     await mkdir(runnerDir, { recursive: true });
 
@@ -169,7 +276,16 @@ export class GitHubRunnerProvider implements RunnerProvider {
 
   private async registerRunner(runnerDir: string, name: string) {
     const regToken = await this.fetchRegistrationToken();
-    const configArgs = ["--url", this.profile.url, "--token", regToken, "--name", name, "--unattended"];
+    const configArgs = [
+      "--url",
+      this.profile.url,
+      "--token",
+      regToken,
+      "--name",
+      name,
+      "--unattended",
+      "--disableupdate",
+    ];
     if (this.profile.labels) configArgs.push("--labels", this.profile.labels);
     if (this.profile.runnerGroup) configArgs.push("--runnergroup", this.profile.runnerGroup);
 
@@ -229,7 +345,8 @@ export class GitHubRunnerProvider implements RunnerProvider {
   private async readPidFile(runnerDir: string): Promise<number | null> {
     try {
       const content = await readFile(this.pidFilePath(runnerDir), "utf-8");
-      return Number.parseInt(content.trim(), 10);
+      const pid = Number(content.trim());
+      return Number.isSafeInteger(pid) && pid > FIRST_PROCESS_ID ? pid : null;
     } catch {
       return null;
     }
@@ -299,8 +416,8 @@ export class GitHubRunnerProvider implements RunnerProvider {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "EPERM";
     }
   }
 }

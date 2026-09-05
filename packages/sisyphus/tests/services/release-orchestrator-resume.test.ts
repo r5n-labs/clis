@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GitProvider } from "../../src/providers";
@@ -13,6 +13,7 @@ import {
   makePackage,
   makePendingStone,
   makePublishPackage,
+  makeRootBuildScript,
   PACKAGE_FILE,
   PACKAGE_NAME,
   RELEASE_TAG,
@@ -21,12 +22,24 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
+async function writePackedArtifact(root: string, artifactPath: string, manifest: object): Promise<void> {
+  const source = join(root, ".git/artifact-fixture");
+  try {
+    mkdirSync(join(source, "package"), { recursive: true });
+    writeFileSync(join(source, "package/package.json"), JSON.stringify(manifest));
+    await Bun.$`tar czf ${artifactPath} -C ${source} package`.quiet();
+  } finally {
+    rmSync(source, { force: true, recursive: true });
+  }
+}
+
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
   const originalRegistry = process.env.BUN_CONFIG_REGISTRY;
   const originalToken = process.env.BUN_CONFIG_TOKEN;
   const originalNpmRegistry = process.env.NPM_CONFIG_REGISTRY;
   const originalProvenance = process.env.NPM_CONFIG_PROVENANCE;
+  const originalUserConfig = process.env.NPM_CONFIG_USERCONFIG;
   let fixture: Fixture | undefined;
   let registry: ReturnType<typeof Bun.serve> | undefined;
 
@@ -41,6 +54,8 @@ describe("ReleaseOrchestrator release resume", () => {
     else process.env.NPM_CONFIG_REGISTRY = originalNpmRegistry;
     if (originalProvenance === undefined) delete process.env.NPM_CONFIG_PROVENANCE;
     else process.env.NPM_CONFIG_PROVENANCE = originalProvenance;
+    if (originalUserConfig === undefined) delete process.env.NPM_CONFIG_USERCONFIG;
+    else process.env.NPM_CONFIG_USERCONFIG = originalUserConfig;
     process.chdir(originalCwd);
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
@@ -475,7 +490,7 @@ describe("ReleaseOrchestrator release resume", () => {
     process.chdir(root);
     const pkg = makePublishPackage(root, "packages/public", "@fixture/public").withVersions("1.0.0", "1.0.1");
     const artifactSource = join(root, "published.tgz");
-    writeFileSync(artifactSource, "published artifact");
+    await writePackedArtifact(root, artifactSource, { name: pkg.name, version: "1.0.1" });
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
@@ -523,6 +538,209 @@ describe("ReleaseOrchestrator release resume", () => {
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
     expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
     expect(methods).toEqual(["GET"]);
+  });
+
+  test("does not re-run the root build or clean outputs when every artifact is already in the ledger", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public").withVersions("1.0.0", "1.0.1");
+    const rootCommand = makeRootBuildScript(root, { "packages/public/dist/types.d.ts": "export {};\n" });
+    writeFileSync(join(root, ".gitignore"), "root-build-count.txt\n");
+    writeFileSync(join(root, "packages/public/.gitignore"), "build-count.txt\ndist\n");
+    writeFileSync(join(root, "root-build-count.txt"), "1");
+    mkdirSync(join(root, "packages/public/dist"), { recursive: true });
+    writeFileSync(join(root, "packages/public/dist/stale.js"), "export const stale = 1;\n");
+    const artifactSource = join(root, ".git/published.tgz");
+    await writePackedArtifact(root, artifactSource, { name: pkg.name, version: "1.0.1" });
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: true,
+          npmTag: "latest",
+          publishOnly: true,
+          push: false,
+          tags: false,
+        },
+        packages: [pkg],
+        stones: [],
+      },
+      root,
+    );
+    await recordReleaseCommit(ledger, root, head);
+    const artifact = await ledger.setArtifact(pkg.name, artifactSource);
+
+    registry = Bun.serve({
+      port: 0,
+      fetch() {
+        return Response.json({
+          "dist-tags": { latest: "1.0.1" },
+          name: pkg.name,
+          versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
+        });
+      },
+    });
+    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
+    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
+    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
+    process.env.NPM_CONFIG_PROVENANCE = "false";
+    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    await ledger.setPhase("local-ready");
+    await ledger.markNpm(pkg.name, "started");
+
+    const build = { outputs: ["packages/*/dist/**", "root-build-count.txt"], root: [rootCommand] };
+    await ReleaseOrchestrator.resume(makeConfig(root, build));
+
+    expect(readFileSync(join(root, "root-build-count.txt"), "utf-8")).toBe("1");
+    expect(existsSync(join(root, "packages/public/dist/stale.js"))).toBe(true);
+    expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test("re-runs the root build and cleans outputs on resume when an artifact is missing", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root } = fixture;
+    process.chdir(root);
+    const publicPkg = makePublishPackage(root, "packages/public", "@fixture/public").withVersions("1.0.0", "1.0.1");
+    const otherPkg = makePublishPackage(root, "packages/other", "@fixture/other").withVersions("1.0.0", "1.0.1");
+    for (const directory of ["packages/public", "packages/other"]) {
+      const manifestPath = join(root, directory, "package.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+      writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, files: ["dist"], version: "1.0.1" }, null, 2)}\n`);
+      writeFileSync(join(root, directory, ".gitignore"), "build-count.txt\ndist\n");
+    }
+    writeFileSync(join(root, ".gitignore"), "root-build-count.txt\n");
+    const rootCommand = makeRootBuildScript(root, {
+      "packages/other/dist/types.d.ts": "export {};\n",
+      "packages/public/dist/types.d.ts": "export {};\n",
+    });
+    makeConfig(root, { outputs: ["packages/*/dist/**", "root-build-count.txt"], root: [rootCommand] });
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "declare build outputs"`.quiet();
+    mkdirSync(join(root, "packages/other/dist"), { recursive: true });
+    writeFileSync(join(root, "packages/other/dist/stale.js"), "export const stale = 1;\n");
+    const artifactSource = join(root, ".git/published.tgz");
+    await writePackedArtifact(root, artifactSource, { name: publicPkg.name, version: "1.0.1" });
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: true,
+          npmTag: "latest",
+          publishOnly: true,
+          push: false,
+          tags: false,
+        },
+        packages: [publicPkg, otherPkg],
+        stones: [],
+      },
+      root,
+    );
+    await recordReleaseCommit(ledger, root, head);
+    const artifact = await ledger.setArtifact(publicPkg.name, artifactSource);
+
+    const published: string[] = [];
+    registry = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        if (request.method === "GET") {
+          const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
+          if (!packageName.startsWith(publicPkg.name)) return Response.json({ error: "not found" }, { status: 404 });
+          return Response.json({
+            "dist-tags": { latest: "1.0.1" },
+            name: publicPkg.name,
+            versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: publicPkg.name, version: "1.0.1" } },
+          });
+        }
+        published.push(decodeURIComponent(new URL(request.url).pathname.slice(1)));
+        await request.arrayBuffer();
+        return Response.json({ ok: true }, { status: 201 });
+      },
+    });
+    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
+    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
+    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
+    process.env.NPM_CONFIG_PROVENANCE = "false";
+    const registryUrl = new URL(registry.url);
+    const userConfig = join(root, ".git/npmrc-test");
+    writeFileSync(userConfig, `registry=${registry.url}\n//${registryUrl.host}/:_authToken=test-token\n`);
+    process.env.NPM_CONFIG_USERCONFIG = userConfig;
+    await ledger.setNpmRegistry(publicPkg.name, String(registry.url));
+    await ledger.setPhase("local-ready");
+    await ledger.markNpm(publicPkg.name, "started");
+    expect(existsSync(join(root, "root-build-count.txt"))).toBe(false);
+
+    await ReleaseOrchestrator.resume(makeConfig(root));
+
+    expect(readFileSync(join(root, "root-build-count.txt"), "utf-8")).toBe("1");
+    expect(existsSync(join(root, "packages/other/dist/stale.js"))).toBe(false);
+    expect(existsSync(join(root, "packages/other/dist/types.d.ts"))).toBe(true);
+    expect(readFileSync(join(root, "packages/other/build-count.txt"), "utf-8")).toBe("1");
+    expect(published).toEqual(["@fixture/other"]);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test("rejects invalid access in a reused artifact before starting push or npm publication", async () => {
+    fixture = await setupReleaseFixture(false);
+    const { root, remote } = fixture;
+    process.chdir(root);
+    const remoteBefore = await gitText(root, ["ls-remote", remote]);
+    const pkg = makePublishPackage(root, "packages/public", "@fixture/public");
+    await Bun.$`git add packages/public`.quiet();
+    await Bun.$`git commit -q -m "add package"`.quiet();
+    const head = await gitText(root, ["rev-parse", "HEAD"]);
+    const ledger = await ReleaseLedger.create(
+      {
+        options: {
+          changelog: false,
+          createRelease: false,
+          dryRun: false,
+          npm: true,
+          npmTag: "latest",
+          publishOnly: true,
+          push: true,
+          tags: true,
+        },
+        packages: [pkg],
+        stones: [],
+      },
+      root,
+    );
+    await recordReleaseCommit(ledger, root, head);
+    const artifactSource = join(root, ".git/invalid-access.tgz");
+    await writePackedArtifact(root, artifactSource, {
+      name: pkg.name,
+      version: pkg.version,
+      publishConfig: { access: "restriced" },
+    });
+    await ledger.setArtifact(pkg.name, artifactSource);
+    const requests: string[] = [];
+    registry = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push(request.method);
+        return Response.json({ error: "unexpected request" }, { status: 500 });
+      },
+    });
+    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    await ledger.setPhase("local-ready");
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("Invalid publishConfig.access");
+
+    const remaining = await ReleaseLedger.loadActive(root);
+    expect(remaining?.data.phase).toBe("local-ready");
+    expect(remaining?.data.operations.push?.state).toBe("pending");
+    expect(remaining?.data.operations.npm[pkg.name]?.state).toBe("pending");
+    expect(await gitText(root, ["ls-remote", remote])).toBe(remoteBefore);
+    expect(requests).toEqual([]);
+    expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
   });
 
   test("refuses to build a missing resume artifact from dirty root metadata", async () => {

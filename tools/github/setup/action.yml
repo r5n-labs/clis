@@ -2,9 +2,13 @@ name: Setup Monorepo
 description: Prepare and install everything for the monorepo
 inputs:
   bun:
-    description: Bun setup via oven-sh/setup-bun
+    description: Install Bun in the job's temporary directory
     required: false
     default: "true"
+  bun-version:
+    description: Bun version to install
+    required: false
+    default: latest
   install-retry:
     description: Install dependencies with retry
     required: false
@@ -15,9 +19,22 @@ runs:
   steps:
     - name: 🌭 Setup bun
       if: inputs.bun == 'true'
-      uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
+      shell: bash
+      env:
+        BUN_INSTALL: ${{ runner.temp }}/bun
+        BUN_VERSION: ${{ inputs.bun-version }}
+      run: |
+        set -euo pipefail
+        export PATH="$BUN_INSTALL/bin:$PATH"
+        installer="$RUNNER_TEMP/install-bun.sh"
+        curl --fail --silent --show-error --location https://bun.sh/install --output "$installer"
+        if [ "$BUN_VERSION" = "latest" ]; then
+          bash "$installer"
+        else
+          bash "$installer" "bun-v${BUN_VERSION#bun-v}"
+        fi
+        "$BUN_INSTALL/bin/bun" --version
+        printf '%s\n' "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
 
     - name: 📦 Install dependencies
       if: inputs.install-retry == 'true'
@@ -28,10 +45,6 @@ runs:
         retry_wait_seconds: 1
         retry_on: error
         command: bun install --frozen-lockfile
-        new_command_on_retry: |
-          git checkout .
-          rm -rf bun.lock
-          bun clean
 
     - name: 📦 Install dependencies
       if: inputs.install-retry == 'false'

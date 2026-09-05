@@ -1,0 +1,16 @@
+{
+  "commits": [
+    {
+      "body": "The release-correctness work grew the bundle to 245 KB, past the 240 KB\nguard, so the build failed on a clean checkout.",
+      "hash": "243d6bc",
+      "message": "raise the bundle budget to 256 KB",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "build(sisyphus): raise the bundle budget to 256 KB",
+      "type": "build"
+    }
+  ],
+  "id": "0004-e58292b9",
+  "message": "Build",
+  "patch": ["@r5n/sisyphus"]
+}

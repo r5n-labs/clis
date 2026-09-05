@@ -60,7 +60,7 @@
         "useSortedClasses": { "fix": "safe", "level": "warn", "options": {} }
       },
       "performance": { "noBarrelFile": "off" },
-      "recommended": true,
+      "preset": "recommended",
       "style": {
         "noDefaultExport": "off",
         "noImplicitBoolean": "off",

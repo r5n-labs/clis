@@ -354,7 +354,7 @@ describe("ReleaseLedger", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(existsSync(join(ledger.releaseDirectory, ".write.lock"))).toBe(false);
-    expect(["local-ready", "external"]).toContain((await ReleaseLedger.loadActive(root))?.phase);
+    expect(["local-ready", "external"]).toContain(String((await ReleaseLedger.loadActive(root))?.phase));
   });
 
   test("recovers a stale lock when its PID belongs to a newer process", async () => {
@@ -447,9 +447,11 @@ describe("ReleaseLedger", () => {
 
     await expect(ledger.markNpm(PACKAGE_NAME, "completed")).rejects.toThrow("transition from pending to completed");
     await ledger.markNpm(PACKAGE_NAME, "started");
-    const startedAt = ledger.data.operations.npm[PACKAGE_NAME]?.startedAt;
+    const started = ledger.data.operations.npm[PACKAGE_NAME];
+    const startedAt = started?.state === "started" ? started.startedAt : undefined;
     await ledger.markNpm(PACKAGE_NAME, "started");
-    expect(ledger.data.operations.npm[PACKAGE_NAME]?.startedAt).toBe(startedAt);
+    const restarted = ledger.data.operations.npm[PACKAGE_NAME];
+    expect(restarted?.state === "started" ? restarted.startedAt : undefined).toBe(startedAt);
     await ledger.markNpm(PACKAGE_NAME, "completed");
     await expect(ledger.markNpm(PACKAGE_NAME, "started")).rejects.toThrow("transition from completed to started");
     expect(ledger.hasExternalProgress()).toBe(true);

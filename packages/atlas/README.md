@@ -66,7 +66,7 @@ Profiles can contain:
 - `vars` — literal non-secret values
 - `secrets` — runtime references to process env vars or local files
 
-Secrets are references, not stored secret values:
+Each secret reference must define exactly one of `env` or `file`. The `trim` option applies only to file references; file contents are trimmed by default.
 
 ```json
 {
@@ -103,12 +103,14 @@ Atlas discovers the nearest project `.atlas/config.json` upward from the current
 
 ```bash
 atlas init [--global] [--force]
-atlas profiles list
-atlas profiles show <profile>
+atlas profiles list [--json] [--cwd <dir>]
+atlas profiles show <profile> [--json] [--cwd <dir>]
 atlas run --profile app:web,env:dev -- <command...>
 atlas export --profile app:web,env:dev [--out .env] [--force]
 atlas export --profile app:web,env:dev --stdout
 ```
+
+With `--json`, profile commands write results to stdout. Configuration and profile lookup errors produce a single `{"error": "..."}` object on stderr and a non-zero exit code.
 
 `--stdout` prints the dotenv body instead of writing a file, so it cannot be combined with `--out`.
 

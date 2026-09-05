@@ -2,7 +2,15 @@ export type LastStone = { commit: string; date: string };
 
 export type CommitConfig = { author: string; email?: string; message: string };
 
-export type ReleaseConfig = { createRelease: boolean; npm: boolean; push: boolean; tags: boolean };
+export type ReleaseBuildConfig = { command: string[]; outputs: string[]; root: string[][] };
+
+export type ReleaseConfig = {
+  build: ReleaseBuildConfig;
+  createRelease: boolean;
+  npm: boolean;
+  push: boolean;
+  tags: boolean;
+};
 
 export type PackageRelease = { oldVersion: string; newVersion: string };
 
@@ -53,12 +61,19 @@ export type CommitsSkipConfig = { authors: string[]; messagePatterns: string[] }
 
 export type CommitsConfig = { skip: CommitsSkipConfig };
 
+export type DependencyKind = "dependencies" | "devDependencies" | "optionalDependencies" | "peerDependencies";
+
+export type UpdateInternalPolicy = "always" | "outOfRange";
+
+export type DependentsConfig = { kinds: DependencyKind[]; updateInternal: UpdateInternalPolicy };
+
 export type SisyphusConfig = {
   $schema: string;
   changelog: ChangelogConfig;
   commit: CommitConfig;
   commits: CommitsConfig;
   currentRelease?: CurrentRelease;
+  dependents: DependentsConfig;
   sisyphusDir: string;
   ignore: string[];
   lastStone: LastStone;

@@ -1,1 +1,1 @@
-{ "extends": "@r5n/tools/typescript/base.json", "include": ["src", "index.ts"] }
+{ "extends": "@r5n/tools/typescript/base.json", "include": ["src", "index.ts", "tests"] }

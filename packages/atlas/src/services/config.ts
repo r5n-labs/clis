@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { boolean, object, optional, string } from "banditypes";
-import { ATLAS_CONFIG_FILE, ATLAS_DIR, DEFAULT_ATLAS_CONFIG, DEFAULT_EXPORT_FILE } from "../constants";
+import { ATLAS_CONFIG_FILE, ATLAS_DIR, DEFAULT_EXPORT_FILE } from "../constants";
 import type {
   AtlasConfig,
   AtlasDefaults,
@@ -67,7 +67,7 @@ export function loadAtlasConfig(options: DiscoveryOptions = {}): LoadedAtlasConf
   };
 
   return {
-    config: { ...DEFAULT_ATLAS_CONFIG, defaults, profiles },
+    config: { defaults, profiles },
     cwd: discovered.cwd,
     globalPath: discovered.globalPath,
     home: discovered.home,
@@ -145,13 +145,14 @@ function loadConfig(path: string | undefined, rootDir: string | undefined): RawC
   if (!path || !rootDir) return undefined;
 
   let parsed: unknown;
+  const content = readTextFile(path, `Atlas config ${path}`);
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    parsed = JSON.parse(content);
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Exit(`Invalid JSON in Atlas config ${path}`, "Fix the JSON syntax in the config file");
     }
-    throw new Exit(`Failed to read in Atlas config ${path}`);
+    throw error;
   }
 
   try {
@@ -177,7 +178,7 @@ function parseDefaults(value: unknown, path: string): AtlasDefaults | undefined 
 
   const defaults = parseClosedObject(value, path, ["exportFile", "profiles"]);
   return object<AtlasDefaults>({
-    exportFile: (field) => parseOptionalString(field, `${path}.exportFile`),
+    exportFile: (field) => parseOptionalNonEmptyString(field, `${path}.exportFile`),
     profiles: (field) => parseOptionalStringArray(field, `${path}.profiles`),
   })(defaults);
 }
@@ -244,12 +245,23 @@ function parseSecrets(value: unknown, path: string): Record<string, SecretRef> |
 function parseSecretRef(value: unknown, path: string): SecretRef {
   const ref = parseClosedObject(value, path, ["env", "file", "optional", "trim"]);
 
-  return object<SecretRef>({
+  const secret = object<SecretRef>({
     env: (field) => parseOptionalEnvKey(field, `${path}.env`),
-    file: (field) => parseOptionalString(field, `${path}.file`),
+    file: (field) => parseOptionalNonEmptyString(field, `${path}.file`),
     optional: (field) => parseOptionalBoolean(field, `${path}.optional`),
     trim: (field) => parseOptionalBoolean(field, `${path}.trim`),
   })(ref);
+
+  if (secret.env === undefined && secret.file === undefined) {
+    throw new AtlasConfigValidationError(`${path} must define env or file`);
+  }
+  if (secret.env !== undefined && secret.file !== undefined) {
+    throw new AtlasConfigValidationError(`${path} must define only one of env or file`);
+  }
+  if (secret.env !== undefined && secret.trim !== undefined) {
+    throw new AtlasConfigValidationError(`${path}.trim only applies to file secrets`);
+  }
+  return secret;
 }
 
 function parseOptionalStringArray(value: unknown, path: string): string[] | undefined {
@@ -258,7 +270,23 @@ function parseOptionalStringArray(value: unknown, path: string): string[] | unde
     throw new AtlasConfigValidationError(`${path} must be an array`);
   }
 
-  return value.map((item, index) => parseWithSchema(stringSchema, item, `${path}[${index}]`, "must be a string"));
+  return value.map((item, index) => {
+    const itemPath = `${path}[${index}]`;
+    const parsed = parseWithSchema(stringSchema, item, itemPath, "must be a string");
+    return requireNonEmptyString(parsed, itemPath);
+  });
+}
+
+function parseOptionalNonEmptyString(value: unknown, path: string): string | undefined {
+  const parsed = parseOptionalString(value, path);
+  return parsed === undefined ? undefined : requireNonEmptyString(parsed, path);
+}
+
+function requireNonEmptyString(value: string, path: string): string {
+  if (value.trim().length === 0) {
+    throw new AtlasConfigValidationError(`${path} must be a non-empty string`);
+  }
+  return value;
 }
 
 function parseOptionalString(value: unknown, path: string): string | undefined {
@@ -328,8 +356,9 @@ function readEnvFile(path: string): Record<string, string> {
     throw new Exit(`Atlas env file not found: ${path}`, "Create the file or remove it from the profile's envFiles");
   }
 
+  const content = readTextFile(path, `Atlas env file ${path}`);
   try {
-    return parseDotenv(readFileSync(path, "utf8"));
+    return parseDotenv(content);
   } catch (error) {
     const reason = error instanceof Error ? error.message : "env file failed to parse";
     throw new Exit(`Invalid dotenv file ${path}: ${reason}`, "Fix the reported line in the env file");
@@ -361,10 +390,20 @@ function resolveSecret(
         "Create the file or mark the secret optional",
       );
     }
-    const value = readFileSync(filePath, "utf8");
+    const value = readTextFile(filePath, `secret file ${filePath} for ${key}`);
     return ref.trim === false ? value : value.trim();
   }
 
   if (ref.optional) return undefined;
   throw new Exit(`Missing required secret ${key}: secret ref must define env or file`);
+}
+
+function readTextFile(path: string, description: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    const exit = new Exit(`Failed to read ${description}`, "Check that the path is a readable file");
+    exit.cause = error;
+    throw exit;
+  }
 }

@@ -1,6 +1,8 @@
 import { lstat, readlink, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { $ } from "bun";
+import { resolveNpmAccess } from "./npm-access";
+import { inferNpmPrereleaseTag } from "./npm-tag";
 
 type PublishArtifactOptions = { cwd?: string; dryRun?: boolean };
 
@@ -23,6 +25,19 @@ const TAR_SIZE_LENGTH = 12;
 const TAR_PREFIX_OFFSET = 345;
 const TAR_PREFIX_LENGTH = 155;
 const PACKED_MANIFEST_PATH = "package/package.json";
+
+export type NpmPackEntry = { files?: unknown; filename?: unknown; name?: unknown; version?: unknown };
+
+export function parseNpmPackOutput(stdout: string): NpmPackEntry | undefined {
+  const parsed: unknown = JSON.parse(stdout);
+  const entries: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? Object.values(parsed)
+      : [];
+  const [entry] = entries;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as NpmPackEntry) : undefined;
+}
 
 export async function preparePackageArtifact(packageDir: string, artifactPath: string): Promise<void> {
   const pkgDir = await realpath(resolve(packageDir));
@@ -53,12 +68,7 @@ export async function preparePackageArtifact(packageDir: string, artifactPath: s
     const result = await $`npm pack --ignore-scripts --json --pack-destination ${artifactDirectory}`
       .cwd(pkgDir)
       .quiet();
-    const output = JSON.parse(result.stdout.toString()) as Array<{
-      filename?: unknown;
-      name?: unknown;
-      version?: unknown;
-    }>;
-    const packed = output[0];
+    const packed = parseNpmPackOutput(result.stdout.toString());
     if (
       typeof packed?.filename !== "string" ||
       !packed.filename ||
@@ -268,8 +278,7 @@ async function validateExistingPackInputs(packageDirectory: string, repositoryRo
     $`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet(),
     collectTrackedPaths(repositoryRoot),
   ]);
-  const packOutput = JSON.parse(packResult.stdout.toString()) as Array<{ files?: unknown }>;
-  const files = packOutput[0]?.files;
+  const files = parseNpmPackOutput(packResult.stdout.toString())?.files;
   if (!Array.isArray(files)) throw new Error("npm pack did not return a package file list");
 
   for (const file of files) {
@@ -444,6 +453,12 @@ export async function publishPackageArtifact(
 ): Promise<void> {
   const resolvedArtifactPath = resolve(artifactPath);
   const cwd = resolve(options.cwd ?? ".");
-  const dryRunArgs = options.dryRun ? ["--dry-run", "--force"] : [];
-  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access public ${dryRunArgs}`.cwd(cwd);
+  const manifestText = await readPackedManifest(resolvedArtifactPath);
+  const access = resolveNpmAccess(manifestText);
+  const { version } = readPackageIdentity(manifestText, resolvedArtifactPath);
+  const manifest = JSON.parse(manifestText) as { publishConfig?: { tag?: unknown } };
+  const inferredTag = manifest.publishConfig?.tag ? undefined : inferNpmPrereleaseTag(version);
+  const tagArgs = inferredTag === undefined ? [] : ["--tag", inferredTag];
+  const dryRunArgs = options.dryRun ? ["--dry-run", "--offline"] : [];
+  await $`npm publish ${resolvedArtifactPath} --ignore-scripts --access ${access} ${tagArgs} ${dryRunArgs}`.cwd(cwd);
 }

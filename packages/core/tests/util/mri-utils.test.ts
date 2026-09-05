@@ -50,7 +50,56 @@ describe("buildMriOptions", () => {
   });
 });
 
+describe("declared no-* boolean aliases", () => {
+  const defs: Record<string, ArgDefinition> = {
+    noCommit: { default: false, type: "boolean" },
+    npm: { default: true, type: "boolean" },
+  };
+
+  test("sets a declared noCommit option through its advertised --no-commit alias", () => {
+    const result = parseCommandArgs(["--no-commit"], defs);
+    expect(result.args.noCommit).toBe(true);
+    expect(result.args.commit).toBeUndefined();
+  });
+
+  test("still negates ordinary boolean options", () => {
+    expect(parseCommandArgs(["--no-npm"], defs).args.npm).toBe(false);
+  });
+
+  test("keeps no-* child options unchanged after the delimiter", () => {
+    const result = parseCommandArgs(["--", "--no-commit"], defs);
+    expect(result.args.noCommit).toBe(false);
+    expect(result.rawPositionals).toEqual(["--no-commit"]);
+  });
+});
+
 describe("convertNumbers", () => {
+  test.each([
+    { argv: ["--retention-days"] },
+    { argv: ["--retention-days="] },
+    { argv: ["--retention-days", "   "] },
+    { argv: ["--retention-days", "Infinity"] },
+    { argv: ["--retention-days=-Infinity"] },
+    { argv: ["--retention-days", "1e999"] },
+    { argv: ["--no-retention-days"] },
+    { argv: ["--retention-days", "-1"] },
+    { argv: ["-d"] },
+  ])("rejects malformed numeric flags without falling back to zero: %j", ({ argv }) => {
+    const defs: Record<string, ArgDefinition> = { retentionDays: { alias: "d", default: 30, type: "number" } };
+    expect(() => parseCommandArgs([...argv], defs)).toThrow(Exit);
+    expect(() => parseCommandArgs([...argv], defs)).toThrow("Invalid number for --retention-days");
+  });
+
+  test.each([
+    { argv: [], expected: 30 },
+    { argv: ["--retention-days=0"], expected: 0 },
+    { argv: ["--retention-days=-1"], expected: -1 },
+    { argv: ["-d", "2.5"], expected: 2.5 },
+  ])("preserves finite numeric values and defaults: %j", ({ argv, expected }) => {
+    const defs: Record<string, ArgDefinition> = { retentionDays: { alias: "d", default: 30, type: "number" } };
+    expect(parseCommandArgs([...argv], defs).args.retentionDays).toBe(expected);
+  });
+
   test("converts string '42' to number 42", () => {
     const defs: Record<string, ArgDefinition> = { count: { type: "number" } };
     const result = convertNumbers({ count: "42" }, defs);
@@ -118,6 +167,22 @@ describe("parseGlobalArgs", () => {
     const result = parseGlobalArgs(["check", "-j", "-j"], globals);
 
     expect(result).toMatchObject({ command: "check", restArgs: ["-j", "-j"] });
+  });
+
+  test.each([{ argv: ["--dry-run", "cleanup"] }, { argv: ["--profile", "app", "run", "child"] }])(
+    "rejects command options placed before the command: %j",
+    ({ argv }) => {
+      expect(() => parseGlobalArgs([...argv], globals)).toThrow(Exit);
+      expect(() => parseGlobalArgs([...argv], globals)).toThrow("Unknown option:");
+    },
+  );
+
+  test("keeps recognised globals before the command and leaves command flags intact", () => {
+    expect(parseGlobalArgs(["-h", "check", "--json"], globals)).toMatchObject({
+      command: "check",
+      flags: { h: true, help: true },
+      restArgs: ["--json"],
+    });
   });
 });
 

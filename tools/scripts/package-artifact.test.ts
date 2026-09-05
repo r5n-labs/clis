@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { preparePackageArtifact } from "./package-artifact";
+import { parseNpmPackOutput, preparePackageArtifact } from "./package-artifact";
 
 const roots: string[] = [];
-const PACK_DELAY_FILE_SIZE = 16 * 1024 * 1024;
-const PACK_MUTATION_DELAY_MS = 100;
+const EXECUTABLE_MODE = 0o755;
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
@@ -15,7 +14,6 @@ afterEach(() => {
 type PackageFixtureOptions = {
   commitChanges?: boolean;
   deletesManifest?: boolean;
-  packManifestChanges?: boolean;
   prepareFails?: boolean;
   sourceChanges?: boolean;
 };
@@ -39,32 +37,15 @@ async function createPackageFixture(
       options.commitChanges
         ? 'await Bun.$`git -c commit.gpgsign=false commit -q --allow-empty -m "prepare moved head"`;'
         : "",
-      options.packManifestChanges
-        ? [
-            'const watcher = Bun.spawn([process.execPath, "manifest-watcher.ts"], { stderr: "ignore", stdout: "ignore" });',
-            "watcher.unref();",
-          ].join("\n")
-        : "",
       options.deletesManifest ? "await Bun.$`rm package.json`;" : "",
       options.prepareFails || options.deletesManifest ? "process.exit(1);" : "",
     ].join("\n"),
   );
-  if (options.packManifestChanges) {
-    writeFileSync(join(packageDirectory, "large.bin"), Buffer.alloc(PACK_DELAY_FILE_SIZE));
-    writeFileSync(
-      join(packageDirectory, "manifest-watcher.ts"),
-      [
-        `await Bun.sleep(${PACK_MUTATION_DELAY_MS});`,
-        'const manifest = await Bun.file("package.json").json();',
-        'await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
-      ].join("\n"),
-    );
-  }
   writeFileSync(
     manifestPath,
     `${JSON.stringify(
       {
-        files: options.packManifestChanges ? ["source.ts", "large.bin"] : ["source.ts"],
+        files: ["source.ts"],
         name: "@fixture/package-artifact",
         scripts: { "package:prepare": "bun prepare.ts" },
         version: "1.0.0",
@@ -251,12 +232,46 @@ describe("preparePackageArtifact", () => {
   });
 
   test("rejects concurrent manifest changes while packing and removes the artifact", async () => {
-    const fixture = await createPackageFixture({ packManifestChanges: true });
+    const fixture = await createPackageFixture();
     const originalManifest = readFileSync(fixture.manifestPath, "utf-8");
-
-    await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow(
-      "Failed to prepare and restore",
+    const shimRoot = mkdtempSync(join(tmpdir(), "package-artifact-npm-"));
+    roots.push(shimRoot);
+    const originalPath = process.env.PATH ?? "";
+    const npmPath = Bun.which("npm");
+    if (!npmPath) throw new Error("npm is required for package artifact tests");
+    writeFileSync(
+      join(shimRoot, "npm"),
+      [
+        "#!/usr/bin/env bun",
+        "const args = process.argv.slice(2);",
+        'if (args[0] === "pack" && !args.includes("--dry-run")) {',
+        '  const manifest = await Bun.file("package.json").json();',
+        '  await Bun.write("package.json", JSON.stringify({ ...manifest, dependencies: { injected: "1.0.0" } }, null, 2) + "\\n");',
+        "}",
+        `const child = Bun.spawn([${JSON.stringify(npmPath)}, ...args], { env: { ...process.env, PATH: ${JSON.stringify(originalPath)} }, stderr: "inherit", stdout: "inherit" });`,
+        "process.exit(await child.exited);",
+      ].join("\n"),
     );
+    chmodSync(join(shimRoot, "npm"), EXECUTABLE_MODE);
+    const invocation = `import { preparePackageArtifact } from ${JSON.stringify(join(import.meta.dir, "package-artifact.ts"))}; await preparePackageArtifact(${JSON.stringify(fixture.packageDirectory)}, ${JSON.stringify(fixture.artifactPath)});`;
+    const child = Bun.spawn([process.execPath, "-e", invocation], {
+      cwd: fixture.packageDirectory,
+      env: { ...process.env, PATH: `${shimRoot}:${originalPath}` },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    const [exitCode, stderr, stdout] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+      new Response(child.stdout).text(),
+    ]);
+
+    expect(
+      exitCode,
+      `Artifact subprocess failed (Bun: ${process.execPath}; npm: ${npmPath})\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+    ).toBe(1);
+    expect(stderr).toContain("Packed manifest does not match the prepared package manifest");
+    expect(stderr).toContain("Package manifest changed concurrently");
 
     expect(existsSync(fixture.artifactPath)).toBe(false);
     expect(readFileSync(fixture.manifestPath, "utf-8")).not.toBe(originalManifest);
@@ -286,5 +301,28 @@ describe("preparePackageArtifact", () => {
     );
 
     expect(existsSync(fixture.artifactPath)).toBe(false);
+  });
+});
+
+describe("parseNpmPackOutput", () => {
+  const entry = {
+    filename: "probe-pkg-1.0.0.tgz",
+    files: [{ path: "index.js" }],
+    name: "@probe/pkg",
+    version: "1.0.0",
+  };
+
+  test("reads the array document emitted by npm 11", () => {
+    expect(parseNpmPackOutput(JSON.stringify([entry]))).toEqual(entry);
+  });
+
+  test("reads the package-keyed document emitted by npm 12", () => {
+    expect(parseNpmPackOutput(JSON.stringify({ "@probe/pkg": entry }))).toEqual(entry);
+  });
+
+  test("returns undefined for empty or scalar documents", () => {
+    expect(parseNpmPackOutput("[]")).toBeUndefined();
+    expect(parseNpmPackOutput("{}")).toBeUndefined();
+    expect(parseNpmPackOutput("null")).toBeUndefined();
   });
 });

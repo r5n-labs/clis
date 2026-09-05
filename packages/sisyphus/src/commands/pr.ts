@@ -3,9 +3,15 @@ import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import type { CommitInfo, Package, StoneData } from "../domain";
 import { BumpType, isBumpType, nonEmpty } from "../domain";
-import type { PullRequestInfo } from "../services";
-import { PullRequestAnalyzer, StoneManager, WorkspaceScanner } from "../services";
-import { findDependencyPackages } from "../utils";
+import type { DependentsOptions, PullRequestInfo } from "../services";
+import {
+  collectDependents,
+  dependentsOptions,
+  isIgnoredPackage,
+  PullRequestAnalyzer,
+  StoneManager,
+  WorkspaceScanner,
+} from "../services";
 
 const DESCRIPTION_PREVIEW_LENGTH = 100;
 
@@ -57,10 +63,29 @@ export class PrCommand extends BaseCommand {
     }
 
     const bumpType = await this.determineBumpType(ctx, result.suggestedBump, result.pr.labels);
-    const packages = await this.determinePackages(ctx, result.packages);
+    const selected = await this.determinePackages(ctx, result.packages);
+
+    if (selected.length === 0) {
+      throw new Exit("No packages selected");
+    }
+
+    const ignore = ctx.config.get("ignore") ?? [];
+
+    if (ctx.args.packages) {
+      const ignoredRequested = selected.filter((name) => isIgnoredPackage(name, ignore));
+      if (ignoredRequested.length > 0) {
+        throw new Exit(
+          `Packages are excluded by config.ignore: ${ignoredRequested.join(", ")}`,
+          "Remove them from ignore before releasing them",
+        );
+      }
+    }
+
+    const packages = selected.filter((name) => !isIgnoredPackage(name, ignore));
 
     if (packages.length === 0) {
-      throw new Exit("No packages selected");
+      log.info(color.dim("Skipping: every affected package is excluded by config.ignore"));
+      return;
     }
 
     const { packages: allPackages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
@@ -73,6 +98,7 @@ export class PrCommand extends BaseCommand {
       allPackages,
       bump: bumpType,
       commits: result.commits,
+      dependents: dependentsOptions(ctx.config),
       description,
       message,
       packages,
@@ -222,19 +248,26 @@ export class PrCommand extends BaseCommand {
   private buildStoneData(options: {
     allPackages: Map<string, Package>;
     bump: BumpType;
+    dependents: DependentsOptions;
     packages: string[];
     message: string;
     description: string | undefined;
     commits: readonly CommitInfo[] | undefined;
   }): StoneData {
-    const { allPackages, bump, commits, description, message, packages } = options;
+    const { allPackages, bump, commits, dependents, description, message, packages } = options;
     const data: StoneData = { commits: intersectCommitPackages(commits, packages), description, message };
 
     if (bump === BumpType.Major) data.major = packages;
     else if (bump === BumpType.Minor) data.minor = packages;
     else data.patch = packages;
 
-    data.dependency = nonEmpty(findDependencyPackages(packages, allPackages));
+    data.dependency = nonEmpty(
+      collectDependents(
+        packages.map((name) => ({ bump, name })),
+        allPackages,
+        dependents,
+      ),
+    );
 
     return data;
   }

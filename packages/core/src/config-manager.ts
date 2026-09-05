@@ -1,11 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { record, unknown } from "banditypes";
 import { deepMerge } from "./util";
+
+const JSON_INDENT = 2;
+const configSchema = record(unknown());
 
 export class ConfigManager<T extends object> {
   private config: T;
   private configPath: string;
   private defaultConfig: T;
+  private loadError: unknown;
 
   constructor(filePath: string, defaultConfig: T) {
     this.configPath = path.resolve(filePath);
@@ -37,20 +42,33 @@ export class ConfigManager<T extends object> {
   }
 
   public getAll(): T {
-    return deepMerge({} as T, this.config);
+    return structuredClone(this.config);
   }
 
   public save(configToSave?: T): void {
+    if (this.loadError) {
+      throw new Error(`Cannot overwrite unreadable config at ${this.configPath}; repair the file and try again`, {
+        cause: this.loadError,
+      });
+    }
+
     if (configToSave) {
       this.config = { ...configToSave };
     }
 
     this.ensureDirectoryExists();
 
+    const savePath = this.exists() ? fs.realpathSync(this.configPath) : this.configPath;
+    const temporaryPath = `${savePath}.${crypto.randomUUID()}.tmp`;
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+      const mode = this.exists() ? fs.statSync(this.configPath).mode : undefined;
+      fs.writeFileSync(temporaryPath, JSON.stringify(this.config, null, JSON_INDENT), { flag: "wx", mode });
+      if (mode !== undefined) fs.chmodSync(temporaryPath, mode);
+      fs.renameSync(temporaryPath, savePath);
     } catch (error) {
       throw new Error(`Failed to save config to ${this.configPath}`, { cause: error });
+    } finally {
+      fs.rmSync(temporaryPath, { force: true });
     }
   }
 
@@ -68,17 +86,20 @@ export class ConfigManager<T extends object> {
 
   private loadConfig(): T {
     if (!fs.existsSync(this.configPath)) {
-      return { ...this.defaultConfig };
+      return structuredClone(this.defaultConfig);
     }
 
     try {
       const fileContent = fs.readFileSync(this.configPath, "utf-8");
-      const parsed = JSON.parse(fileContent);
+      const value: unknown = JSON.parse(fileContent);
+      if (Array.isArray(value)) throw new Error("Config must be an object");
+      const parsed = configSchema(value);
 
-      return deepMerge({ ...this.defaultConfig }, parsed);
-    } catch {
+      return deepMerge(structuredClone(this.defaultConfig), parsed);
+    } catch (error) {
+      this.loadError = error;
       console.warn(`Config file corrupted at ${this.configPath}. Using defaults.`);
-      return { ...this.defaultConfig };
+      return structuredClone(this.defaultConfig);
     }
   }
 }
