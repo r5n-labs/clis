@@ -1,6 +1,7 @@
 import { args, color, Exit, log, positionals } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig } from "../services/config";
+import { validateOptions, validatePathOption } from "../utils";
 
 const commonArgs = args({
   cwd: { description: "Working directory override", type: "string" },
@@ -27,24 +28,27 @@ export class ProfilesListCommand extends BaseCommand {
   args = commonArgs;
 
   async execute(ctx: ListCtx): Promise<void> {
-    const loaded = loadAtlasConfig({ cwd: ctx.args.cwd ?? process.cwd() });
-    const names = Object.keys(loaded.config.profiles).sort();
+    reportJsonErrors(ctx.args.json, () => {
+      validateProfileOptions(ctx.args);
+      const loaded = loadAtlasConfig({ cwd: ctx.args.cwd ?? process.cwd() });
+      const names = Object.keys(loaded.config.profiles).sort();
 
-    if (ctx.args.json) {
-      process.stdout.write(`${JSON.stringify(names, null, 2)}\n`);
-      return;
-    }
+      if (ctx.args.json) {
+        process.stdout.write(`${JSON.stringify(names, null, 2)}\n`);
+        return;
+      }
 
-    if (names.length === 0) {
-      log.info("No Atlas profiles configured");
-      return;
-    }
+      if (names.length === 0) {
+        log.info("No Atlas profiles configured");
+        return;
+      }
 
-    for (const name of names) {
-      const profile = loaded.config.profiles[name];
-      const description = profile?.description ? color.dim(` - ${profile.description}`) : "";
-      log.info(`${color.cyan(name)}${description}`);
-    }
+      for (const name of names) {
+        const profile = loaded.config.profiles[name];
+        const description = profile?.description ? color.dim(` - ${profile.description}`) : "";
+        log.info(`${color.cyan(name)}${description}`);
+      }
+    });
   }
 }
 
@@ -55,30 +59,43 @@ export class ProfilesShowCommand extends BaseCommand {
   positionals = showPositionals;
 
   async execute(ctx: ShowCtx): Promise<void> {
-    const name = ctx.positionals.profile;
-    if (!name) {
-      throw new Exit("Profile name is required", "Usage: atlas profiles show <profile>");
-    }
+    reportJsonErrors(ctx.args.json, () => {
+      validateProfileOptions(ctx.args);
+      const name = ctx.positionals.profile;
+      if (!name) {
+        throw new Exit("Profile name is required", "Usage: atlas profiles show <profile>");
+      }
 
-    const loaded = loadAtlasConfig({ cwd: ctx.args.cwd ?? process.cwd() });
-    const profiles = loaded.config.profiles;
-    const profile = Object.hasOwn(profiles, name) ? profiles[name] : undefined;
+      const loaded = loadAtlasConfig({ cwd: ctx.args.cwd ?? process.cwd() });
+      const profiles = loaded.config.profiles;
+      const profile = Object.hasOwn(profiles, name) ? profiles[name] : undefined;
 
-    if (!profile) {
-      const message = `Unknown Atlas profile: ${name}`;
+      if (!profile) {
+        const message = `Unknown Atlas profile: ${name}`;
+        throw new Exit(message, "Run 'atlas profiles list'");
+      }
+
       if (ctx.args.json) {
-        process.stderr.write(`${JSON.stringify({ error: message })}\n`);
-        process.exitCode = 1;
+        process.stdout.write(`${JSON.stringify(profile, null, 2)}\n`);
         return;
       }
-      throw new Exit(message, "Run 'atlas profiles list'");
-    }
 
-    if (ctx.args.json) {
-      process.stdout.write(`${JSON.stringify(profile, null, 2)}\n`);
-      return;
-    }
+      log.info(`${color.bold(name)}\n${JSON.stringify(profile, null, 2)}`);
+    });
+  }
+}
 
-    log.info(`${color.bold(name)}\n${JSON.stringify(profile, null, 2)}`);
+function validateProfileOptions(options: ListCtx["args"]): void {
+  validateOptions(options, commonArgs, "Run 'atlas profiles --help' for supported commands");
+  validatePathOption(options.cwd, "cwd", "Usage: atlas profiles <list|show> --cwd <dir>");
+}
+
+function reportJsonErrors(json: boolean, execute: () => void): void {
+  try {
+    execute();
+  } catch (error) {
+    if (!json || !(error instanceof Exit)) throw error;
+    process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+    process.exitCode = error.exitCode;
   }
 }

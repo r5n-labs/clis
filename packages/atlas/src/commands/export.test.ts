@@ -192,6 +192,27 @@ describe("ExportCommand", () => {
     expect(readFileSync(outputPath, "utf8")).toBe(existingContent);
   });
 
+  test("removes an incomplete no-force export when setting permissions fails", async () => {
+    const project = join(tmpRoot, "repo");
+    const outputPath = join(project, ".env.generated");
+    writeJson(join(project, ".atlas", "config.json"), {
+      defaults: { exportFile: ".env.generated", profiles: ["app"] },
+      profiles: { app: { vars: { APP: "web" } } },
+    });
+    const probe = await open(join(tmpRoot, "probe"), "w");
+    const prototype = Object.getPrototypeOf(probe) as { chmod: FileHandle["chmod"] };
+    await probe.close();
+    const chmodSpy = spyOn(prototype, "chmod").mockRejectedValue(new Error("chmod failed"));
+    try {
+      await expect(new ExportCommand().execute(ctx({ cwd: project }))).rejects.toThrow("chmod failed");
+    } finally {
+      chmodSpy.mockRestore();
+    }
+    expect(existsSync(outputPath)).toBe(false);
+    await new ExportCommand().execute(ctx({ cwd: project }));
+    expect(readFileSync(outputPath, "utf8")).toBe("APP=web\n");
+  });
+
   test("force replaces an output symlink without modifying its target", async () => {
     const project = join(tmpRoot, "repo");
     const outputPath = join(project, ".env.generated");
