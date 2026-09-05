@@ -1,4 +1,4 @@
-import { color, Exit, log, positionals } from "@r5n/cli-core";
+import { color, Exit, log, positionals, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { resolveProfile, selectProfile } from "../../utils";
 
@@ -12,6 +12,7 @@ export class ProfileDefaultCommand extends BaseCommand {
   positionals = defaultPositionals;
 
   async execute(ctx: DefaultCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra profile default --help' for supported options");
     const profileName = ctx.interactive ? await selectProfile(ctx.config) : ctx.positionals.name;
 
     if (!profileName) {

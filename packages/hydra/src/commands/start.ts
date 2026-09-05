@@ -1,4 +1,4 @@
-import { color, Exit, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { color, Exit, log, multiselect, positionals, spinner, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
@@ -17,6 +17,7 @@ export class StartCommand extends BaseCommand {
   positionals = startPositionals;
 
   async execute(ctx: StartCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra start --help' for supported options");
     const { name: profileName, profile } = ctx.interactive
       ? resolveProfile(ctx.config, await selectProfile(ctx.config))
       : resolveProfile(ctx.config, ctx.positionals.profile);

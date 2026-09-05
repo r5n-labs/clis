@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { color, Exit, log, multiselect, positionals, spinner } from "@r5n/cli-core";
+import { color, Exit, log, multiselect, positionals, spinner, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import { resolveProfile, resolveRunnerIds, selectProfile } from "../utils";
@@ -18,6 +18,7 @@ export class RemoveCommand extends BaseCommand {
   positionals = removePositionals;
 
   async execute(ctx: RemoveCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra remove --help' for supported options");
     const { name: profileName, profile } = ctx.interactive
       ? resolveProfile(ctx.config, await selectProfile(ctx.config))
       : resolveProfile(ctx.config, ctx.positionals.profile);
@@ -43,11 +44,12 @@ export class RemoveCommand extends BaseCommand {
       await provider.stop([id]);
       await provider.remove([id]);
       await rm(join(profile.directory, id), { force: true, recursive: true });
+      ctx.config.set(
+        "runners",
+        (ctx.config.get("runners") ?? []).filter((entry) => entry.id !== id),
+      );
       s.stop(`${color.red("-")} ${id}`);
     }
-
-    const remaining = entries.filter((e) => !ids.includes(e.id));
-    ctx.config.set("runners", remaining);
 
     log.info(`${color.green("Removed")} ${ids.length} runner(s).`);
   }

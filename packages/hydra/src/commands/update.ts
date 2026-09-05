@@ -1,4 +1,4 @@
-import { color, Exit, log, spinner } from "@r5n/cli-core";
+import { color, Exit, log, spinner, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { Profile } from "../types";
@@ -11,6 +11,7 @@ export class UpdateCommand extends BaseCommand {
   description = "Update runner binaries";
 
   async execute(ctx: UpdateCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra update --help' for supported options");
     const profiles = ctx.config.get("profiles");
     const entries = ctx.config.get("runners") ?? [];
 
@@ -20,36 +21,23 @@ export class UpdateCommand extends BaseCommand {
 
     const s = spinner();
     const byProfile = Map.groupBy(entries, (e) => e.profile);
-    let currentVersion: string | null = null;
-    let latestVersion = "";
-    let versionChecked = false;
+    let updated = 0;
 
     for (const [profileName, profileEntries] of byProfile) {
       const profile = profiles[profileName] as Profile | undefined;
-      const firstRunner = profileEntries[0];
-      if (!profile || !firstRunner) continue;
+      if (!profile) continue;
 
       const provider = createProvider(profile);
 
-      if (!versionChecked) {
-        versionChecked = true;
-        s.start("Checking for updates...");
-        const result = await provider.download();
-        latestVersion = result.version;
-        currentVersion = await provider.currentVersion(firstRunner.id);
-        s.stop(`Current: v${currentVersion ?? "unknown"} | Latest: v${latestVersion}`);
-
-        if (currentVersion === latestVersion) {
-          log.info(`Already on latest version ${color.dim(`(v${latestVersion})`)}`);
-          await maybeAutoCleanup(ctx);
-          return;
-        }
-      }
+      s.start(`Checking for updates for "${profileName}"...`);
+      const { version: latestVersion } = await provider.download();
+      s.stop(`Latest: v${latestVersion}`);
 
       const statuses = await provider.list();
       const runningIds = new Set(statuses.filter((r) => r.status === "running").map((r) => r.id));
 
       for (const entry of profileEntries) {
+        if ((await provider.currentVersion(entry.id)) === latestVersion) continue;
         const wasRunning = runningIds.has(entry.id);
 
         s.start(`Updating ${entry.id}...`);
@@ -57,13 +45,18 @@ export class UpdateCommand extends BaseCommand {
         if (wasRunning) await provider.stop([entry.id]);
         await provider.update([entry.id]);
         if (wasRunning) await provider.start([entry.id]);
+        updated++;
 
         const suffix = wasRunning ? ` ${color.dim("(restarted)")}` : "";
         s.stop(`${color.green("✓")} ${entry.id}${suffix}`);
       }
     }
 
-    log.info(`${color.green("Updated")} ${entries.length} runner(s) from v${currentVersion} to v${latestVersion}`);
+    log.info(
+      updated > 0
+        ? `${color.green("Updated")} ${updated} runner(s).`
+        : "All runners are already on the latest version.",
+    );
 
     await maybeAutoCleanup(ctx);
   }

@@ -89,7 +89,7 @@ Passing any of `-l`/`-w`/`-s` cleans only those targets; with none, the targets 
 
 - `hydra profile list` — profiles with URL, OS, and created/running counts
 - `hydra profile default <name>` — set the default profile
-- `hydra profile remove <name>` — remove a profile; if it has runners, stops and deregisters them first (after confirmation)
+- `hydra profile remove <name> [--yes]` — remove a profile; if it has runners, stops and deregisters them first. Pass `--yes` to skip confirmation in scripts.
 
 ## Configuration
 
@@ -130,6 +130,8 @@ The `url` is either a repository URL (`https://github.com/owner/repo`) or an org
 ## How it works
 
 Runner binaries are downloaded once per version into `.hydra/shared/github/<version>`. Each runner directory under `.hydra/runners/<id>` gets hardlinks for `bin`, a symlink for `externals`, and its own copies of the shell scripts, so ten runners cost roughly one copy of the runner distribution on disk. Start/stop is plain process management: a detached `bash run.sh` plus a pid file per runner.
+
+Hydra disables the runner's automatic updater when registering it; use `hydra update` to update the shared binaries. Failed downloads are discarded, and completed registrations and removals are saved as each runner finishes, so a later failure in the batch can be retried. Failed deregistrations preserve the runner's files and record.
 
 ## License
 
