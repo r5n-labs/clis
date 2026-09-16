@@ -1,5 +1,329 @@
 # @r5n/sisyphus
 
+## ✨ 0.10.0 (2026-09-16)
+
+### 🪨 Features
+
+- [`8628434`](https://github.com/r5n-labs/clis/commit/8628434) feat(sisyphus): add roll --json for CI consumption
+  <details>
+  <summary>Details</summary>
+
+  `roll` reported only a package count, so a workflow could not learn what
+  was published without parsing human output. Everything needed was
+  already in the release ledger — package names, old and new versions,
+  per-package npm state, registries, artifact integrity, tags, stones —
+  and simply never surfaced.
+  
+  Add a pure report builder over the ledger and a --json flag covering
+  every roll mode: release, dry run, preview, publish-only, resume and
+  abort. In JSON mode a single document goes to stdout, clack output is
+  suppressed rather than interleaved, confirmations are skipped, and a
+  failure still emits a report — including the packages that did publish
+  before the failure — with human diagnostics on stderr and the same exit
+  code as before.
+  
+  The report is versioned and always emits every field, using null and []
+  rather than omission, so jq never has to distinguish absent from null.
+  
+  This repo's own release workflow now reads it instead of the deleted
+  dist workaround, and exposes published/publishedPackages as job outputs.
+  </details>
+- [`acf9977`](https://github.com/r5n-labs/clis/commit/acf9977) feat(sisyphus): make the release build configurable
+  <details>
+  <summary>Details</summary>
+
+  The per-package build was a hardcoded `bun run build` with no way to
+  change it, disable it, or run anything at the repository root, and both
+  pack guards rejected every gitignored file outright. A monorepo whose
+  declarations are generated centrally therefore had no way to publish
+  complete packages: it could only pack without the declarations, or be
+  rejected for having pre-built ones. This repo worked around it in CI by
+  deleting packages/*/dist after building.
+  
+  Add release.build with an argv command for the per-package build, argv
+  arrays run once at the repository root before the first pack, and a list
+  of globs declaring what the build writes. Declared outputs are cleaned
+  before the root build and exempted from the ignored-input and pack-input
+  guards; everything else stays rejected, and a declared output that Git
+  tracks is refused before any build runs.
+  
+  Commands are spawned with an argv array rather than through a shell, so
+  config strings carry no injection surface, and an absent command still
+  defaults to `bun run build` so existing configs behave exactly as before.
+  
+  The root build runs inside the same commit-bound window as the rest of
+  the pipeline: it is bound to the release commit, refuses to change
+  tracked source, and does not re-run on resume when every artifact is
+  already in the ledger.
+  </details>
+
+### 🪨 Bug fixes
+
+- [`eafb119`](https://github.com/r5n-labs/clis/commit/eafb119) fix(sisyphus): preserve release plans and reconcile interrupted publication
+  <details>
+  <summary>Details</summary>
+
+  Keep prerelease graduation and dependency ordering consistent across previews, release PRs and archived plans. Reject invalid stones, tags, commit baselines and foreign PR URLs before they can produce incomplete releases. Recover interrupted pushes without overwriting divergent refs, validate immutable publication settings before external actions, and preserve local work during CI release preparation.
+  </details>
+- [`2f45243`](https://github.com/r5n-labs/clis/commit/2f45243) fix(sisyphus): read the npm 12 pack and view document shapes
+  <details>
+  <summary>Details</summary>
+
+  npm 12 changed `npm pack --json` from an array to an object keyed by
+  package name, and `npm view <name@version> --json` from a single object
+  to a one-element array. Both parsers assumed the npm 11 shape, so every
+  pack guard and the started-publish reconciliation failed outright on a
+  machine with npm 12, and the packed 16 MB zero-filled fixture tripped
+  npm 12's tar decompression-ratio guard.
+  
+  Normalise both documents through a shared parser that accepts either
+  shape, unwrap a single-element view result, and fill the pack-delay
+  fixture with random bytes so it still packs slowly without looking like
+  a decompression bomb. The tools script gets the same parser because it
+  runs standalone outside the sisyphus bundle.
+  </details>
+- [`5092729`](https://github.com/r5n-labs/clis/commit/5092729) fix(sisyphus): close the gauntlet findings across planning, previews and reporting
+  <details>
+  <summary>Details</summary>
+
+  Graduation is now decided per package, not per stone. applyStone seeds
+  the graduating set from explicitly bumped packages that are leaving a
+  prerelease and closes it transitively over workspace dependencies, so
+  merging an unrelated graduating stone can no longer promote an
+  independent mid-prerelease dependent to a stable version. An untagged
+  dependency bump on a non-canonical prerelease now fails closed instead
+  of silently graduating.
+  
+  breakCycle trims the stuck subgraph to genuine cycle members before
+  choosing what to force, so an acyclic package behind a cycle is no
+  longer published before its own dependency or reported as cyclic.
+  
+  roll strips config.ignore before merging stones, so an ignored-only
+  stone can neither trigger the tag-homogeneity error nor brick release CI;
+  an empty release distinguishes ignored-only (graceful skip) from stale
+  stones referencing unknown packages (hard error naming them). The same
+  distinction now guards release-pr via shared release-plan helpers, and
+  its PR title is capped instead of unbounded.
+  
+  check and the version previews predict versions through applyStone, so
+  what the user is shown matches what roll will produce, and one invalid
+  manifest degrades a single row instead of killing the command. pr now
+  rejects explicitly requested ignored packages, and migrate validates
+  every changeset before writing any stone.
+  
+  roll --json no longer treats the flag as consent: an interactive
+  terminal without --yes fails closed. The report gains a required
+  warnings array carrying ignore exclusions, cycle caveats and channel
+  problems; per-package git tags are gated on tagsReady like the tag list;
+  the stdout guard also intercepts console.log; and a mixed-channel plan
+  degrades a dry run to a warning instead of losing the failure report.
+  
+  Build outputs declared as bare directories now match their contents, a
+  missing build executable carries its context label, schema.json accepts
+  hidden-directory outputs it previously rejected, hydra's tests are back
+  under type-check, and the resume path's root-build skip/re-run behaviour
+  is pinned by tests.
+  </details>
+- [`20eb27e`](https://github.com/r5n-labs/clis/commit/20eb27e) fix(sisyphus): make roll --json output trustworthy
+  <details>
+  <summary>Details</summary>
+
+  Three unrelated code paths wrote to stdout during a JSON roll — an
+  unguarded cycle warning in publish-only, StoneManager's malformed-stone
+  warning, and a gh release create call missing .quiet() — any of which
+  corrupted the document a CI job parses. Rather than chase each caller,
+  JSON mode now routes stdout to stderr for the duration of the run and
+  restores it only to print the report, so no library can pollute it. The
+  gh call is quietened regardless.
+  
+  A --resume that failed reported an empty release: the report context was
+  assigned only after resume() returned, so a partial publish emitted
+  published:false with no packages while versions were live on the
+  registry. The failure path now falls back to the active ledger.
+  
+  The report also claimed tags that were never created, because the ledger
+  records them at plan time; it now reports them only once tagging is
+  confirmed. Failure reports carry the cause chain, which previously
+  existed only on the human path via logErrorCauses.
+  
+  The release workflow no longer discards the report when the roll fails —
+  it prints it, still writes the job outputs, and then exits with the
+  roll's status, so a partial publish is visible instead of vanishing with
+  the runner temp directory.
+  
+  Also: the release build config validates array shape and rejects '..'
+  inside output globs, the cycle fallback in orderForRelease breaks the
+  most-blocking node instead of dumping the remainder alphabetically (so a
+  satisfiable constraint is no longer violated and only forced nodes are
+  reported), and packages/sisyphus/tsconfig.json finally includes tests/ —
+  which was hiding six type errors, one of them the reason the new build
+  tests never exercised a configured build.
+  </details>
+- [`dd05b10`](https://github.com/r5n-labs/clis/commit/dd05b10) fix(sisyphus): close defects found reviewing the release-correctness work
+  <details>
+  <summary>Details</summary>
+
+  Archived stones are now written from the planned stone rather than
+  renamed from disk, so a stone that config.ignore strips still hashes
+  identically when roll --publishOnly replays it. Without this, any
+  repository using ignore hit "Prepared release plan has changed" after
+  its release PR merged.
+  
+  An emptied stone no longer constrains the release channel, and a release
+  PR whose stones reference nothing releasable now skips instead of
+  failing the job. sis pr skips the same way when every affected package
+  is ignored.
+  
+  Leaving a prerelease is decided per release, not per package: a
+  dependency bump keeps its channel unless the release itself is
+  graduating, which it is when an explicitly selected package is leaving a
+  prerelease. The previous commit graduated unconditionally, which would
+  have shipped an unrelated in-flight rc as stable; before that,
+  dependents were stranded on the channel their dependency had left.
+  
+  The npm dist-tag derivation no longer truncates hyphenated tags into a
+  shared channel, and refuses to fall back to the configured stable tag
+  when a prerelease has no valid dist-tag, instead of silently publishing
+  a prerelease as latest.
+  
+  Also: a caret range on a 0.0.x version is invalidated by a minor bump; a
+  prerelease tag must be a single identifier, so "beta.4" can no longer
+  produce a version lower than the current one; commits without a package
+  list no longer crash the merge; semver rejects numeric identifiers past
+  MAX_SAFE_INTEGER; changeset migration reports unsupported bump types
+  instead of dropping the package; and roll --json reports the dist-tag
+  the release will actually publish with.
+  </details>
+- [`a86ea07`](https://github.com/r5n-labs/clis/commit/a86ea07) fix(sisyphus): graduate dependents when a release leaves a prerelease
+  <details>
+  <summary>Details</summary>
+
+  A dependency bump preserved whatever prerelease channel the package was
+  already on, so an untagged release moved the directly selected packages
+  to stable while every induced dependent stayed on the channel. A stable
+  2.0.0 shipped alongside dependents pinned to it at 1.0.2-beta.3.
+  
+  Since a merged release must now agree on one prerelease tag, an untagged
+  stone unambiguously means "go stable", and every package in it should
+  leave the channel. Drop the special case: a dependency bump follows the
+  release channel like any other bump.
+  </details>
+- [`74707c5`](https://github.com/r5n-labs/clis/commit/74707c5) fix(sisyphus): correct prerelease arithmetic and stone merging
+  <details>
+  <summary>Details</summary>
+
+  VersionCalculator passed the base version through untouched whenever a
+  prerelease tag was present and never read the bump at all, so 1.0.0 with
+  a minor bump and a beta tag produced 1.0.0-beta.1: a version that sorts
+  below the already published 1.0.0, and one where a breaking change was
+  indistinguishable from a typo fix. Parsing was split() and parseInt with
+  no validation, so "invalid" produced NaN.0.1 and PackageUpdater wrote it
+  straight into package.json.
+  
+  Add a strict semver module and rebuild the calculator on node-semver inc
+  semantics, where a release-level increment applied to a version that
+  already carries a prerelease drops the prerelease onto the core instead
+  of advancing it. Because the core already encodes base plus accumulated
+  bump, entering, continuing, escalating and leaving a prerelease all come
+  out right with no persisted state:
+  
+    1.0.0        + minor + beta => 1.1.0-beta.0
+    1.1.0-beta.0 + patch + beta => 1.1.0-beta.1
+    1.1.0-beta.1 + major + beta => 2.0.0-beta.0
+    1.1.0-beta.1 + patch        => 1.1.0
+  
+  Every stable path is unchanged. Invalid versions, unknown bump types, a
+  normal bump applied to a snapshot version, and a prerelease tag that
+  would move a version backwards are now rejected before anything is
+  written.
+  
+  Stone.merge omitted Snapshot from its collect loop, so snapshot packages
+  vanished whenever a second stone was pending, and it resolved
+  conflicting prerelease tags by silently taking the first, applying it to
+  every package in the merge. Snapshots are now collected, a package
+  requested as both a snapshot and a normal release is a hard error, and
+  the merge set must be tag homogeneous. Commits dedupe by hash with their
+  package attribution unioned, and mergeAll no longer short-circuits on a
+  single stone, so one stone listing a package under two bump keys can no
+  longer produce a duplicate git tag mid-release.
+  
+  The npm dist-tag now follows the release channel instead of publishing
+  every prerelease as latest.
+  </details>
+- [`d5ff33e`](https://github.com/r5n-labs/clis/commit/d5ff33e) fix(sisyphus): propagate dependents transitively and honour ignore
+  <details>
+  <summary>Details</summary>
+
+  Dependent discovery walked exactly one hop from the initially selected
+  packages, so a change to a package deep in the graph left its indirect
+  consumers pinned to a stale version. It also derived edges from
+  dependencies and devDependencies only, ignoring peerDependencies and
+  optionalDependencies, which PublishManifest resolves at pack time.
+  
+  Replace findDependencyPackages with a worklist that runs to a fixed
+  point over the bump lattice, so cycles terminate and output is sorted.
+  Package now carries the workspace edges it declares, with the kind and
+  the specifier retained, and WorkspaceScanner no longer owns graph
+  semantics.
+  
+  Release-bearing edge kinds and range awareness are configurable via the
+  new dependents config. Both defaults reproduce today's release sets:
+  every kind is release bearing, and every dependent is released
+  regardless of whether its published range still admits the new version.
+  devDependencies stay in the defaults because bundled CLIs inline their
+  workspace dependencies at build time.
+  
+  config.ignore was written by migrate but read nowhere. It is now
+  enforced when seeding, when propagating, and when materialising a
+  release plan, and propagation never traverses through an ignored
+  package.
+  
+  Release sets are now topologically ordered so a dependency is tagged and
+  published before the dependent that pins it.
+  </details>
+
+### 🪨 Tests
+
+- [`6b41476`](https://github.com/r5n-labs/clis/commit/6b41476) test(sisyphus): make the pack-race fixtures deterministic
+  <details>
+  <summary>Details</summary>
+
+  The pack watcher slept 100 ms and hoped the orchestrator was mid-pack by
+  then; under load the mutation landed before the post-build source check
+  and the test reported the wrong guard. Wait for the staging directory
+  the orchestrator creates right before packing instead, which pins the
+  mutation to the window the test is actually about.
+  
+  Raise the bun test timeout to 30 s: the release suites spawn git, npm and
+  bun per test and exceed the 5 s default on a busy runner.
+  </details>
+- [`5353552`](https://github.com/r5n-labs/clis/commit/5353552) test(sisyphus): pin the archived-stone fix and close review leftovers
+  <details>
+  <summary>Details</summary>
+
+  The archive fix shipped without a regression test; add one that fails
+  against the previous rename-the-file behaviour and passes against the
+  written-from-plan behaviour.
+  
+  Also: drop the unreachable Exit around Bun.Glob matching rather than
+  leave dead error handling, kill the build subprocess if draining its
+  streams rejects, and report the release commit for a release that
+  creates no ledger, so a tags-only roll --json no longer says null.
+  </details>
+
+### 🪨 Build
+
+- [`243d6bc`](https://github.com/r5n-labs/clis/commit/243d6bc) build(sisyphus): raise the bundle budget to 256 KB
+  <details>
+  <summary>Details</summary>
+
+  The release-correctness work grew the bundle to 245 KB, past the 240 KB
+  guard, so the build failed on a clean checkout.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.2.1 → 0.2.2
+
 ## 🐛 0.9.1 (2026-08-03)
 
 ### 🪨 Bug fixes

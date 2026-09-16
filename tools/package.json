@@ -5,5 +5,5 @@
   "private": true,
   "scripts": { "setup-monorepo": "bun run scripts/setup-monorepo.ts", "type-check": "bun --bun tsc --noEmit" },
   "type": "module",
-  "version": "0.2.1"
+  "version": "0.2.2"
 }

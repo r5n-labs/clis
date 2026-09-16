@@ -30,16 +30,31 @@
   },
   "commits": {
     "skip": {
-      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
-      "messagePatterns": ["^chore\\(release\\):", "^chore: add stone"]
+      "authors": [
+        "r5n-bot[bot]",
+        "Sisyphus",
+        "r5n-bot"
+      ],
+      "messagePatterns": [
+        "^chore\\(release\\):",
+        "^chore: add stone"
+      ]
     }
   },
   "dependents": {
-    "kinds": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],
+    "kinds": [
+      "dependencies",
+      "devDependencies",
+      "optionalDependencies",
+      "peerDependencies"
+    ],
     "updateInternal": "always"
   },
   "ignore": [],
-  "lastStone": { "commit": "2916c61decf072aec31198bafbb6b1cfa090aec4", "date": "2026-08-03T09:04:51.461Z" },
+  "lastStone": {
+    "commit": "0477df06e109a7acd60a4db8ed185ba3b7c8431e",
+    "date": "2026-09-16T17:28:23.892Z"
+  },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -53,29 +68,43 @@
       "fix": "patch"
     },
     "skip": {
-      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
-      "labels": ["sisyphus-release", "skip-stone"],
-      "titlePatterns": ["^chore\\(release\\):"]
+      "authors": [
+        "r5n-bot[bot]",
+        "Sisyphus",
+        "r5n-bot"
+      ],
+      "labels": [
+        "sisyphus-release",
+        "skip-stone"
+      ],
+      "titlePatterns": [
+        "^chore\\(release\\):"
+      ]
     }
   },
   "release": {
-    "build": { "command": ["bun", "run", "build"], "outputs": ["packages/*/dist/**"], "root": [] },
+    "build": {
+      "command": [
+        "bun",
+        "run",
+        "build"
+      ],
+      "outputs": [
+        "packages/*/dist/**"
+      ],
+      "root": []
+    },
     "createRelease": false,
     "npm": true,
     "push": true,
     "tags": true
   },
-  "scripts": { "post": {}, "pre": {} },
+  "scripts": {
+    "post": {},
+    "pre": {}
+  },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [
-    "0001-5e767742",
-    "0002-50611a29",
-    "0003-eea83819",
-    "0004-e58292b9",
-    "0005-4e48cbe4",
-    "0006-25566b59",
-    "0007-4c9a4997"
-  ],
+  "stones": [],
   "tag": "latest"
 }

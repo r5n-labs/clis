@@ -1,5 +1,19 @@
 # @r5n/cli-core
 
+## 🐛 0.4.4 (2026-09-16)
+
+### 🪨 Bug fixes
+
+- [`d6804ce`](https://github.com/r5n-labs/clis/commit/d6804ce) fix(core): validate CLI input and preserve persisted configuration
+  <details>
+  <summary>Details</summary>
+
+  Reject malformed numeric options and unsafe interactive routing before commands can apply destructive defaults. Preserve declared negated aliases and provide command-scoped option checks without breaking passthrough. Save configuration atomically, retain unreadable files and isolate nested defaults; include framework tests in type checking.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.2.1 → 0.2.2
+
 ## 🐛 0.4.3 (2026-08-03)
 
 ### 🪨 Bug fixes

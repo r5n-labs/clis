@@ -1,5 +1,19 @@
 # @r5n/atlas
 
+## 🐛 0.4.2 (2026-09-16)
+
+### 🪨 Bug fixes
+
+- [`d0892b1`](https://github.com/r5n-labs/clis/commit/d0892b1) fix(atlas): validate command inputs and write private files atomically
+  <details>
+  <summary>Details</summary>
+
+  Reject misspelled options and malformed profile references before selecting defaults or writing files. Preserve existing files on failed writes, report configuration errors consistently in JSON mode, and distinguish missing commands from invalid working directories.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.2.1 → 0.2.2
+
 ## 🐛 0.4.1 (2026-08-03)
 
 ### 🪨 Bug fixes

@@ -1,5 +1,61 @@
 # @r5n/hydra
 
+## 🐛 0.9.4 (2026-09-16)
+
+### 🪨 Bug fixes
+
+- [`a34aee1`](https://github.com/r5n-labs/clis/commit/a34aee1) fix(hydra): preserve runner state across lifecycle failures
+  <details>
+  <summary>Details</summary>
+
+  Track completed registrations and removals as they happen so partial failures remain recoverable. Publish only complete downloads, stop the selected detached process group, update each stale runner and reject unknown options before mutation. Keep runner binaries under explicit Hydra update control.
+  </details>
+- [`5092729`](https://github.com/r5n-labs/clis/commit/5092729) fix(sisyphus): close the gauntlet findings across planning, previews and reporting
+  <details>
+  <summary>Details</summary>
+
+  Graduation is now decided per package, not per stone. applyStone seeds
+  the graduating set from explicitly bumped packages that are leaving a
+  prerelease and closes it transitively over workspace dependencies, so
+  merging an unrelated graduating stone can no longer promote an
+  independent mid-prerelease dependent to a stable version. An untagged
+  dependency bump on a non-canonical prerelease now fails closed instead
+  of silently graduating.
+  
+  breakCycle trims the stuck subgraph to genuine cycle members before
+  choosing what to force, so an acyclic package behind a cycle is no
+  longer published before its own dependency or reported as cyclic.
+  
+  roll strips config.ignore before merging stones, so an ignored-only
+  stone can neither trigger the tag-homogeneity error nor brick release CI;
+  an empty release distinguishes ignored-only (graceful skip) from stale
+  stones referencing unknown packages (hard error naming them). The same
+  distinction now guards release-pr via shared release-plan helpers, and
+  its PR title is capped instead of unbounded.
+  
+  check and the version previews predict versions through applyStone, so
+  what the user is shown matches what roll will produce, and one invalid
+  manifest degrades a single row instead of killing the command. pr now
+  rejects explicitly requested ignored packages, and migrate validates
+  every changeset before writing any stone.
+  
+  roll --json no longer treats the flag as consent: an interactive
+  terminal without --yes fails closed. The report gains a required
+  warnings array carrying ignore exclusions, cycle caveats and channel
+  problems; per-package git tags are gated on tagsReady like the tag list;
+  the stdout guard also intercepts console.log; and a mixed-channel plan
+  degrades a dry run to a warning instead of losing the failure report.
+  
+  Build outputs declared as bare directories now match their contents, a
+  missing build executable carries its context label, schema.json accepts
+  hidden-directory outputs it previously rejected, hydra's tests are back
+  under type-check, and the resume path's root-build skip/re-run behaviour
+  is pinned by tests.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.2.1 → 0.2.2
+
 ## 📦 0.9.3 (2026-08-03)
 
 ### Dependency updates
