@@ -34,6 +34,7 @@ export const UNKNOWN_HASH = "unknown";
 export const UNKNOWN_AUTHOR = "unknown";
 export const DEFAULT_VERSION = "0.0.0";
 export const DEFAULT_NPM_TAG = "latest";
+export const DEFAULT_BUILD_COMMAND = ["bun", "run", "build"];
 export const DEFAULT_BRANCH = "main";
 
 export const STONE_ID_PAD_LENGTH = 4;
@@ -73,6 +74,11 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
 
   commits: { skip: { authors: ["r5n-bot[bot]"], messagePatterns: ["^chore\\(release\\):", "^chore: add stone"] } },
 
+  dependents: {
+    kinds: ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],
+    updateInternal: "always",
+  },
+
   ignore: [],
 
   lastStone: { commit: "", date: "" },
@@ -97,7 +103,13 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     },
   },
 
-  release: { createRelease: false, npm: false, push: false, tags: false },
+  release: {
+    build: { command: [...DEFAULT_BUILD_COMMAND], outputs: [], root: [] },
+    createRelease: false,
+    npm: false,
+    push: false,
+    tags: false,
+  },
 
   scripts: { post: {}, pre: {} },
 

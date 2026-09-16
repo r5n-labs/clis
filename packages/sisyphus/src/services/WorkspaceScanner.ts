@@ -60,51 +60,17 @@ export class WorkspaceScanner {
 
   private static async scanWorkspaces(workspaces: string[]): Promise<Map<string, Package>> {
     const packages = new Map<string, Package>();
-    const dependencyOf = new Map<string, string[]>();
 
     for (const workspace of workspaces) {
       const files = new Bun.Glob(`${workspace}/package.json`).scanSync({ cwd: process.cwd() });
 
       for (const file of files) {
-        const pkg = await WorkspaceScanner.processPackageFile(file, dependencyOf);
-        if (pkg) {
-          packages.set(pkg.name, pkg);
-        }
+        const json: PackageJson = await Bun.file(file).json();
+        const pkg = Package.fromJson(json, file);
+        packages.set(pkg.name, pkg);
       }
     }
 
-    WorkspaceScanner.linkDependencies(packages, dependencyOf);
     return packages;
-  }
-
-  private static async processPackageFile(file: string, dependencyOf: Map<string, string[]>): Promise<Package> {
-    const json: PackageJson = await Bun.file(file).json();
-    const pkg = Package.fromJson(json, file);
-
-    WorkspaceScanner.trackDependencies(pkg.name, json, dependencyOf);
-
-    return pkg;
-  }
-
-  private static trackDependencies(packageName: string, json: PackageJson, dependencyOf: Map<string, string[]>): void {
-    const deps = { ...json.dependencies, ...json.devDependencies };
-
-    for (const [depName, depVersion] of Object.entries(deps)) {
-      if (!depVersion?.startsWith("workspace")) continue;
-
-      const existing = dependencyOf.get(depName) || [];
-      if (!existing.includes(packageName)) {
-        dependencyOf.set(depName, [...existing, packageName]);
-      }
-    }
-  }
-
-  private static linkDependencies(packages: Map<string, Package>, dependencyOf: Map<string, string[]>): void {
-    for (const [pkgName, deps] of dependencyOf) {
-      const pkg = packages.get(pkgName);
-      if (pkg) {
-        packages.set(pkgName, pkg.withDependencyOf(deps));
-      }
-    }
   }
 }

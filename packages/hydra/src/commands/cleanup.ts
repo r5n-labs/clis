@@ -1,4 +1,4 @@
-import { args, color, confirm, Exit, log } from "@r5n/cli-core";
+import { args, color, confirm, Exit, log, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { DEFAULT_CLEANUP_OLDER_THAN_DAYS } from "../constants";
 import type { CleanupReport } from "../providers";
@@ -32,6 +32,7 @@ export class CleanupCommand extends BaseCommand {
   args = cleanupArgs;
 
   async execute(ctx: CleanupCtx) {
+    validateKnownArgs(ctx.args, cleanupArgs, "Run 'hydra cleanup --help' for supported options");
     const profiles = ctx.config.get("profiles");
 
     if (Object.keys(profiles).length === 0) {

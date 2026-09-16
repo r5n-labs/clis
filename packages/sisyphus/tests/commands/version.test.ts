@@ -152,8 +152,46 @@ describe("VersionCommand non-interactive flags", () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(`${stdout}\n${stderr}`).toContain("1.0.0-rc1.1");
+    expect(`${stdout}\n${stderr}`).toContain("1.0.1-rc1.0");
     expect(readStones()).toHaveLength(1);
+  });
+
+  test("dry-run preview shows graduation-aware versions for prerelease dependents", async () => {
+    const prereleaseRoot = createWorkspaceFixture([
+      { name: "@fx/core", private: true, version: "1.0.0-beta.0" },
+      { dependencies: { "@fx/core": "workspace:^" }, name: "@fx/cli", private: true, version: "1.0.0-beta.0" },
+    ]);
+
+    try {
+      const cliPath = join(import.meta.dir, "../../src/cli.ts");
+      const subprocess = Bun.spawn(
+        [
+          process.execPath,
+          cliPath,
+          "version",
+          "--patch",
+          "@fx/core",
+          "--message",
+          "fix: graduate",
+          "--yes",
+          "--dry-run",
+        ],
+        { cwd: prereleaseRoot, stderr: "pipe", stdin: "ignore", stdout: "pipe" },
+      );
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(subprocess.stdout).text(),
+        new Response(subprocess.stderr).text(),
+        subprocess.exited,
+      ]);
+
+      const output = `${stdout}\n${stderr}`;
+      expect(exitCode).toBe(0);
+      expect(output).toContain("@fx/core@1.0.0-beta.0 => 1.0.0");
+      expect(output).toContain("@fx/cli@1.0.0-beta.0 => 1.0.0");
+      expect(output).not.toContain("1.0.0-beta.1");
+    } finally {
+      rmSync(prereleaseRoot, { force: true, recursive: true });
+    }
   });
 
   test("rejects invalid explicit tags before persisted and dry-run execution", async () => {

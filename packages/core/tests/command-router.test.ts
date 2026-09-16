@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { AbstractCommand, args, type CommandContext, positionals } from "../src/command";
 import { CommandRouter } from "../src/command-router";
 import type { ConfigManager } from "../src/config-manager";
+import { Exit } from "../src/exit";
 import type { CliMetadata } from "../src/types";
 
 class ChildArgsCommand extends AbstractCommand {
@@ -25,6 +26,41 @@ function env() {
 }
 
 describe("CommandRouter", () => {
+  test("runs a command with supplied flags without prompting when stdout is not a terminal", async () => {
+    let interactive: boolean | undefined;
+    class PromptCommand extends AbstractCommand {
+      name = "configure";
+      description = "Configure a command";
+      prompts = true;
+      args = args({ name: { type: "string" } });
+      async execute(ctx: CommandContext): Promise<void> {
+        interactive = ctx.interactive;
+      }
+    }
+    const original = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: false });
+    try {
+      await new CommandRouter(new PromptCommand(), env()).route(["--name", "automated"], false);
+      expect(interactive).toBe(false);
+    } finally {
+      if (original) Object.defineProperty(process.stdout, "isTTY", original);
+      else Reflect.deleteProperty(process.stdout, "isTTY");
+    }
+  });
+
+  test("rejects explicit interactive routing when stdout is not a terminal", async () => {
+    const original = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: false });
+    try {
+      const command = new ChildArgsCommand();
+      await expect(new CommandRouter(command, env()).route([], true)).rejects.toThrow(Exit);
+      expect(command.capturedCommand).toBeUndefined();
+    } finally {
+      if (original) Object.defineProperty(process.stdout, "isTTY", original);
+      else Reflect.deleteProperty(process.stdout, "isTTY");
+    }
+  });
+
   test("passes child help flags after the delimiter to the command", async () => {
     const command = new ChildArgsCommand();
 

@@ -26,7 +26,11 @@ export class StoneMergeCommand extends BaseCommand {
     const stones = await this.resolveStones(ctx, manager);
     const message = await this.resolveMessage(ctx);
 
-    const { stone, conflicts } = Stone.merge(stones, message);
+    const { stone, conflicts, errors } = Stone.merge(stones, message);
+    if (errors.length > 0) {
+      throw new Exit("Selected stones cannot be merged", errors.join("\n"));
+    }
+
     await manager.save(stone);
 
     const shouldDelete = await this.resolveDelete(ctx);

@@ -1,30 +1,69 @@
+import { Exit } from "@r5n/cli-core";
 import { BUMP_EMOJI, BumpType } from "../domain/BumpType";
+import { requirePrereleaseTag } from "../domain/prerelease-tag";
+import {
+  compareSemver,
+  formatSemver,
+  hasSameCore,
+  incrementSemver,
+  isPrerelease,
+  prereleaseCounter,
+  prereleaseTag,
+  requireSemver,
+  type Semver,
+  type SemverRelease,
+  withPrerelease,
+} from "../domain/semver";
 
 const VERSION_INCREMENT = 1;
-const VERSION_INITIAL = 1;
-const DECIMAL_RADIX = 10;
+const PRERELEASE_INITIAL = 0;
 const SNAPSHOT_DATE_REGEX = /[.ZT:-]/g;
 const SNAPSHOT_DATE_LENGTH = 14;
+const SNAPSHOT_BASE_VERSION = "0.0.0";
+const SNAPSHOT_VERSION_PATTERN = /^0\.0\.0-[0-9A-Za-z.-]+-\d{14,}$/;
 const DEFAULT_SNAPSHOT_TAG = "nightly";
 
-export class VersionCalculator {
-  static bump(version: string, bump: BumpType, tag?: string): string {
-    const [baseVersion = "0.0.0", tagVersion = ""] = version.split("-");
-    const [currentTag = "", currentVersion = "0"] = tagVersion.split(".");
+const BUMP_RELEASE: Partial<Record<BumpType, SemverRelease>> = {
+  [BumpType.Dependency]: "patch",
+  [BumpType.Major]: "major",
+  [BumpType.Minor]: "minor",
+  [BumpType.Patch]: "patch",
+};
 
+export class VersionCalculator {
+  static bump(version: string, bump: BumpType, tag?: string, graduating = false): string {
+    if (tag !== undefined) requirePrereleaseTag(tag);
     if (bump === BumpType.Snapshot) {
       return VersionCalculator.formatSnapshot(tag);
     }
 
-    if (tag && bump !== BumpType.Dependency) {
-      return VersionCalculator.formatTagged(baseVersion, tag, currentTag, currentVersion);
+    const operation = `apply a ${bump} bump`;
+    const release = BUMP_RELEASE[bump];
+    if (!release) {
+      throw new Exit(`Unknown bump type "${bump}"`, "Use major, minor, patch, dependency, or snapshot");
     }
 
-    if (bump === BumpType.Dependency && currentTag) {
-      return VersionCalculator.formatTagged(baseVersion, currentTag, currentTag, currentVersion);
+    if (VersionCalculator.isSnapshotVersion(version)) {
+      throw new Exit(
+        `Cannot ${operation} to snapshot version ${version}`,
+        "Restore the package version from its last real release before releasing it again",
+      );
     }
 
-    return VersionCalculator.bumpBase(baseVersion, bump);
+    const current = requireSemver(version, operation);
+    const effectiveTag = VersionCalculator.resolveTag(current, bump, tag, graduating);
+    const target = incrementSemver(current, release);
+    const next =
+      effectiveTag === undefined ? target : VersionCalculator.applyPrerelease(target, current, effectiveTag, version);
+
+    if (compareSemver(next, current) <= 0) {
+      throw new Exit(
+        `A ${bump} bump would move ${version} to ${formatSemver(next)}, which is not a later version`,
+        "Prerelease tags must increase in semver precedence (alpha < beta < rc)",
+      );
+    }
+
+    return formatSemver(next);
   }
 
   static formatLabel(name: string, version: string, bump: BumpType, tag?: string, newVersion?: string): string {
@@ -33,33 +72,55 @@ export class VersionCalculator {
     return `${name}@${version} => ${nextVersion} ${emoji}`;
   }
 
+  static isSnapshotVersion(version: string): boolean {
+    return SNAPSHOT_VERSION_PATTERN.test(version);
+  }
+
+  private static resolveTag(
+    current: Semver,
+    bump: BumpType,
+    tag: string | undefined,
+    graduating: boolean,
+  ): string | undefined {
+    if (tag !== undefined) return tag;
+    if (graduating || bump !== BumpType.Dependency) return undefined;
+
+    const currentTag = prereleaseTag(current);
+    if (currentTag === undefined && isPrerelease(current)) {
+      throw new Exit(
+        `Cannot continue the prerelease of ${formatSemver(current)}`,
+        "Set the package version to a <tag>.<number> prerelease, or roll a graduating release to leave the channel",
+      );
+    }
+
+    return currentTag;
+  }
+
+  private static applyPrerelease(target: Semver, current: Semver, tag: string, version: string): Semver {
+    requirePrereleaseTag(tag);
+
+    if (!hasSameCore(target, current)) {
+      return withPrerelease(target, tag, PRERELEASE_INITIAL);
+    }
+
+    const counter = prereleaseCounter(current);
+    if (prereleaseTag(current) === tag && counter !== undefined) {
+      return withPrerelease(target, tag, counter + VERSION_INCREMENT);
+    }
+
+    if (current.prerelease[0] === tag) {
+      const core = `${target.major}.${target.minor}.${target.patch}`;
+      throw new Exit(
+        `Cannot continue the "${tag}" prerelease from ${version}`,
+        `Set the package version to ${core}-${tag}.<number> first`,
+      );
+    }
+
+    return withPrerelease(target, tag, PRERELEASE_INITIAL);
+  }
+
   private static formatSnapshot(tag?: string): string {
     const date = new Date().toISOString().replace(SNAPSHOT_DATE_REGEX, "").slice(0, SNAPSHOT_DATE_LENGTH);
-    return `0.0.0-${tag || DEFAULT_SNAPSHOT_TAG}-${date}`;
-  }
-
-  private static formatTagged(baseVersion: string, tag: string, currentTag: string, currentVersion: string): string {
-    const nextVersion =
-      tag === currentTag ? Number.parseInt(currentVersion, DECIMAL_RADIX) + VERSION_INCREMENT : VERSION_INITIAL;
-    return `${baseVersion}-${tag}.${nextVersion}`;
-  }
-
-  private static bumpBase(baseVersion: string, bump: BumpType): string {
-    const [major = "0", minor = "0", patch = "0"] = baseVersion.split(".");
-    const majorNum = Number.parseInt(major, DECIMAL_RADIX);
-    const minorNum = Number.parseInt(minor, DECIMAL_RADIX);
-    const patchNum = Number.parseInt(patch, DECIMAL_RADIX);
-
-    switch (bump) {
-      case BumpType.Major:
-        return `${majorNum + VERSION_INCREMENT}.0.0`;
-      case BumpType.Minor:
-        return `${majorNum}.${minorNum + VERSION_INCREMENT}.0`;
-      case BumpType.Dependency:
-      case BumpType.Patch:
-        return `${majorNum}.${minorNum}.${patchNum + VERSION_INCREMENT}`;
-      default:
-        return `${majorNum}.${minorNum}.${patchNum}`;
-    }
+    return `${SNAPSHOT_BASE_VERSION}-${tag || DEFAULT_SNAPSHOT_TAG}-${date}`;
   }
 }

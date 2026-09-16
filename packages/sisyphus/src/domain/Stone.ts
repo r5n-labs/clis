@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { Exit } from "@r5n/cli-core";
+import { array, string } from "banditypes";
 import { SHORT_UUID_LENGTH, STONE_ID_PAD_LENGTH } from "../constants";
 import { BUMP_ORDER, BumpType, higherBump } from "./BumpType";
 import type { CommitInfo } from "./Commit";
 import { nonEmpty } from "./helpers";
+import { requirePrereleaseTag } from "./prerelease-tag";
+
+const packageNamesSchema = array(string());
 
 export type StoneData = {
   message: string;
@@ -18,7 +23,7 @@ export type StoneData = {
 
 export type StoneJson = StoneData & { id: string; commits?: readonly CommitInfo[] };
 
-export type MergeResult = { stone: Stone; conflicts: readonly string[] };
+export type MergeResult = { stone: Stone; conflicts: readonly string[]; errors: readonly string[] };
 
 type StoneOptions = {
   id: string;
@@ -41,7 +46,7 @@ export class Stone {
   private constructor(options: StoneOptions) {
     this.id = options.id;
     this.message = options.message;
-    this.tag = options.tag;
+    this.tag = options.tag === undefined ? undefined : requirePrereleaseTag(options.tag);
     this.description = options.description;
     this.commits = options.commits;
     this._packages = options.packages;
@@ -57,23 +62,26 @@ export class Stone {
   }
 
   static mergeAll(stones: Stone[]): Stone {
-    const [first, ...rest] = stones;
-    if (!first) throw new Error("No stones to merge");
-    if (rest.length === 0) return first;
+    if (stones.length === 0) throw new Error("No stones to merge");
 
     const messages = stones.map((s) => s.message).join("; ");
-    return Stone.merge(stones, messages).stone;
+    const { stone, errors } = Stone.merge(stones, messages);
+    if (errors.length > 0) {
+      throw new Exit("Pending stones conflict and cannot be released together", errors.join("\n"));
+    }
+
+    return stone;
   }
 
   static merge(stones: Stone[], message: string): MergeResult {
     const packageBumps = new Map<string, BumpType>();
     const conflicts: string[] = [];
+    const errors: string[] = [];
 
     for (const stone of stones) {
-      Stone.collectBumps(stone, BumpType.Major, packageBumps, conflicts);
-      Stone.collectBumps(stone, BumpType.Minor, packageBumps, conflicts);
-      Stone.collectBumps(stone, BumpType.Patch, packageBumps, conflicts);
-      Stone.collectBumps(stone, BumpType.Dependency, packageBumps, conflicts);
+      for (const bump of BUMP_ORDER) {
+        Stone.collectBumps(stone, bump, packageBumps, conflicts, errors);
+      }
     }
 
     const packages = Stone.categorizeBumps(packageBumps);
@@ -81,8 +89,8 @@ export class Stone {
       .map((s) => s.description)
       .filter(Boolean)
       .join("\n\n");
-    const commits = stones.flatMap((s) => s.commits ?? []);
-    const tags = [...new Set(stones.map((s) => s.tag).filter(Boolean))];
+    const commits = Stone.mergeCommits(stones);
+    const tag = Stone.resolveTag(stones, errors);
 
     const id = `merged-${Date.now()}`;
     const stone = new Stone({
@@ -91,10 +99,47 @@ export class Stone {
       id,
       message,
       packages,
-      tag: tags[0],
+      tag,
     });
 
-    return { conflicts: [...new Set(conflicts)], stone };
+    return { conflicts: [...new Set(conflicts)], errors: [...new Set(errors)], stone };
+  }
+
+  private static resolveTag(allStones: Stone[], errors: string[]): string | undefined {
+    const stones = allStones.filter((stone) => !stone.isEmpty);
+    const tagged = new Map<string, string[]>();
+    for (const stone of stones) {
+      if (!stone.tag) continue;
+      tagged.set(stone.tag, [...(tagged.get(stone.tag) ?? []), stone.id]);
+    }
+
+    if (tagged.size === 0) return undefined;
+
+    const untagged = stones.filter((stone) => !stone.tag).map((stone) => stone.id);
+    if (tagged.size > 1 || untagged.length > 0) {
+      const described = [...tagged.entries()].map(([tag, ids]) => `${tag}: ${ids.join(", ")}`);
+      if (untagged.length > 0) described.push(`no tag: ${untagged.join(", ")}`);
+      errors.push(`Stones disagree on the prerelease tag (${described.join("; ")})`);
+    }
+
+    return [...tagged.keys()][0];
+  }
+
+  private static mergeCommits(stones: Stone[]): CommitInfo[] {
+    const byHash = new Map<string, CommitInfo>();
+
+    for (const commit of stones.flatMap((stone) => stone.commits ?? [])) {
+      const existing = byHash.get(commit.hash);
+      if (!existing) {
+        byHash.set(commit.hash, { ...commit, packages: [...(commit.packages ?? [])] });
+        continue;
+      }
+
+      const packages = new Set([...existing.packages, ...(commit.packages ?? [])]);
+      byHash.set(commit.hash, { ...existing, packages: [...packages] });
+    }
+
+    return [...byHash.values()];
   }
 
   private static collectBumps(
@@ -102,6 +147,7 @@ export class Stone {
     bump: BumpType,
     packageBumps: Map<string, BumpType>,
     conflicts: string[],
+    errors: string[],
   ): void {
     for (const pkg of stone.getPackages(bump)) {
       const currentBump = packageBumps.get(pkg);
@@ -112,6 +158,13 @@ export class Stone {
       }
 
       if (currentBump === bump) continue;
+
+      if (currentBump === BumpType.Snapshot || bump === BumpType.Snapshot) {
+        errors.push(
+          `Package ${pkg} is requested as both a snapshot and a ${currentBump === BumpType.Snapshot ? bump : currentBump} release`,
+        );
+        continue;
+      }
 
       conflicts.push(pkg);
       const resolved = higherBump(bump, currentBump);
@@ -135,11 +188,17 @@ export class Stone {
 
   private static fromData(id: string, data: StoneData): Stone {
     const packages = new Map<BumpType, readonly string[]>();
-    packages.set(BumpType.Major, data.major ?? []);
-    packages.set(BumpType.Minor, data.minor ?? []);
-    packages.set(BumpType.Patch, data.patch ?? []);
-    packages.set(BumpType.Dependency, data.dependency ?? []);
-    packages.set(BumpType.Snapshot, data.snapshot ?? []);
+    for (const bump of BUMP_ORDER) {
+      const names = data[bump];
+      try {
+        packages.set(bump, names === undefined ? [] : packageNamesSchema(names));
+      } catch {
+        throw new Exit(
+          `Invalid ${bump} packages in stone ${id}`,
+          "Each bump field must contain an array of package names",
+        );
+      }
+    }
 
     return new Stone({
       commits: data.commits,

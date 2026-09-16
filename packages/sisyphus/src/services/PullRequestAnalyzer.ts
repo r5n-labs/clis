@@ -2,17 +2,20 @@ import type { ConfigManager } from "@r5n/cli-core";
 import { Exit } from "@r5n/cli-core";
 import { OTHER_COMMIT_TYPE, SHORT_HASH_LENGTH, UNKNOWN_HASH } from "../constants";
 import { BumpType, Commit, type CommitInfo } from "../domain";
-import { createGitProvider, type GitProvider, type MergeMethod, type PullRequest, parsePrUrl } from "../providers";
+import {
+  createGitProvider,
+  type GitProvider,
+  getRemoteUrl,
+  type MergeMethod,
+  type PullRequest,
+  parsePrUrl,
+  parseRemoteUrl,
+} from "../providers";
 import type { SisyphusConfig } from "../types";
 import { buildPackagePathMap, findAffectedPackages } from "../utils";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
-type AnalysisContext = {
-  provider: GitProvider;
-  url: string | undefined;
-  packagePaths: Map<string, string>;
-  isSinglePackage: boolean;
-};
+type AnalysisContext = { provider: GitProvider; packagePaths: Map<string, string>; isSinglePackage: boolean };
 
 export type PullRequestInfo = {
   number: number;
@@ -48,7 +51,7 @@ export class PullRequestAnalyzer {
     const { packages } = await WorkspaceScanner.scan({ single: isSinglePackage });
     const packagePaths = buildPackagePathMap(packages);
 
-    const ctx: AnalysisContext = { isSinglePackage, packagePaths, provider, url };
+    const ctx: AnalysisContext = { isSinglePackage, packagePaths, provider };
 
     const { commits, affectedPackages } = pr.merged
       ? await this.analyzeAfterMerge(pr, ctx)
@@ -84,9 +87,17 @@ export class PullRequestAnalyzer {
     pr: PullRequestInfo,
     ctx: AnalysisContext,
   ): Promise<{ commits: CommitInfo[]; affectedPackages: Set<string> }> {
-    const files = ctx.url
-      ? await this.fetchFilesFromApi(ctx.provider, ctx.url)
-      : await this.getFilesFromCommit(pr.mergeCommitSha);
+    const hashes = await ctx.provider.getPrCommits(pr.number);
+    if (pr.mergeCommitSha && hashes.includes(pr.mergeCommitSha)) {
+      const parsedCommits = await Promise.all(hashes.map((hash) => Commit.fromHash(hash)));
+      if (parsedCommits.every((commit) => commit !== null)) return this.processCommits(parsedCommits, ctx);
+    }
+    const files = await ctx.provider.getPrFiles(pr.number);
+    if (files.length === 0)
+      throw new Exit(
+        `Could not determine changed files for PR #${pr.number}`,
+        "Check provider access and retry the analysis",
+      );
     const affectedPackages = findAffectedPackages(files, ctx.packagePaths, ctx.isSinglePackage);
 
     const commit: CommitInfo = {
@@ -166,13 +177,6 @@ export class PullRequestAnalyzer {
     return this.provider;
   }
 
-  private async fetchFilesFromApi(provider: GitProvider, url: string): Promise<string[]> {
-    const urlInfo = parsePrUrl(url);
-    if (!urlInfo) return [];
-
-    return provider.getPrFiles(urlInfo.number);
-  }
-
   private async fetchFromCurrentBranch(provider: GitProvider): Promise<PullRequestInfo> {
     const pr = await provider.getPrFromCurrentBranch();
     return this.mapPullRequest(pr);
@@ -189,6 +193,18 @@ export class PullRequestAnalyzer {
       throw new Exit(
         `PR URL is from ${urlInfo.provider}, but repository is on ${provider.name}`,
         "Make sure the PR URL matches the repository provider",
+      );
+    }
+
+    const remoteInfo = parseRemoteUrl((await getRemoteUrl()) ?? "");
+    if (
+      !remoteInfo ||
+      remoteInfo.owner.toLowerCase() !== urlInfo.owner.toLowerCase() ||
+      remoteInfo.repo.toLowerCase() !== urlInfo.repo.toLowerCase()
+    ) {
+      throw new Exit(
+        "PR URL does not match this repository",
+        "Use a PR/MR URL from the repository configured as origin",
       );
     }
 
@@ -232,15 +248,5 @@ export class PullRequestAnalyzer {
     }
 
     return null;
-  }
-
-  private async getFilesFromCommit(sha: string | null): Promise<string[]> {
-    if (!sha) return [];
-    try {
-      const result = await Bun.$`git diff-tree --no-commit-id --name-only -r ${sha}`.quiet();
-      return result.stdout.toString().trim().split("\n").filter(Boolean);
-    } catch {
-      return [];
-    }
   }
 }

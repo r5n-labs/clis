@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { type ConfigManager, color, Exit, log } from "@r5n/cli-core";
 import { DEFAULT_CONFIG_DIR, DEFAULT_RELEASED_DIR, DEFAULT_STONES_DIR } from "../constants";
@@ -121,7 +121,8 @@ export class StoneManager {
       const destPath = join(archiveDir, `${stone.id}.json`);
 
       if (existsSync(sourcePath)) {
-        await rename(sourcePath, destPath);
+        await writeFile(destPath, JSON.stringify(stone.toJson(), null, 2), "utf-8");
+        await unlink(sourcePath);
         this.removeFromConfigStones(stone.id);
       }
     }

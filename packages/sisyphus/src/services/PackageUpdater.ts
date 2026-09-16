@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Package } from "../domain";
+import { requireSemver } from "../domain/semver";
 
 const DEFAULT_INDENT = 2;
 const TOP_LEVEL_DEPTH = 1;
@@ -26,6 +27,8 @@ export class PackageUpdater {
   private async updatePackage(pkg: Package) {
     const newVersion = pkg.newVersion;
     if (!newVersion) return;
+
+    requireSemver(newVersion, `write the new version of ${pkg.name}`);
 
     const content = await readFile(pkg.file, "utf-8");
     this.originals.set(pkg.file, content);

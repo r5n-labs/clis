@@ -1,8 +1,9 @@
 import { args, color, log, note } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import type { Package, Stone } from "../domain";
-import { BUMP_COLORS, BUMP_EMOJI, BUMP_ORDER } from "../domain";
-import { StoneManager, VersionCalculator, WorkspaceScanner } from "../services";
+import { BUMP_COLORS, BUMP_EMOJI } from "../domain";
+import { dependentsOptions, isIgnoredPackage, predictStoneVersions, StoneManager, WorkspaceScanner } from "../services";
+import type { DependencyKind } from "../types";
 
 const checkArgs = args({
   config: { alias: "c", default: false, description: "Include config in output", type: "boolean" },
@@ -22,6 +23,7 @@ type JsonStone = {
   id: string;
   message: string;
   tag?: string;
+  invalid?: string;
   packages: { name: string; version: string; bump: string; newVersion: string }[];
 };
 
@@ -30,6 +32,8 @@ type CheckData = {
   packages: Map<string, Package>;
   packageNames: readonly string[];
   stones: Stone[];
+  ignore: readonly string[];
+  kinds: readonly DependencyKind[];
   config?: object;
 };
 
@@ -50,7 +54,10 @@ export class CheckCommand extends BaseCommand {
 
   private async gatherData(ctx: CheckCtx): Promise<CheckData> {
     const isSingle = ctx.config.get("single");
-    const { packages, packageNames } = await WorkspaceScanner.scan({ single: isSingle });
+    const ignore = ctx.config.get("ignore") ?? [];
+    const scan = await WorkspaceScanner.scan({ single: isSingle });
+    const packages = scan.packages;
+    const packageNames = scan.packageNames.filter((name) => !isIgnoredPackage(name, ignore));
 
     const rootResult = isSingle ? null : await WorkspaceScanner.scan({ single: true });
     const root = rootResult?.packages.values().next().value ?? packages.values().next().value;
@@ -58,7 +65,15 @@ export class CheckCommand extends BaseCommand {
     const manager = new StoneManager(ctx.config);
     const stones = await manager.list();
 
-    return { config: ctx.args.config ? ctx.config.getAll() : undefined, packageNames, packages, root, stones };
+    return {
+      config: ctx.args.config ? ctx.config.getAll() : undefined,
+      ignore,
+      kinds: dependentsOptions(ctx.config).kinds,
+      packageNames,
+      packages,
+      root,
+      stones,
+    };
   }
 
   private printJson(data: CheckData) {
@@ -66,24 +81,20 @@ export class CheckCommand extends BaseCommand {
       config: data.config,
       packages: data.packageNames.map((name) => ({ name, version: data.packages.get(name)?.version ?? "0.0.0" })),
       root: { name: data.root?.name ?? "", version: data.root?.version ?? "0.0.0" },
-      stones: data.stones.map((stone) => this.stoneToJson(stone, data.packages)),
+      stones: data.stones.map((stone) => this.stoneToJson(stone, data)),
     };
 
     console.log(JSON.stringify(output, null, 2));
   }
 
-  private stoneToJson(stone: Stone, packages: Map<string, Package>): JsonStone {
-    const stonePkgs: JsonStone["packages"] = [];
+  private stoneToJson(stone: Stone, data: CheckData): JsonStone {
+    const prediction = predictStoneVersions(stone, data.packages, data.ignore, data.kinds);
 
-    for (const bump of BUMP_ORDER) {
-      for (const name of stone.getPackages(bump)) {
-        const pkg = packages.get(name);
-        const version = pkg?.version ?? "0.0.0";
-        stonePkgs.push({ bump, name, newVersion: VersionCalculator.bump(version, bump, stone.tag), version });
-      }
+    if (prediction.kind === "invalid") {
+      return { id: stone.id, invalid: prediction.message, message: stone.message, packages: [], tag: stone.tag };
     }
 
-    return { id: stone.id, message: stone.message, packages: stonePkgs, tag: stone.tag };
+    return { id: stone.id, message: stone.message, packages: prediction.packages, tag: stone.tag };
   }
 
   private printFormatted(data: CheckData) {
@@ -91,7 +102,7 @@ export class CheckCommand extends BaseCommand {
     this.printPackages(data);
 
     if (data.stones.length > 0) {
-      this.printStones(data.stones, data.packages);
+      this.printStones(data);
     }
 
     if (data.config) {
@@ -125,12 +136,12 @@ export class CheckCommand extends BaseCommand {
     log.step(lines.join("\n"));
   }
 
-  private printStones(stones: Stone[], packages: Map<string, Package>) {
-    const allStones = stones.map((stone) => this.formatStone(stone, packages)).join("\n\n");
+  private printStones(data: CheckData) {
+    const allStones = data.stones.map((stone) => this.formatStone(stone, data)).join("\n\n");
     log.step(`${color.bold(color.green("Stones:"))}\n\n${allStones}`);
   }
 
-  private formatStone(stone: Stone, packages: Map<string, Package>): string {
+  private formatStone(stone: Stone, data: CheckData): string {
     const lines: string[] = [];
 
     lines.push(`${color.bold("Stone:")} ${color.cyan(stone.id)}`);
@@ -138,19 +149,18 @@ export class CheckCommand extends BaseCommand {
     lines.push(`${color.dim("Message:")} ${stone.message}`);
     lines.push(`${color.bold("Packages:")}`);
 
-    for (const bump of BUMP_ORDER) {
-      const pkgNames = stone.getPackages(bump);
-      if (pkgNames.length === 0) continue;
+    const prediction = predictStoneVersions(stone, data.packages, data.ignore, data.kinds);
 
-      for (const name of pkgNames) {
-        const pkg = packages.get(name);
-        const version = pkg?.version ?? "0.0.0";
-        const newVersion = VersionCalculator.bump(version, bump, stone.tag);
-        const colorFn = BUMP_COLORS[bump];
-        const emoji = BUMP_EMOJI[bump];
+    if (prediction.kind === "invalid") {
+      lines.push(`  ${color.yellow(`invalid: ${prediction.message}`)}`);
+      return lines.join("\n");
+    }
 
-        lines.push(`  ${emoji} ${color.cyan(name)}@${colorFn(newVersion)} ${color.dim(`(${bump})`)}`);
-      }
+    for (const pkg of prediction.packages) {
+      const colorFn = BUMP_COLORS[pkg.bump];
+      const emoji = BUMP_EMOJI[pkg.bump];
+
+      lines.push(`  ${emoji} ${color.cyan(pkg.name)}@${colorFn(pkg.newVersion)} ${color.dim(`(${pkg.bump})`)}`);
     }
 
     return lines.join("\n");

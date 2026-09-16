@@ -1,0 +1,17 @@
+{
+  "commits": [
+    {
+      "body": "A package-manager dispatcher can resolve npm by name after removing its own shim directory. Keeping the test interception directory on that path re-enters the interceptor and can hang indefinitely. Delegate with the original PATH and include captured subprocess output in failure diagnostics.",
+      "hash": "e9b35d1",
+      "message": "restore PATH when delegating npm calls",
+      "packages": ["@r5n/tools"],
+      "scope": "tools",
+      "subject": "test(tools): restore PATH when delegating npm calls",
+      "type": "test"
+    }
+  ],
+  "dependency": ["@r5n/atlas", "@r5n/cli-core", "@r5n/hydra", "@r5n/sisyphus"],
+  "id": "0006-25566b59",
+  "message": "Tests",
+  "patch": ["@r5n/tools"]
+}

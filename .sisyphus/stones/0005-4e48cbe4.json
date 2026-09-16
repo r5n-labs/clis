@@ -1,0 +1,16 @@
+{
+  "commits": [
+    {
+      "body": "The hook's run template referenced {files} without a files command, so\nlefthook resolved an empty list and skipped linting on every commit\n(\"no files for inspection\"). stage_fixed already re-stages what Biome\nrewrites, so the trailing git add was redundant as well as fatal.\n\nBiome 2.5 renamed the recommended switch to a preset; apply the migration\nit reports on every check.",
+      "hash": "30c5ce6",
+      "message": "make the pre-commit hook lint again and migrate the biome preset",
+      "packages": ["@r5n/tools"],
+      "subject": "chore: make the pre-commit hook lint again and migrate the biome preset",
+      "type": "chore"
+    }
+  ],
+  "dependency": ["@r5n/atlas", "@r5n/cli-core", "@r5n/hydra", "@r5n/sisyphus"],
+  "id": "0005-4e48cbe4",
+  "message": "Chores",
+  "patch": ["@r5n/tools"]
+}

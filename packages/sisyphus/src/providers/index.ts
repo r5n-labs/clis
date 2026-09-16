@@ -17,9 +17,11 @@ export {
   type RemoteInfo,
 } from "./GitProvider";
 
-const GITHUB_PR_URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
-const GITLAB_MR_URL_PATTERN = /gitlab\.com\/([^/]+)\/([^/]+)\/-\/merge_requests\/(\d+)/;
-const BITBUCKET_PR_URL_PATTERN = /bitbucket\.org\/([^/]+)\/([^/]+)\/pull-requests\/(\d+)/;
+const PR_PATH_PATTERNS: Record<Provider, RegExp> = {
+  github: /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/|$)/,
+  gitlab: /^\/(.+)\/([^/]+)\/-\/merge_requests\/([1-9]\d*)(?:\/|$)/,
+  bitbucket: /^\/([^/]+)\/([^/]+)\/pull-requests\/([1-9]\d*)(?:\/|$)/,
+};
 
 export async function createGitProvider(remoteInfo?: RemoteInfo) {
   const info = remoteInfo ?? (await detectRemoteInfo());
@@ -107,21 +109,17 @@ function providerFromHostname(hostname: string): Provider | null {
 }
 
 export function parsePrUrl(url: string): PrUrlInfo | null {
-  const patterns: [RegExp, Provider][] = [
-    [GITHUB_PR_URL_PATTERN, "github"],
-    [GITLAB_MR_URL_PATTERN, "gitlab"],
-    [BITBUCKET_PR_URL_PATTERN, "bitbucket"],
-  ];
-
-  for (const [pattern, provider] of patterns) {
-    const match = url.match(pattern);
-    if (!match) continue;
-
-    const [, owner, repo, number] = match;
-    if (owner && repo && number) {
-      return { number: Number.parseInt(number, 10), owner, provider, repo };
-    }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    const provider = providerFromHostname(parsed.hostname.toLowerCase());
+    if (!provider) return null;
+    const match = parsed.pathname.match(PR_PATH_PATTERNS[provider]);
+    const [, owner, repo, id] = match ?? [];
+    const number = Number(id);
+    if (!owner || !repo || !Number.isSafeInteger(number)) return null;
+    return { number, owner, provider, repo };
+  } catch {
+    return null;
   }
-
-  return null;
 }

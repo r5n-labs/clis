@@ -36,6 +36,12 @@ export class CommandRouter<TConfig extends object = object> {
   }
 
   async route(argv: string[], interactive: boolean): Promise<void> {
+    if (interactive && process.stdout.isTTY !== true) {
+      throw new Exit(
+        "Interactive mode requires a terminal",
+        "Pass a command and its arguments to run non-interactively",
+      );
+    }
     if (interactive) {
       await this.routeInteractive();
     } else {
@@ -98,7 +104,7 @@ export class CommandRouter<TConfig extends object = object> {
       process.exit(1);
     }
 
-    const interactive = this.command.prompts && rawPositionals.length === 0;
+    const interactive = this.command.prompts && rawPositionals.length === 0 && process.stdout.isTTY === true;
     const ctx = this.buildContext(positionals, args, interactive);
     await this.command.execute(ctx);
   }

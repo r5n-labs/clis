@@ -1,6 +1,7 @@
 import { args, color, confirm, Exit, log, note, spinner } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
+import type { StoneData } from "../domain";
 import { ChangesetParser, StoneManager } from "../services";
 import type { ChangesetConfig, ChangesetContent, ParseResult } from "../services/ChangesetParser";
 
@@ -32,9 +33,11 @@ export class MigrateCommand extends BaseCommand {
       return;
     }
 
+    const stoneData = this.collectStoneData(changesets);
+
     if (!ctx.args.yes && !(await this.confirmMigration(changesets.length))) return;
 
-    const createdStones = await this.createStones(ctx, changesets);
+    const createdStones = await this.createStones(ctx, stoneData);
     await this.applyConfigMigration(ctx, config);
     this.displaySuccess(createdStones);
   }
@@ -72,16 +75,38 @@ export class MigrateCommand extends BaseCommand {
     return confirm({ initialValue: true, message: `Migrate ${count} changeset(s) to stones?` });
   }
 
-  private async createStones(ctx: MigrateCtx, changesets: ChangesetContent[]): Promise<string[]> {
+  private collectStoneData(changesets: ChangesetContent[]): StoneData[] {
+    const stoneData: StoneData[] = [];
+    const errors: string[] = [];
+
+    for (const changeset of changesets) {
+      try {
+        stoneData.push(this.parser.toStoneData(changeset));
+      } catch (error) {
+        if (!(error instanceof Exit)) throw error;
+        errors.push(error.message);
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new Exit(
+        `Cannot migrate changesets:\n${errors.join("\n")}`,
+        "Rewrite them as major, minor, or patch before migrating; no stones were created",
+      );
+    }
+
+    return stoneData;
+  }
+
+  private async createStones(ctx: MigrateCtx, stoneData: StoneData[]): Promise<string[]> {
     const s = spinner();
     s.start("Creating stones...");
 
     const manager = new StoneManager(ctx.config);
     const createdStones: string[] = [];
 
-    for (const changeset of changesets) {
-      const stoneData = this.parser.toStoneData(changeset);
-      const stone = await manager.create(stoneData);
+    for (const data of stoneData) {
+      const stone = await manager.create(data);
       createdStones.push(stone.id);
     }
 

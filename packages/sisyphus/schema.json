@@ -13,7 +13,29 @@
     },
     "sisyphusDir": { "type": "string", "minLength": 1 },
     "stonesPath": { "type": "string", "minLength": 1 },
-    "ignore": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "ignore": {
+      "type": "array",
+      "description": "Package names or globs that are never released. Globs use path semantics, so scoped names need '@scope/*' rather than '*'.",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "dependents": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How dependent packages are pulled into a release.",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "description": "Manifest sections whose workspace dependencies make a dependent releasable. Keep 'devDependencies' when packages are bundled at build time; drop it when only the published manifest matters.",
+          "items": { "enum": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] },
+          "uniqueItems": true
+        },
+        "updateInternal": {
+          "enum": ["always", "outOfRange"],
+          "description": "'always' releases every dependent; 'outOfRange' releases a dependent only when its published range no longer admits the new version. A literal 'workspace:<range>' is never rewritten by a release, so it never triggers one."
+        }
+      }
+    },
     "plugins": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "stones": {
       "type": "array",
@@ -38,6 +60,29 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How package artifacts are built before packing.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "description": "Argv for the per-package build, run in the package directory. An empty array disables it.",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "outputs": {
+              "type": "array",
+              "description": "Repository-root-relative globs written by the release build. They are cleaned before the build and exempted from the ignored-input and pack-input guards.",
+              "items": { "type": "string", "minLength": 1, "not": { "pattern": "^(\\.\\.?/|/)" } },
+              "uniqueItems": true
+            },
+            "root": {
+              "type": "array",
+              "description": "Argv arrays run once at the repository root before the first package is packed.",
+              "items": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        },
         "createRelease": { "type": "boolean" },
         "npm": { "type": "boolean" },
         "push": { "type": "boolean" },

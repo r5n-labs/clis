@@ -4,3 +4,4 @@ export * from "./Commit";
 export * from "./helpers";
 export * from "./Package";
 export * from "./Stone";
+export * from "./semver";

@@ -14,7 +14,7 @@
     },
     "packages/atlas": {
       "name": "@r5n/atlas",
-      "version": "0.3.0",
+      "version": "0.4.1",
       "bin": {
         "atlas": "dist/cli.js",
       },
@@ -26,7 +26,7 @@
     },
     "packages/core": {
       "name": "@r5n/cli-core",
-      "version": "0.4.1",
+      "version": "0.4.3",
       "dependencies": {
         "@clack/prompts": "1.7.0",
         "banditypes": "0.3.0",
@@ -39,7 +39,7 @@
     },
     "packages/hydra": {
       "name": "@r5n/hydra",
-      "version": "0.9.1",
+      "version": "0.9.3",
       "bin": {
         "hydra": "dist/cli.js",
       },
@@ -51,7 +51,7 @@
     },
     "packages/sisyphus": {
       "name": "@r5n/sisyphus",
-      "version": "0.8.2",
+      "version": "0.9.1",
       "bin": {
         "sis": "dist/cli.js",
         "sisyphus": "dist/cli.js",
@@ -60,11 +60,15 @@
         "@clack/prompts": "1.7.0",
         "@r5n/cli-core": "workspace:*",
         "@r5n/tools": "workspace:*",
+        "banditypes": "0.3.0",
       },
     },
     "tools": {
       "name": "@r5n/tools",
-      "version": "0.2.0",
+      "version": "0.2.1",
+      "devDependencies": {
+        "banditypes": "0.3.0",
+      },
     },
   },
   "packages": {

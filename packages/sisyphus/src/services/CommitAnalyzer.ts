@@ -10,7 +10,8 @@ import {
   type StoneData,
 } from "../domain";
 import type { CommitsSkipConfig, SisyphusConfig } from "../types";
-import { buildPackagePathMap, findAffectedPackages, findDependencyPackages } from "../utils";
+import { buildPackagePathMap, findAffectedPackages } from "../utils";
+import { collectDependents, type DependentsOptions, isIgnoredPackage } from "./dependency-graph";
 import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
@@ -78,7 +79,8 @@ export class CommitAnalyzer {
     trackedPackages: Map<string, Set<string>>,
   ): Promise<CommitGroup[]> {
     const { packages, packageNames } = await WorkspaceScanner.scan({ filter: options.filter, single: options.single });
-    const names = new Set(packageNames);
+    const ignore = this.config.get("ignore") ?? [];
+    const names = new Set(packageNames.filter((name) => !isIgnoredPackage(name, ignore)));
     const filteredPackages = new Map([...packages].filter(([name]) => names.has(name)));
     const packagePaths = buildPackagePathMap(filteredPackages);
     const typeGroups = new Map<string, CommitGroup>();
@@ -121,15 +123,16 @@ export class CommitAnalyzer {
     return sections[commit.type as keyof typeof sections] ?? `${commit.type} updates`;
   }
 
-  static buildStoneData(group: CommitGroup, packages: Map<string, Package>, tag?: string): StoneData {
+  static buildStoneData(group: CommitGroup, packages: Map<string, Package>, options: DependentsOptions): StoneData {
     const pkgNames = Array.from(group.packages);
+    const seeds = pkgNames.map((name) => ({ bump: group.bump, name }));
 
     return {
       [group.bump]: pkgNames,
       commits: nonEmpty(group.commits),
-      dependency: nonEmpty(findDependencyPackages(pkgNames, packages)),
+      dependency: nonEmpty(collectDependents(seeds, packages, options)),
       message: group.message,
-      tag,
+      tag: options.tag,
     };
   }
 }

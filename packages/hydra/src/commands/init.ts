@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { args, Cancel, color, confirm, Exit, group, note, positionals, text } from "@r5n/cli-core";
+import { args, Cancel, color, confirm, Exit, group, note, positionals, text, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
 import { parseGitHubUrl } from "../providers";
@@ -26,6 +26,7 @@ export class InitCommand extends BaseCommand {
   prompts = true;
 
   async execute(ctx: InitCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra init --help' for supported options");
     const profileName = ctx.interactive ? await this.promptProfileName(ctx) : (ctx.args.profile ?? DEFAULT_PROFILE);
 
     const isNewInit = !ctx.config.exists();

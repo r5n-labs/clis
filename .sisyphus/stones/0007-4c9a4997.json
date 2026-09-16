@@ -1,0 +1,16 @@
+{
+  "commits": [
+    {
+      "body": "Self-hosted jobs share a home directory, so restoring Bun into the default path can overwrite an executable another job is starting. Install the selected version beneath each job's temporary directory and reuse the workspace setup action for frozen dependency installation.",
+      "hash": "1a827f2",
+      "message": "isolate Bun installations for concurrent runners",
+      "packages": ["@r5n/tools"],
+      "subject": "ci: isolate Bun installations for concurrent runners",
+      "type": "ci"
+    }
+  ],
+  "dependency": ["@r5n/atlas", "@r5n/cli-core", "@r5n/hydra", "@r5n/sisyphus"],
+  "id": "0007-4c9a4997",
+  "message": "CI",
+  "patch": ["@r5n/tools"]
+}

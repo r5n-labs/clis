@@ -24,7 +24,7 @@ async function updateReadmeBadge(sizeKB: number, packageDir: string) {
   const file = Bun.file(readmePath);
   let content = await file.text();
 
-  const sizeBadgePattern = /https:\/\/img\.shields\.io\/badge\/bundle[_%20]size-~?\d+KB-green\.svg/g;
+  const sizeBadgePattern = /https:\/\/img\.shields\.io\/badge\/bundle(?:_|%20)size-~?\d+KB-green\.svg/g;
   const newBadge = `https://img.shields.io/badge/bundle_size-~${sizeKB}KB-green.svg`;
 
   if (!sizeBadgePattern.test(content)) {
@@ -46,32 +46,34 @@ export async function bunPackageBuilder({
   type,
   packages = "external",
   updateReadme = false,
+  entrypoints: explicitEntrypoints,
   ...options
 }: Omit<BuilderOptions & Partial<Parameters<typeof Bun.build>[0]>, "entrypoints"> & {
   type?: "cli";
   entrypoints?: string[];
-}) {
+}): Promise<boolean> {
   try {
     await Bun.$`bun run type-check`;
-  } catch (_e) {
-    console.error("\n❌ Type check failed. Aborting build.");
-    process.exit(1);
+  } catch (cause) {
+    throw new Error("Type check failed. Aborting build.", { cause });
   }
 
   const pkgJson = (await Bun.file("package.json").json()) as {
-    types: string;
+    types?: string;
     main: string;
-    exports: Record<string, { bun: string }>;
+    exports?: Record<string, { bun: string }>;
     name: string;
   };
 
-  const parsedEntrypoints =
-    type === "cli"
-      ? [`./${pkgJson.types}`]
-      : Object.entries(pkgJson.exports)
+  const entrypoints =
+    explicitEntrypoints ??
+    (type === "cli"
+      ? pkgJson.types
+        ? [`./${pkgJson.types}`]
+        : []
+      : Object.entries(pkgJson.exports ?? {})
           .map(([, { bun }]) => bun)
-          .filter(Boolean);
-  const entrypoints = options.entrypoints || parsedEntrypoints;
+          .filter(Boolean));
 
   if (!entrypoints || entrypoints.length === 0) {
     throw new Error("No entrypoints provided for build");
@@ -85,6 +87,7 @@ export async function bunPackageBuilder({
     outdir: "./dist",
     packages,
     sourcemap: "none",
+    throw: false,
     ...options,
   });
 

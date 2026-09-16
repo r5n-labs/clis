@@ -17,6 +17,9 @@ jobs:
     name: Release
     runs-on: r5n-m2-ultra
     if: "!contains(github.event.head_commit.message, 'release(🎉):')"
+    outputs:
+      published: ${{ steps.roll.outputs.published }}
+      publishedPackages: ${{ steps.roll.outputs.publishedPackages }}
 
     steps:
       - uses: actions/checkout@v7
@@ -47,26 +50,44 @@ jobs:
           fi
           STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length')
           echo "Found $STONES_COUNT pending stones"
-          echo "STONES_COUNT=$STONES_COUNT" >> $GITHUB_ENV
-
-      # The release validates that no gitignored build inputs exist outside node_modules and rebuilds per package itself.
-      - name: Remove prebuilt publish outputs
-        if: env.STONES_COUNT != '0'
-        run: rm -rf packages/*/dist
+          echo "STONES_COUNT=$STONES_COUNT" >> "$GITHUB_ENV"
+          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          if [ "$STONES_COUNT" -gt 0 ] || [ -f "$RELEASE_DIR/active.json" ]; then
+            echo "RELEASE_PENDING=true" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_PENDING=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Roll release
-        if: env.STONES_COUNT != '0'
+        id: roll
+        if: env.RELEASE_PENDING == 'true'
         run: |
+          set -eo pipefail
           NPM_DIR="$RUNNER_TEMP/npm11"
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
           npm --version
           RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          REPORT="$RUNNER_TEMP/release.json"
+          STATUS=0
           if [ -f "$RELEASE_DIR/active.json" ]; then
-            bun sis roll --resume
+            bun sis roll --resume --json > "$REPORT" || STATUS=$?
           else
-            bun release:roll
+            bun sis roll --json --yes > "$REPORT" || STATUS=$?
           fi
+
+          cat "$REPORT"
+
+          PUBLISHED=$(jq -r '.published // false' "$REPORT" 2>/dev/null || echo false)
+          PACKAGES=$(jq -c '.publishedPackages // []' "$REPORT" 2>/dev/null || echo '[]')
+          {
+            echo "published=$PUBLISHED"
+            echo "publishedPackages<<SIS_JSON_EOF"
+            echo "$PACKAGES"
+            echo "SIS_JSON_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$STATUS"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production

@@ -30,22 +30,16 @@
   },
   "commits": {
     "skip": {
-      "authors": [
-        "r5n-bot[bot]",
-        "Sisyphus",
-        "r5n-bot"
-      ],
-      "messagePatterns": [
-        "^chore\\(release\\):",
-        "^chore: add stone"
-      ]
+      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
+      "messagePatterns": ["^chore\\(release\\):", "^chore: add stone"]
     }
   },
-  "ignore": [],
-  "lastStone": {
-    "commit": "2916c61decf072aec31198bafbb6b1cfa090aec4",
-    "date": "2026-08-03T09:04:51.461Z"
+  "dependents": {
+    "kinds": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],
+    "updateInternal": "always"
   },
+  "ignore": [],
+  "lastStone": { "commit": "2916c61decf072aec31198bafbb6b1cfa090aec4", "date": "2026-08-03T09:04:51.461Z" },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -59,32 +53,29 @@
       "fix": "patch"
     },
     "skip": {
-      "authors": [
-        "r5n-bot[bot]",
-        "Sisyphus",
-        "r5n-bot"
-      ],
-      "labels": [
-        "sisyphus-release",
-        "skip-stone"
-      ],
-      "titlePatterns": [
-        "^chore\\(release\\):"
-      ]
+      "authors": ["r5n-bot[bot]", "Sisyphus", "r5n-bot"],
+      "labels": ["sisyphus-release", "skip-stone"],
+      "titlePatterns": ["^chore\\(release\\):"]
     }
   },
   "release": {
+    "build": { "command": ["bun", "run", "build"], "outputs": ["packages/*/dist/**"], "root": [] },
     "createRelease": false,
     "npm": true,
     "push": true,
     "tags": true
   },
-  "scripts": {
-    "post": {},
-    "pre": {}
-  },
+  "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": [
+    "0001-5e767742",
+    "0002-50611a29",
+    "0003-eea83819",
+    "0004-e58292b9",
+    "0005-4e48cbe4",
+    "0006-25566b59",
+    "0007-4c9a4997"
+  ],
   "tag": "latest"
 }

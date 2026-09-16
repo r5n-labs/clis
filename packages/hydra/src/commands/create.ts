@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { color, Exit, log, positionals, spinner, text } from "@r5n/cli-core";
+import { color, Exit, log, positionals, spinner, text, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { RunnerEntry } from "../types";
@@ -18,6 +19,7 @@ export class CreateCommand extends BaseCommand {
   positionals = createPositionals;
 
   async execute(ctx: CreateCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'hydra create --help' for supported options");
     const { name: profileName, profile } = ctx.interactive
       ? resolveProfile(ctx.config, await selectProfile(ctx.config))
       : resolveProfile(ctx.config, ctx.positionals.profile);
@@ -32,13 +34,6 @@ export class CreateCommand extends BaseCommand {
       throw new Exit("Runner count must be at least 1");
     }
 
-    const provider = createProvider(profile);
-
-    const s = spinner();
-    s.start("Downloading runner binary...");
-    const { version } = await provider.download();
-    s.stop(`Runner v${version} ready`);
-
     const entries: RunnerEntry[] = ctx.config.get("runners") ?? [];
     const existing = entries.filter((e) => e.profile === profileName);
     const toCreate = count - existing.length;
@@ -48,6 +43,12 @@ export class CreateCommand extends BaseCommand {
       return;
     }
 
+    const provider = createProvider(profile);
+    const s = spinner();
+    s.start("Downloading runner binary...");
+    const { version } = await provider.download();
+    s.stop(`Runner v${version} ready`);
+
     const existingIds = new Set(entries.map((e) => e.id));
     let nextIndex = 1;
 
@@ -56,11 +57,7 @@ export class CreateCommand extends BaseCommand {
       if (existingIds.has(id)) continue;
       created++;
 
-      s.start(`Registering ${id}...`);
-      await provider.create([id]);
-      s.stop(`${color.green("+")} ${id}`);
-
-      entries.push({
+      const entry: RunnerEntry = {
         createdAt: new Date().toISOString(),
         directory: join(profile.directory, id),
         id,
@@ -68,10 +65,19 @@ export class CreateCommand extends BaseCommand {
         profile: profileName,
         provider: profile.provider,
         url: profile.url,
-      });
+      };
+      const directoryExisted = existsSync(entry.directory);
+      s.start(`Registering ${id}...`);
+      try {
+        await provider.create([id]);
+      } finally {
+        if (!directoryExisted && existsSync(join(entry.directory, ".runner"))) {
+          entries.push(entry);
+          ctx.config.set("runners", entries);
+        }
+      }
+      s.stop(`${color.green("+")} ${id}`);
     }
-
-    ctx.config.set("runners", entries);
 
     const isDefault = profileName === ctx.config.get("defaultProfile");
     const profileSuffix = isDefault ? "" : ` ${profileName}`;

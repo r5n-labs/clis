@@ -1,0 +1,25 @@
+{
+  "commits": [
+    {
+      "body": "`roll` reported only a package count, so a workflow could not learn what\nwas published without parsing human output. Everything needed was\nalready in the release ledger — package names, old and new versions,\nper-package npm state, registries, artifact integrity, tags, stones —\nand simply never surfaced.\n\nAdd a pure report builder over the ledger and a --json flag covering\nevery roll mode: release, dry run, preview, publish-only, resume and\nabort. In JSON mode a single document goes to stdout, clack output is\nsuppressed rather than interleaved, confirmations are skipped, and a\nfailure still emits a report — including the packages that did publish\nbefore the failure — with human diagnostics on stderr and the same exit\ncode as before.\n\nThe report is versioned and always emits every field, using null and []\nrather than omission, so jq never has to distinguish absent from null.\n\nThis repo's own release workflow now reads it instead of the deleted\ndist workaround, and exposes published/publishedPackages as job outputs.",
+      "hash": "8628434",
+      "message": "add roll --json for CI consumption",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "feat(sisyphus): add roll --json for CI consumption",
+      "type": "feat"
+    },
+    {
+      "body": "The per-package build was a hardcoded `bun run build` with no way to\nchange it, disable it, or run anything at the repository root, and both\npack guards rejected every gitignored file outright. A monorepo whose\ndeclarations are generated centrally therefore had no way to publish\ncomplete packages: it could only pack without the declarations, or be\nrejected for having pre-built ones. This repo worked around it in CI by\ndeleting packages/*/dist after building.\n\nAdd release.build with an argv command for the per-package build, argv\narrays run once at the repository root before the first pack, and a list\nof globs declaring what the build writes. Declared outputs are cleaned\nbefore the root build and exempted from the ignored-input and pack-input\nguards; everything else stays rejected, and a declared output that Git\ntracks is refused before any build runs.\n\nCommands are spawned with an argv array rather than through a shell, so\nconfig strings carry no injection surface, and an absent command still\ndefaults to `bun run build` so existing configs behave exactly as before.\n\nThe root build runs inside the same commit-bound window as the rest of\nthe pipeline: it is bound to the release commit, refuses to change\ntracked source, and does not re-run on resume when every artifact is\nalready in the ledger.",
+      "hash": "acf9977",
+      "message": "make the release build configurable",
+      "packages": ["@r5n/sisyphus"],
+      "scope": "sisyphus",
+      "subject": "feat(sisyphus): make the release build configurable",
+      "type": "feat"
+    }
+  ],
+  "id": "0001-5e767742",
+  "message": "Features",
+  "minor": ["@r5n/sisyphus"]
+}

@@ -5,10 +5,11 @@ const COMMAND_PATH = `${import.meta.dir}/../src/command/index.ts`;
 const CONFIG_MANAGER_PATH = `${import.meta.dir}/../src/config-manager.ts`;
 const EXIT_PATH = `${import.meta.dir}/../src/exit.ts`;
 const CUSTOM_EXIT_CODE = 7;
+const CLI_TIMEOUT_MS = 2_000;
 
 type CliResult = { exitCode: number; output: string };
 
-function runFailingCli(exitCode?: number): CliResult {
+function runFailingCli(exitCode?: number, argv: string[] = ["fail"]): CliResult {
   const exitArguments = exitCode === undefined ? '"command failed"' : `"command failed", undefined, ${exitCode}`;
   const source = `
     import { AbstractCLI } from ${JSON.stringify(ABSTRACT_CLI_PATH)};
@@ -32,15 +33,27 @@ function runFailingCli(exitCode?: number): CliResult {
     }
 
     const cli = new TestCLI({} as ConfigManager<object>, { bin: "test-cli", name: "Test CLI" });
-    await cli.run(["fail"]);
+    await cli.run(${JSON.stringify(argv)});
   `;
-  const result = Bun.spawnSync({ cmd: [process.execPath, "--eval", source], stderr: "pipe", stdout: "pipe" });
+  const result = Bun.spawnSync({
+    cmd: [process.execPath, "--eval", source],
+    stderr: "pipe",
+    stdout: "pipe",
+    timeout: CLI_TIMEOUT_MS,
+  });
   const decoder = new TextDecoder();
 
   return { exitCode: result.exitCode, output: `${decoder.decode(result.stdout)}${decoder.decode(result.stderr)}` };
 }
 
 describe("AbstractCLI", () => {
+  test("rejects --interactive without a terminal with a clear error", () => {
+    const result = runFailingCli(undefined, ["--interactive"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("Interactive mode requires a terminal");
+    expect(result.output).not.toContain("Select:");
+  });
+
   test("exits with status 1 when a direct command throws Exit", () => {
     const result = runFailingCli();
 

@@ -3,12 +3,17 @@ import { BaseCommand, type Ctx } from "../../base-command";
 import { Package, Stone } from "../../domain";
 import { createGitProvider, type GitProvider } from "../../providers";
 import {
+  buildReleasePrTitle,
   ChangelogGenerator,
   CommitAnalyzer,
+  dependentsOptions,
+  explainEmptyRelease,
   hashReleasePlan,
   hashReleaseSource,
+  orderForRelease,
   PackageUpdater,
   StoneManager,
+  stripIgnoredFromStones,
   WorkspaceScanner,
 } from "../../services";
 import type { PackageRelease } from "../../types";
@@ -40,7 +45,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   async execute(ctx: ReleasePrCtx) {
-    const baseBranch = await this.checkoutReleaseBranch();
+    const originalRef = await this.checkoutReleaseBranch();
 
     try {
       const { stones, packages } = await this.collectReleaseData(ctx);
@@ -66,38 +71,66 @@ export class ActionsReleasePrCommand extends BaseCommand {
       await this.commitAndPushChanges(ctx, stones, packages);
       await this.createOrUpdatePr(prTitle, prBody);
     } finally {
-      await this.restoreMainBranch(baseBranch);
+      await this.restoreBranch(originalRef);
     }
   }
 
   private async checkoutReleaseBranch(): Promise<string> {
+    const status = await Bun.$`git status --porcelain=v1 --untracked-files=all`.quiet();
+    if (status.stdout.length > 0) {
+      throw new Exit(
+        "Working tree must be clean before preparing a release PR",
+        "Commit or stash your changes before running sis actions release-pr",
+      );
+    }
+    const branch = await Bun.$`git branch --show-current`.quiet();
+    const originalRef =
+      branch.stdout.toString().trim() || (await Bun.$`git rev-parse HEAD`.quiet()).stdout.toString().trim();
     const provider = await this.getProvider();
     const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git fetch origin ${baseBranch}`;
-    await this.stashChanges();
     await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
-    return baseBranch;
+    return originalRef;
   }
 
   private async collectReleaseData(ctx: ReleasePrCtx): Promise<{ stones: Stone[]; packages: Package[] }> {
     const manager = new StoneManager(ctx.config);
     const generatedStones = await this.generateStonesFromCommits(ctx, manager, ctx.args.dryRun);
     const pendingStones = await manager.list();
-    const stones = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
+    const collected = ctx.args.dryRun ? [...pendingStones, ...generatedStones] : pendingStones;
 
-    if (stones.length === 0) return { packages: [], stones: [] };
+    if (collected.length === 0) return { packages: [], stones: [] };
+
+    const ignore = ctx.config.get("ignore") ?? [];
+    const { stones, skipped } = stripIgnoredFromStones(collected, ignore);
+    if (skipped.length > 0) {
+      log.warn(color.yellow(`Excluded by config.ignore: ${skipped.join(", ")}`));
+    }
 
     const { packages } = await WorkspaceScanner.scan({ single: ctx.config.get("single") });
     const mergedStone = Stone.mergeAll(stones);
-    const updatedPackages = Package.applyStone(mergedStone, packages);
-
-    if (updatedPackages.length === 0) {
-      throw new Exit("No packages to update", "Stones don't reference any known packages");
+    const reason = explainEmptyRelease(mergedStone, packages, ignore);
+    if (reason.kind === "unknown-packages") {
+      throw new Exit(
+        `Pending stones reference unknown packages: ${reason.names.join(", ")}`,
+        "Remove or update the stale stones before creating a release PR",
+      );
+    }
+    const { cycle, ordered } = orderForRelease(
+      Package.applyStone(mergedStone, packages, dependentsOptions(ctx.config).kinds),
+    );
+    if (cycle.length > 0) {
+      log.warn(color.yellow(`Dependency cycle between ${cycle.join(", ")}; publish order may not satisfy every pin`));
     }
 
-    return { packages: updatedPackages, stones };
+    if (ordered.length === 0) {
+      log.warn(color.yellow("Pending stones reference no releasable packages"));
+      return { packages: [], stones: [] };
+    }
+
+    return { packages: ordered, stones };
   }
 
   private async commitAndPushChanges(ctx: ReleasePrCtx, stones: Stone[], packages: Package[]) {
@@ -140,8 +173,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   private buildPrTitle(packages: Package[]): string {
-    const names = packages.map((p) => `${p.name}@${p.newVersion}`).join(", ");
-    return `${PR_TITLE_PREFIX} ${names}`;
+    return buildReleasePrTitle(PR_TITLE_PREFIX, packages);
   }
 
   private buildPrBody(packages: Package[], stones: Stone[]): string {
@@ -212,7 +244,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const stones: Stone[] = [];
 
     for (const [index, group] of commitGroups.entries()) {
-      const stoneData = CommitAnalyzer.buildStoneData(group, packages);
+      const stoneData = CommitAnalyzer.buildStoneData(group, packages, dependentsOptions(ctx.config));
 
       if (dryRun) {
         log.info(`${color.dim("[dry-run] Would generate stone:")} ${group.message}`);
@@ -235,14 +267,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     return result.stdout.toString().trim() || null;
   }
 
-  private async stashChanges() {
-    await Bun.$`git stash --include-untracked`.nothrow();
-  }
-
   private async stageFiles(files: string[]) {
-    for (const file of files) {
-      await Bun.$`git add ${file}`.nothrow();
-    }
+    await Bun.$`git --literal-pathspecs add -- ${files}`;
   }
 
   private async updatePackages(packages: Package[]): Promise<string[]> {
@@ -322,9 +348,9 @@ export class ActionsReleasePrCommand extends BaseCommand {
     await provider.updatePr(prNumber, { body, title });
   }
 
-  private async restoreMainBranch(baseBranch: string) {
+  private async restoreBranch(originalRef: string) {
     try {
-      await Bun.$`git checkout ${baseBranch}`.quiet();
+      await Bun.$`git checkout ${originalRef}`.quiet();
     } catch (error) {
       log.warn(color.dim(`Failed to restore branch: ${error}`));
     }
