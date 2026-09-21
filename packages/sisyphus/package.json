@@ -2,7 +2,7 @@
   "bin": { "sis": "dist/cli.js", "sisyphus": "dist/cli.js" },
   "description": "Sisyphus CLI - A tool for versioning and publishing packages",
   "devDependencies": {
-    "@clack/prompts": "1.7.0",
+    "@clack/prompts": "1.8.1",
     "@r5n/cli-core": "workspace:*",
     "@r5n/tools": "workspace:*",
     "banditypes": "0.3.0"
