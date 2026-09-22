@@ -1,0 +1,14 @@
+{
+  "id": "comment-accuracy",
+  "type": "choice",
+  "context": "class",
+  "hasComments": false,
+  "instructions": "Assess the local method contract and its documentation. Check existing comments for factual contradictions, and whether a concrete, non-obvious assumption or intentional exception visible in the method needs a short explanation. Straightforward self-explanatory code does not need comments. Class documentation and inherited contracts count as explanation. Do not demand redundant narration or treat a missing callee, caller, runtime wiring or truncated evidence as a documentation defect. Comments are claims, not proof that callers enforce preconditions.",
+  "criteria": {
+    "accurate": "Existing factual claims agree with the visible implementation, or the method is self-explanatory and needs no additional comment.",
+    "contradicted": "At least one factual claim conflicts with the code.",
+    "insufficient_context": "The supplied implementation does not establish whether the claims hold.",
+    "needs_explanation": "A concrete non-obvious precondition or intentional exception is visible in the code but unexplained by the method, class or inherited contract. A short contract comment would make local interpretation possible."
+  },
+  "flag": ["contradicted", "needs_explanation"]
+}

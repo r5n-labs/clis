@@ -1,0 +1,13 @@
+{
+  "id": "comment-contradictions",
+  "type": "choice",
+  "context": "class",
+  "hasComments": true,
+  "instructions": "Do existing comments or documentation make a factual claim contradicted by the supplied implementation? Judge only factual accuracy, not whether more comments would be useful. Inherited contracts and intentional overrides matter. Comments are claims, not evidence that callers enforce preconditions. Missing implementation is not a contradiction.",
+  "criteria": {
+    "consistent": "No existing factual claim is contradicted by the supplied code.",
+    "contradicted": "A specific factual claim conflicts with demonstrated implementation behaviour.",
+    "insufficient_context": "The supplied implementation cannot establish whether a factual claim holds."
+  },
+  "flag": ["contradicted"]
+}

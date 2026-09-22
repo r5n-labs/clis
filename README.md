@@ -54,6 +54,16 @@ hydra logs          # tail the latest job's logs when something crashes
 
 Holds your world up. Compose named configuration profiles — inheritance, dotenv files, secret references — and inject them into any process or render them to files. Aimed at ending config copy-paste between machines and AI coding tools. Unreleased; the v1 rebuild lands via [PR #12](https://github.com/r5n-labs/clis/pull/12).
 
+### 👁️ [Argus](packages/argus) — incremental code review · *in development*
+
+Extracts GDScript syntax, asks Jev configurable review questions, and caches each answer against its source and question fingerprints. New questions and changed code are evaluated incrementally. Includes naming, comments, architecture, tests, translations and change review.
+
+```bash
+bun argus init --root /path/to/game --config /path/to/reviews/config.json
+bun argus check --config /path/to/reviews/config.json
+bun argus run --config /path/to/reviews/config.json
+```
+
 ### ⚙️ [cli-core](packages/core) — the shared framework · *internal*
 
 Commands, typed args, interactive prompts, config persistence, and error handling behind all of the above. Bundled into each CLI at build time, never published.

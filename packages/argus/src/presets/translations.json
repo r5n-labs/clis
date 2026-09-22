@@ -1,0 +1,12 @@
+{
+  "id": "translation-quality",
+  "type": "choice",
+  "context": "target",
+  "instructions": "Does this translation preserve the source meaning, placeholders and domain terminology with natural grammar for the target locale? Use supplied source-language text, entry context and usage evidence. An entry identifier is not necessarily source prose. Consider grammatical agreement, plural forms and suitability for the intended use when evidenced. Missing or explicitly unfinished translations need review; do not invent a source language or missing usage context.",
+  "criteria": {
+    "accurate": "Meaning and placeholders are preserved with natural grammar.",
+    "needs_review": "The translation is missing, explicitly unfinished, incorrect or loses meaning or placeholders.",
+    "insufficient_context": "The source meaning cannot be established without additional context."
+  },
+  "flag": ["needs_review"]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "contract-explanations",
+  "type": "choice",
+  "context": "class",
+  "instructions": "Is there a concrete non-obvious precondition, domain assumption or intentional exception visible in this method that requires a short explanation? Straightforward self-explanatory code, sprite flipping, standard engine hooks and intentional inherited interface implementations do not need redundant comments. Class documentation and inherited contracts count as explanation. Missing callees, callers, runtime wiring or omitted context are extraction limits, not documentation defects.",
+  "criteria": {
+    "clear": "The method is self-explanatory or relevant intent and constraints are already explained.",
+    "needs_explanation": "A specific non-obvious assumption or intentional exception is demonstrated by the code and remains unexplained.",
+    "insufficient_context": "Missing evidence prevents distinguishing a documentation gap from an extraction limit."
+  },
+  "flag": ["needs_explanation"]
+}
