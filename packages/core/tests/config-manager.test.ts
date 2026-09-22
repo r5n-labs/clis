@@ -77,4 +77,73 @@ describe("ConfigManager", () => {
     expect(second.get("profiles").primary.labels).toEqual(["initial"]);
     expect(defaults.profiles.primary.labels).toEqual(["initial"]);
   });
+
+  test("preserves mixed JSON formatting when changing nested values and clearing arrays", () => {
+    const { path } = fixture();
+    const content = `{
+  "release": { "build": ["bun", "run", "build"], "push": true },
+  "lastStone": { "commit": "before", "date": "yesterday" },
+  "stones": [
+    "0001-first",
+    "0002-second"
+  ]
+}
+`;
+    writeFileSync(path, content);
+    const config = new ConfigManager(path, { lastStone: { commit: "", date: "" }, stones: [] as string[] });
+
+    config.set("stones", []);
+    config.set("lastStone", { commit: "after", date: "today" });
+
+    expect(readFileSync(path, "utf8")).toBe(
+      content
+        .replace('[\n    "0001-first",\n    "0002-second"\n  ]', "[]")
+        .replace('"before"', '"after"')
+        .replace('"yesterday"', '"today"'),
+    );
+  });
+
+  test.each([
+    '{"value":"before","nested":{"items":[1,2]}}',
+    '{ "value": "before", "nested": { "items": [1, 2] } }\n',
+    '{\r\n\t"value": "before",\r\n\t"nested": { "items": [1, 2] }\r\n}\r\n',
+    '{\n    "value": "before",\n    "nested": { "items": [1, 2] }\n}\n\n',
+  ])("preserves whitespace and line endings in %j", (content) => {
+    const { path } = fixture();
+    writeFileSync(path, content);
+
+    new ConfigManager(path, { value: "default" }).set("value", "after");
+
+    expect(readFileSync(path, "utf8")).toBe(content.replace('"before"', '"after"'));
+  });
+
+  test("preserves escaped keys, strings and numeric spelling during an unrelated update", () => {
+    const { path } = fixture();
+    const content = String.raw`{"\u0076alue":"before","text":"a \"quote\", } and \\ slash","number":1e2}`;
+    writeFileSync(path, content);
+
+    new ConfigManager(path, { value: "default" }).set("value", "after");
+
+    expect(readFileSync(path, "utf8")).toBe(content.replace('"before"', '"after"'));
+  });
+
+  test("retains existing entries when adding defaults and deleting properties", () => {
+    const { path } = fixture();
+    writeFileSync(path, '{\n\t"nested": { "items": [1, 2] },\n\t"obsolete": true\n}\n');
+    const config = new ConfigManager<{ enabled: boolean; obsolete?: boolean }>(path, { enabled: false });
+
+    config.delete("obsolete");
+
+    expect(readFileSync(path, "utf8")).toBe('{\n\t"nested": { "items": [1, 2] },\n\t"enabled": false\n}\n');
+    config.save();
+    expect(readFileSync(path, "utf8")).toBe('{\n\t"nested": { "items": [1, 2] },\n\t"enabled": false\n}\n');
+  });
+
+  test("new config files end with a newline", () => {
+    const { path } = fixture();
+
+    new ConfigManager(path, { enabled: true }).save();
+
+    expect(readFileSync(path, "utf8")).toBe('{\n  "enabled": true\n}\n');
+  });
 });

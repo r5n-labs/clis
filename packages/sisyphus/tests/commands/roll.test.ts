@@ -114,6 +114,34 @@ describe("RollCommand release metadata", () => {
     rmSync(root, { force: true, recursive: true });
   });
 
+  test("preserves JSON formatting in the release commit without Git hooks", async () => {
+    const configPath = join(root, ".sisyphus/config.json");
+    const original = `${JSON.stringify(config.getAll(), null, 2)}\n`
+      .replace(
+        JSON.stringify(PREVIOUS_LAST_STONE, null, 2).replaceAll("\n", "\n  "),
+        `{ "commit": "${PREVIOUS_LAST_STONE.commit}", "date": "${PREVIOUS_LAST_STONE.date}" }`,
+      )
+      .replace('[\n    "0001-rollsafe"\n  ]', '["0001-rollsafe"]');
+    writeFileSync(configPath, original);
+    await Bun.$`git add .sisyphus/config.json`.quiet();
+    await Bun.$`git commit -q -m "format release config"`.quiet();
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await new RollCommand().execute(makeCtx(config));
+
+    const committed = (await Bun.$`git show HEAD:.sisyphus/config.json`.quiet()).stdout.toString();
+    const released = JSON.parse(committed) as SisyphusConfig;
+    expect(committed).toBe(
+      original
+        .replace('["0001-rollsafe"]', "[]")
+        .replace(PREVIOUS_LAST_STONE.commit, released.lastStone.commit)
+        .replace(PREVIOUS_LAST_STONE.date, released.lastStone.date),
+    );
+    expect(released.lastStone.commit).toBe(baseline);
+    expect(readFileSync(configPath, "utf8")).toBe(committed);
+    expect(await gitText(root, ["status", "--porcelain"])).toBe("");
+  });
+
   test("commits the pre-release baseline marker and leaves the exact config clean", async () => {
     const baseline = await gitText(root, ["rev-parse", "HEAD"]);
 
