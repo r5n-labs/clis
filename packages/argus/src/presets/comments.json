@@ -10,5 +10,6 @@
     "insufficient_context": "The supplied implementation does not establish whether the claims hold.",
     "needs_explanation": "A concrete non-obvious precondition or intentional exception is visible in the code but unexplained by the method, class or inherited contract. A short contract comment would make local interpretation possible."
   },
-  "flag": ["contradicted", "needs_explanation"]
+  "flag": ["contradicted", "needs_explanation"],
+  "reviewQueues": { "insufficient_context": "context", "needs_explanation": "documentation" }
 }

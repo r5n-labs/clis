@@ -2,6 +2,7 @@ import { confirm, log, multiselect, select } from "@r5n/cli-core";
 import { parseQuestion, probability } from "../../config/validation";
 import { CONTEXT_MODES } from "../../constants";
 import type { Question } from "../../domain/question";
+import { REVIEW_QUEUES } from "../../domain/review-queue";
 import { promptCriteria, promptList, promptNumber, promptText, validationMessage } from "./prompt-values";
 
 const FIELDS = {
@@ -13,6 +14,7 @@ const FIELDS = {
   include: "Target file patterns",
   hasComments: "Only targets with comments",
   flag: "Flagged answers",
+  reviewQueues: "Review queue for each answer",
   minConcernProbability: "Combined concern probability threshold",
   minConfidence: "Minimum reporting confidence",
 } as const;
@@ -52,7 +54,24 @@ async function editField(draft: Question, field: keyof typeof FIELDS): Promise<v
       return;
     case "criteria":
       draft.criteria = await promptCriteria(draft.criteria);
+      if (draft.reviewQueues)
+        draft.reviewQueues = Object.fromEntries(
+          Object.entries(draft.reviewQueues).filter(([choice]) => Object.hasOwn(draft.criteria, choice)),
+        );
       return;
+    case "reviewQueues": {
+      const queues: NonNullable<Question["reviewQueues"]> = {};
+      for (const choice of Object.keys(draft.criteria)) {
+        const queue = await select({
+          message: `Review queue for ${choice}`,
+          initialValue: draft.reviewQueues?.[choice] ?? "findings",
+          options: REVIEW_QUEUES.map((value) => ({ label: value, value })),
+        });
+        queues[choice] = queue;
+      }
+      draft.reviewQueues = queues;
+      return;
+    }
     case "context":
       draft.context = await select({
         message: FIELDS[field],

@@ -39,7 +39,7 @@ export function parseVerificationImport(value: unknown): VerificationImport {
   })(closed(value, "verification", ["version", "reviewer", "verdicts"]));
 }
 
-function parseVerdict(value: unknown): VerificationResult {
+export function parseVerdict(value: unknown): VerificationResult {
   return object<VerificationResult>({
     reviewId: hashValue,
     verdict: (v) => {

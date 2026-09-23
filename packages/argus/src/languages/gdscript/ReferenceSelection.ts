@@ -11,7 +11,7 @@ export class ReferenceSelection {
   private readonly evidence: ReferenceEvidence;
   private readonly resolver: ReferenceResolver;
   private queue: Environment[] = [];
-  private sceneOwners = new Set<IndexedClass>();
+  private candidateOwners = new Map<IndexedClass, string>();
   private origin?: IndexedClass;
 
   constructor(
@@ -26,7 +26,7 @@ export class ReferenceSelection {
       this.evidence,
       {
         includeMethod: (owner, method) => this.includeMethod(owner, method),
-        includeScene: (owner) => this.sceneOwners.add(owner),
+        includeScene: (owner) => this.candidateOwners.set(owner, "Scene"),
       },
       { path: target.path, depth: options.depth },
     );
@@ -61,7 +61,7 @@ export class ReferenceSelection {
     if (!isMethod) this.includeNestedClasses();
     this.followQueue();
     const visited = this.queue.length;
-    if (this.options.fixtures) this.includeSceneCandidates(roots);
+    if (this.options.fixtures) this.includeReceiverCandidates(roots);
     this.followQueue(visited);
     return this.evidence.build(isMethod);
   }
@@ -84,11 +84,12 @@ export class ReferenceSelection {
       this.includeMethod(fixture.owner, fixture.method, false);
       for (const binding of fixture.owner.symbols.bindings) {
         if (binding.value.kind !== "path" || !fixture.method.uses.includes(binding.name)) continue;
-        this.resolver.resolve(
+        const resolved = this.resolver.resolve(
           binding.value,
           { owner: fixture.owner },
           { visited: new Set(), origin: fixture.owner.file.path },
         );
+        if (resolved?.kind === "class") this.candidateOwners.set(resolved.owner, "Fixture script");
       }
     }
   }
@@ -115,7 +116,7 @@ export class ReferenceSelection {
     if (member?.method) this.includeMethod(member.owner, member.method);
   }
 
-  private includeSceneCandidates(methods: MethodSymbols[]): void {
+  private includeReceiverCandidates(methods: MethodSymbols[]): void {
     this.origin = this.owner;
     for (const method of methods) {
       for (const operation of method.operations) {
@@ -127,14 +128,14 @@ export class ReferenceSelection {
           { visited: new Set(), origin: this.owner.file.path },
         );
         if (resolved) continue;
-        for (const owner of this.sceneOwners) {
+        for (const [owner, source] of this.candidateOwners) {
           const candidate = owner.symbols.methods.find((entry) => entry.name === member.name);
           if (!candidate) continue;
           this.includeMethod(owner, candidate);
-          this.evidence.recordUnresolved(this.owner.file.path, {
-            kind: "unknown",
-            text: `Scene candidate for ${this.evidence.describe(member)}: ${owner.file.path}.${candidate.name}; receiver identity is not established by static analysis`,
-          });
+          this.evidence.recordUnresolvedNote(
+            this.owner.file.path,
+            `${source} candidate for ${this.evidence.describe(member)}: ${owner.file.path}.${candidate.name}; receiver identity is not established by static analysis`,
+          );
         }
       }
     }

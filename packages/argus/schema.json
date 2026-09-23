@@ -54,6 +54,11 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Also flag when the summed probability of flagged choices reaches this threshold. Omit to disable."
+        },
+        "reviewQueues": {
+          "type": "object",
+          "additionalProperties": { "enum": ["findings", "context", "documentation"] },
+          "description": "Route answer choices to review queues; omitted choices use findings."
         }
       }
     }

@@ -15,6 +15,25 @@ const QUESTION = parseQuestion({
   criteria: { yes: "Established", no: "Not established" },
 });
 
+test("fixture-loaded scripts supply possible implementations for dynamic receivers without claiming resolution", async () => {
+  const result = await context({
+    "test.gd":
+      'const EFFECT = preload("res://effect.gd")\nconst UNUSED = preload("res://unused.gd")\nvar effect: Variant\nfunc setup():\n    effect = track(EFFECT.new())\nfunc teardown():\n    effect = null\nfunc test_echo():\n    effect.show_echo()\n    assert(effect.get_child_count() == 1)\n',
+    "effect.gd":
+      "extends Node2D\nfunc show_echo():\n    add_echo()\nfunc add_echo():\n    add_child(Sprite2D.new())\nfunc unrelated():\n    pass\n",
+    "unused.gd": "func show_echo():\n    pass\n",
+  });
+  const source = result.context.related.find((entry) => entry.path === "effect.gd")?.source;
+  expect(source).toContain("func show_echo");
+  expect(source).toContain("func add_echo");
+  expect(source).not.toContain("func unrelated");
+  expect(result.context.related.some((entry) => entry.path === "unused.gd")).toBe(false);
+  expect(result.context.source).toContain("func setup");
+  expect(result.context.unresolved?.flatMap((entry) => entry.expressions).join("\n")).toContain(
+    "receiver identity is not established by static analysis",
+  );
+});
+
 async function context(files: Record<string, string>, options: { group?: "tests" | "classes"; name?: string } = {}) {
   const f = fixture();
   for (const [path, source] of Object.entries(files)) f.write(path, source);

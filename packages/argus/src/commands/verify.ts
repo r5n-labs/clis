@@ -1,12 +1,14 @@
 import { join } from "node:path";
-import { args, Exit, validateKnownArgs } from "@r5n/cli-core";
+import { args, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { readJson } from "../config/loader";
 import { reviewCandidates } from "../reports/llm";
 import { reportData } from "../reports/report-data";
 import { ReviewSnapshotStore } from "../verification/ReviewSnapshotStore";
 import { VerificationStore } from "../verification/VerificationStore";
+import { requireInteractive, reviewBase } from "./prompts";
 import { loadReview, prepareReview, reviewArgs } from "./shared";
+import { promptVerdictFile } from "./verdict-prompt";
 
 const verifyArgs = args({
   ...reviewArgs,
@@ -17,18 +19,22 @@ export class VerifyCommand extends BaseCommand {
   name = "verify";
   description = "Save external LLM verdicts against current source and question fingerprints";
   args = verifyArgs;
+  prompts = true;
 
   async execute(ctx: Ctx<typeof verifyArgs>): Promise<void> {
     validateKnownArgs(ctx.args, verifyArgs, "Run 'argus verify --help'");
-    if (!ctx.args.import?.trim()) throw new Exit("Use --import <verdicts.json>");
-    const value = readJson(ctx.args.import);
+    if (!ctx.args.import?.trim()) requireInteractive(ctx.interactive, "Use --import <verdicts.json>");
     const { loaded, store } = loadReview(ctx.args.config);
+    const snapshots = new ReviewSnapshotStore(loaded);
+    const path = ctx.args.import?.trim() || (await promptVerdictFile(snapshots));
+    const value = readJson(path);
+    const base = await reviewBase(loaded, ctx.args.base, ctx.interactive);
     const release = store.lock();
     try {
-      const plan = await prepareReview(loaded, store, ctx.args.base);
+      const plan = await prepareReview(loaded, store, base);
       const verifications = new VerificationStore(loaded.root, join(loaded.stateDir, "verifications"));
       const report = reportData(plan, 0);
-      const imported = verifications.import(new ReviewSnapshotStore(loaded).resolve(value), report);
+      const imported = verifications.import(snapshots.resolve(value), report);
       verifications.apply(report);
       const remaining = reviewCandidates(report).length;
       const uncertain = report.verificationSummary.uncertain;

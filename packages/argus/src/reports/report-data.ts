@@ -12,7 +12,8 @@ export function reportData(plan: ReviewPlan, requests: number) {
   const results = plan.items.map((item) => {
     const contextId = fingerprint(item.context);
     contexts[contextId] ??= structuredClone(item.context);
-    const definitionId = fingerprint(item.question);
+    const { reviewQueues: _reviewQueues, ...definition } = item.question;
+    const definitionId = fingerprint(definition);
     questions[definitionId] ??= structuredClone(item.question);
     return {
       reviewId: fingerprint({

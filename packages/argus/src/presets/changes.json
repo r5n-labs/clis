@@ -8,5 +8,6 @@
     "likely_regression": "The change visibly breaks a contract or previously working behaviour.",
     "insufficient_context": "Required callers, contracts or implementation details are missing."
   },
-  "flag": ["likely_regression"]
+  "flag": ["likely_regression"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

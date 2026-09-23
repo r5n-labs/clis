@@ -10,5 +10,6 @@
     "insufficient_context": "The supplied source does not establish enough of the behaviour or naming contract to judge, for example an unresolved external implementation or ambiguous override contract.",
     "needs_explanation": "Visible code relies on a specific non-obvious precondition or intentional exception to the naming contract that the supplied local documentation and inherited contract do not explain. The name can remain appropriate with a short contract comment. Identify this only from visible evidence, not missing dependencies."
   },
-  "flag": ["misleading", "too_vague", "needs_explanation"]
+  "flag": ["misleading", "too_vague", "needs_explanation"],
+  "reviewQueues": { "insufficient_context": "context", "needs_explanation": "documentation" }
 }

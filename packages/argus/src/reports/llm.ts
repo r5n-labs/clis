@@ -4,13 +4,17 @@ import { REVIEW_PROTOCOL } from "./review-protocol";
 
 export const LLM_PART_BYTES = 120_000;
 const HANDOFF_OVERHEAD_BYTES = 6_000;
-const UNSAVED_SNAPSHOT_ID = "<snapshot unavailable; export with argus report --llm>".padEnd(64, " ");
+const UNSAVED_SNAPSHOT_ID = "<snapshot unavailable; export with argus report create --llm>".padEnd(64, " ");
 type Result = Report["results"][number];
 
 export function reviewCandidates(report: Report, includeVerified = false): Result[] {
   return report.results.filter((item) => {
+    const choice = item.evaluation?.answer.choice;
     const candidate =
-      item.flagged || item.status === "blocked" || item.evaluation?.answer.choice === "insufficient_context";
+      item.flagged ||
+      item.status === "blocked" ||
+      choice === "insufficient_context" ||
+      (choice && report.questions[item.definitionId]?.reviewQueues?.[choice] === "context");
     const settled = item.verification && item.verification.verdict !== "uncertain";
     return candidate && (includeVerified || !settled);
   });
@@ -63,8 +67,14 @@ export function llmParts(report: Report, results = reviewCandidates(report)): st
   return groups.map((items, index) => renderBundle(report, items, index, groups.length));
 }
 
-function renderBundle(report: Report, results: Result[], index: number, total: number): string {
-  const bundle = JSON.stringify(evidenceBundle(report, results), null, 2);
+export function renderBundle(
+  report: Report,
+  results: Result[],
+  index: number,
+  total: number,
+  evidence: unknown = evidenceBundle(report, results),
+): string {
+  const bundle = JSON.stringify(evidence, null, 2);
   const longestFence = (bundle.match(/`+/g) ?? []).reduce((longest, match) => Math.max(longest, match.length), 0);
   const fence = "`".repeat(Math.max(3, longestFence + 1));
   return [
@@ -83,7 +93,9 @@ function renderBundle(report: Report, results: Result[], index: number, total: n
     "Save the completed verdictTemplate object and import with `argus verify --import <file>` (use the same --config and --base if applicable). Partial submissions are accepted; Argus reports remaining candidates. You can merge verdicts arrays from parts with the same snapshotId, keeping each reviewId once. Keep submissions with different snapshot IDs separate.",
     ...(report.snapshotId
       ? []
-      : ["This report has no saved snapshot. Export it with argus report --llm or --html before importing verdicts."]),
+      : [
+          "This report has no saved snapshot. Export it with argus report create --llm or --html before importing verdicts.",
+        ]),
     `This part contains ${results.length} checks. Each check is complete; a single large check may exceed the nominal part size. Other parts are independent. CLI exports support --batch <number>; HTML selections may differ from the default CLI candidate selection.`,
     `${fence}json\n${bundle}\n${fence}`,
   ].join("\n\n");

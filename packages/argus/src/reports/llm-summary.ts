@@ -26,6 +26,7 @@ export function llmSummary(report: Report, options: SummaryOptions): string {
   const command = [
     "argus",
     "report",
+    "create",
     "--llm",
     "--config",
     options.config,
@@ -47,6 +48,6 @@ export function llmSummary(report: Report, options: SummaryOptions): string {
   ].join("\n");
 }
 
-function shellArgument(value: string): string {
+export function shellArgument(value: string): string {
   return /^[\w./:=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }

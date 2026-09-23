@@ -8,5 +8,6 @@
     "needs_explanation": "A specific non-obvious assumption or intentional exception is demonstrated by the code and remains unexplained.",
     "insufficient_context": "Missing evidence prevents distinguishing a documentation gap from an extraction limit."
   },
-  "flag": ["needs_explanation"]
+  "flag": ["needs_explanation"],
+  "reviewQueues": { "insufficient_context": "context", "needs_explanation": "documentation" }
 }

@@ -1,57 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { ConfigEditor } from "../../src/config/ConfigEditor";
 import { loadConfig } from "../../src/config/loader";
 import { cli, fixture } from "../helpers";
 
-const CLI = resolve(import.meta.dir, "../../src/cli.ts");
-const PROMPT_TIMEOUT_MS = 5000;
-const POLL_INTERVAL_MS = 10;
-const KEY_DELAY_MS = 30;
-const DOWN = "\u001b[B";
-const UP = "\u001b[A";
-const ENTER = "\r";
-const ESCAPE = "\u001b";
-
-async function interactive(cwd: string, args: string[], steps: Array<{ prompt: string; keys: string[] }>) {
-  let output = "";
-  const terminal = new Bun.Terminal({
-    cols: 120,
-    rows: 40,
-    data(_terminal, data) {
-      output += new TextDecoder().decode(data);
-    },
-  });
-  const child = Bun.spawn(["bun", CLI, ...args], {
-    cwd,
-    env: { ...Bun.env, TERM: "xterm-256color", NO_COLOR: undefined, FORCE_COLOR: "1", TYPESAFE_API_KEY: "" },
-    terminal,
-  });
-  try {
-    for (const { prompt, keys } of steps) {
-      const deadline = Date.now() + PROMPT_TIMEOUT_MS;
-      while (!Bun.stripANSI(output).includes(`◆  ${prompt}`)) {
-        if (Date.now() > deadline) throw new Error(`Missing prompt '${prompt}': ${Bun.stripANSI(output)}`);
-        await Bun.sleep(POLL_INTERVAL_MS);
-      }
-      output = "";
-      for (const key of keys) {
-        terminal.write(key);
-        await Bun.sleep(KEY_DELAY_MS);
-      }
-    }
-    const timeout = setTimeout(() => child.kill(), PROMPT_TIMEOUT_MS);
-    try {
-      expect(await child.exited).toBe(0);
-    } finally {
-      clearTimeout(timeout);
-    }
-  } finally {
-    child.kill();
-    terminal.close();
-  }
-}
+import { DOWN, ENTER, ESCAPE, interactive, UP } from "../terminal";
 
 test("interactive config menu adds presets and edits a setting", async () => {
   const f = fixture();
@@ -134,4 +87,29 @@ test("guided edits persist disabling the concern threshold", async () => {
     ],
   );
   expect(loadConfig(f.loaded.path).config.questions.methods[0]?.minConcernProbability).toBeUndefined();
+});
+
+test("guided edits configure review queues for custom answer choices", async () => {
+  const f = fixture();
+  expect((await cli(f.loaded.root, ["init", "--config", f.loaded.path])).code).toBe(0);
+  new ConfigEditor(f.loaded.path).addQuestion("methods", {
+    id: "custom",
+    type: "choice",
+    instructions: "Check this contract",
+    criteria: { unclear: "Missing context", clear: "Established" },
+  });
+  await interactive(
+    f.loaded.root,
+    ["config", "question", "edit", "methods", "custom", "--config", f.loaded.path],
+    [
+      { prompt: "Question: custom", keys: [UP, UP, UP, UP, ENTER] },
+      { prompt: "Review queue for unclear", keys: [DOWN, ENTER] },
+      { prompt: "Review queue for clear", keys: [ENTER] },
+      { prompt: "Question: custom", keys: [UP, ENTER] },
+    ],
+  );
+  expect(loadConfig(f.loaded.path).config.questions.methods.find((q) => q.id === "custom")?.reviewQueues).toEqual({
+    unclear: "context",
+    clear: "findings",
+  });
 });

@@ -8,5 +8,6 @@
     "unverified_promise": "A specific promised behaviour is not exercised or would not cause an assertion to fail if broken.",
     "insufficient_context": "Missing helpers, implementation or fixture behaviour prevent deciding whether the promise is verified."
   },
-  "flag": ["unverified_promise"]
+  "flag": ["unverified_promise"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

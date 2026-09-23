@@ -55,8 +55,12 @@ export class ReferenceEvidence {
   }
 
   recordUnresolved(path: string, expression: SourceExpression): void {
+    this.recordUnresolvedNote(path, this.describe(expression));
+  }
+
+  recordUnresolvedNote(path: string, note: string): void {
     const expressions = this.unresolved.get(path) ?? new Set<string>();
-    expressions.add(this.describe(expression));
+    expressions.add(note);
     this.unresolved.set(path, expressions);
   }
 
@@ -85,10 +89,10 @@ export class ReferenceEvidence {
       const previous = accepted.has(owner) ? this.renderClass(owner, accepted.get(owner)) : "";
       const bytes = Buffer.byteLength(JSON.stringify(text)) - Buffer.byteLength(JSON.stringify(previous));
       if (bytes > remaining) {
-        this.recordUnresolved(this.target.path, {
-          kind: "unknown",
-          text: `Omitted by context allowance: ${owner.file.path}:${method?.name ?? owner.symbols.owner}`,
-        });
+        this.recordUnresolvedNote(
+          this.target.path,
+          `Omitted by context allowance: ${owner.file.path}:${method?.name ?? owner.symbols.owner}`,
+        );
         continue;
       }
       remaining -= bytes;
@@ -102,7 +106,7 @@ export class ReferenceEvidence {
     for (const [path, text] of this.data) {
       const bytes = Buffer.byteLength(JSON.stringify(text));
       if (bytes > remaining) {
-        this.recordUnresolved(this.target.path, { kind: "unknown", text: `Omitted by context allowance: ${path}` });
+        this.recordUnresolvedNote(this.target.path, `Omitted by context allowance: ${path}`);
         continue;
       }
       related.set(path, text);
@@ -185,9 +189,7 @@ export class ReferenceEvidence {
       case "path":
         return expression.path;
       case "unknown":
-        return expression.text.startsWith("Omitted by") || expression.text.startsWith("Scene candidate")
-          ? expression.text
-          : "Unresolved expression or dynamic receiver";
+        return "Unresolved expression or dynamic receiver";
       case "value":
         return "Value with no statically resolved script type";
       case "member":

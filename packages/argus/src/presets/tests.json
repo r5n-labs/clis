@@ -8,5 +8,6 @@
     "weak": "The test passes without establishing the claimed behaviour, or mostly repeats its implementation.",
     "insufficient_context": "The relevant implementation, helpers or test contract are unavailable."
   },
-  "flag": ["weak"]
+  "flag": ["weak"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

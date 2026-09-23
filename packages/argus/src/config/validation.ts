@@ -3,6 +3,8 @@ import { boolean, number, object, string } from "banditypes";
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from "../composition/scan-profile";
 import { CONFIG_VERSION, CONTEXT_MODES, DEFAULT_MODEL, GROUPS, MAX_QUESTIONS, MAX_REQUEST_BYTES } from "../constants";
 import type { ContextMode, Question } from "../domain/question";
+import { REVIEW_QUEUES, type ReviewQueue } from "../domain/review-queue";
+import { withReviewQueues } from "../presets/review-queues";
 import { upgradeBundledQuestion } from "../presets/upgrades";
 import type { ArgusConfig } from "./types";
 
@@ -56,6 +58,7 @@ export function parseQuestion(value: unknown): Question {
     "flag",
     "minConfidence",
     "minConcernProbability",
+    "reviewQueues",
   ]);
   const question = object<Question>({
     id: textValue,
@@ -79,14 +82,30 @@ export function parseQuestion(value: unknown): Question {
     flag: (v) => strings(v ?? []),
     minConfidence: (v) => probability(v ?? 0),
     minConcernProbability: (v) => (v === undefined ? undefined : probability(v)),
+    reviewQueues: (v) =>
+      v === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(record(v, "review queues")).map(([choice, queue]) => [choice, parseReviewQueue(queue)]),
+          ),
   })(raw);
   if (question.minConcernProbability === undefined) delete question.minConcernProbability;
+  if (question.reviewQueues === undefined) delete question.reviewQueues;
+  for (const choice of Object.keys(question.reviewQueues ?? {}))
+    if (!Object.hasOwn(question.criteria, choice))
+      throw new Exit(`Unknown review queue choice ${choice} in ${question.id}`);
   const MIN_CHOICES = 2;
   if (Object.keys(question.criteria).length < MIN_CHOICES)
     throw new Exit(`Question ${question.id} needs at least two choices`);
   for (const choice of question.flag)
     if (!Object.hasOwn(question.criteria, choice)) throw new Exit(`Unknown flagged choice ${choice} in ${question.id}`);
   return question;
+}
+
+export function parseReviewQueue(value: unknown): ReviewQueue {
+  const queue = REVIEW_QUEUES.find((entry) => entry === value);
+  if (!queue) throw new Exit(`Unknown review queue: ${String(value)}`, `Choose ${REVIEW_QUEUES.join(", ")}`);
+  return queue;
 }
 
 export function parseConfig(value: unknown): ArgusConfig {
@@ -119,7 +138,7 @@ export function parseConfig(value: unknown): ArgusConfig {
         GROUPS.map((group) => {
           const entries = questions[group] ?? [];
           if (!Array.isArray(entries)) throw new Exit(`questions.${group} must be an array`);
-          const parsed = entries.map(parseQuestion).map(upgradeBundledQuestion);
+          const parsed = entries.map(parseQuestion).map(upgradeBundledQuestion).map(withReviewQueues);
           if (new Set(parsed.map((q) => q.id)).size !== parsed.length)
             throw new Exit(`Duplicate question ID in ${group}`);
           return [group, parsed];

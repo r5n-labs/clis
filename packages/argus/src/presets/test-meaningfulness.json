@@ -8,5 +8,6 @@
     "weak": "Assertions are tautological, only check incidental structure, or would pass if the intended production behaviour were broken.",
     "insufficient_context": "Missing implementation or fixtures prevent judging the assertions."
   },
-  "flag": ["weak"]
+  "flag": ["weak"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

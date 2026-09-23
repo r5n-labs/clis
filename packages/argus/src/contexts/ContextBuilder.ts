@@ -46,7 +46,10 @@ export class ContextBuilder {
         if (target.changeContext) this.changeReferences(target, question, related, changeNotes, expanded);
       }
     }
-    const usedBytes = Buffer.byteLength(JSON.stringify({ source, related: [...related], unresolved, question }));
+    const { reviewQueues: _reviewQueues, ...contextQuestion } = question;
+    const usedBytes = Buffer.byteLength(
+      JSON.stringify({ source, related: [...related], unresolved, question: contextQuestion }),
+    );
     const support = new SupportingContext(
       Math.min(SUPPORTING_BYTES, Math.max(0, this.requestBytes - usedBytes - ENVELOPE_RESERVE_BYTES)),
     );

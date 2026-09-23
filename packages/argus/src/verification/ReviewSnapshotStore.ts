@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { object } from "banditypes";
@@ -9,6 +9,8 @@ import { JSON_INDENT } from "../constants";
 import { reviewCandidates } from "../reports/llm";
 import type { Report } from "../reports/report-data";
 import { REVIEW_PROTOCOL } from "../reports/review-protocol";
+import { restoreEvidence, SharedEvidence } from "../reports/SharedEvidence";
+import { parseReport } from "../reports/schema";
 import { projectPaths, readProjectFile } from "../services/project-files";
 import { writeJson } from "../storage/EvaluationStore";
 import { checksum, fingerprint } from "../storage/fingerprints";
@@ -32,6 +34,11 @@ const TEMPLATE_SUFFIXES = {
   "all-checks": "report-verdicts",
 } as const;
 export type TemplateSelection = keyof typeof TEMPLATE_SUFFIXES;
+export type VerdictTemplateSummary = {
+  path: string;
+  modified: number;
+  progress: { completed: number; total: number } | null;
+};
 
 export class ReviewSnapshotStore {
   private readonly directory: string;
@@ -64,14 +71,18 @@ export class ReviewSnapshotStore {
     };
     const id = fingerprint(identity);
     const path = this.path(id);
-    if (!existsSync(path)) writeJson(path, { identity, report });
+    if (!existsSync(path)) {
+      const shared = new SharedEvidence(report.contexts);
+      writeJson(path, { identity, report: { ...report, contexts: shared.contexts }, evidence: shared.fragments });
+    }
     report.snapshotId = id;
+    writeJson(join(this.directory, "latest.json"), { snapshotId: id });
   }
 
   resolve(value: unknown): VerificationImport {
     if (record(value, "verification").version !== 2) return parseVerificationImport(value);
     const submission = parseSubmission(value);
-    const snapshot = this.load(submission.snapshotId);
+    const { identity: snapshot } = this.load(submission.snapshotId);
     const known = new Set(snapshot.reviewIds);
     const verdicts: VerificationImport["verdicts"] = [];
     for (const item of submission.verdicts) {
@@ -110,14 +121,52 @@ export class ReviewSnapshotStore {
     return path;
   }
 
-  private load(id: string): SnapshotIdentity {
+  read(id?: string): Report {
+    if (!id && !existsSync(join(this.directory, "latest.json")))
+      throw new Exit("No review snapshot found", "Run 'argus report create' first");
+    const snapshotId =
+      id ?? hashValue(record(readJson(join(this.directory, "latest.json")), "latest snapshot").snapshotId);
+    const saved = this.load(snapshotId);
+    const report = parseReport(saved.report);
+    report.snapshotId = snapshotId;
+    return report;
+  }
+
+  location(id: string): string {
+    return this.path(id);
+  }
+
+  templates(): VerdictTemplateSummary[] {
+    if (!existsSync(this.directory)) return [];
+    return readdirSync(this.directory, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() && Object.values(TEMPLATE_SUFFIXES).some((suffix) => entry.name.endsWith(`.${suffix}.json`)),
+      )
+      .map((entry) => {
+        const path = join(this.directory, entry.name);
+        return { path, modified: statSync(path).mtimeMs, progress: this.templateProgress(path) };
+      })
+      .sort((a, b) => b.modified - a.modified || a.path.localeCompare(b.path));
+  }
+
+  private templateProgress(path: string): VerdictTemplateSummary["progress"] {
+    try {
+      const { verdicts } = parseSubmission(readJson(path));
+      return { completed: verdicts.filter((item) => item.verdict !== "").length, total: verdicts.length };
+    } catch {
+      return null;
+    }
+  }
+
+  private load(id: string): { identity: SnapshotIdentity; report: Record<string, unknown> } {
     const path = this.path(id);
     if (!existsSync(path))
       throw new Exit(
         "Review snapshot not found",
         "Use the same Argus config that exported the report, or export a fresh report",
       );
-    const raw = closed(readJson(path), "review snapshot", ["identity", "report"]);
+    const raw = closed(readJson(path), "review snapshot", ["identity", "report", "evidence"]);
     const identity = object<SnapshotIdentity>({
       version: (v) => {
         if (v !== 1) throw new Exit("Unsupported review snapshot version");
@@ -132,9 +181,11 @@ export class ReviewSnapshotStore {
     })(closed(raw.identity, "snapshot identity", ["version", "root", "protocol", "reportHash", "reviewIds", "files"]));
     if (fingerprint(identity) !== id || identity.root !== this.loaded.root || identity.protocol !== REVIEW_PROTOCOL)
       throw new Exit("Review snapshot does not match this project or review protocol");
-    if (identity.reportHash !== snapshotReportHash(record(raw.report, "snapshot report")))
+    const report =
+      raw.evidence === undefined ? record(raw.report, "snapshot report") : restoreEvidence(raw.report, raw.evidence);
+    if (identity.reportHash !== snapshotReportHash(report))
       throw new Exit("Saved review report does not match its snapshot");
-    return identity;
+    return { identity, report };
   }
 
   private path(id: string): string {

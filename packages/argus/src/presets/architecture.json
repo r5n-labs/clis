@@ -8,5 +8,6 @@
     "misplaced_behaviour": "Concrete domain behaviour is implemented by a coordinator or unrelated owner.",
     "insufficient_context": "The ownership contract or collaborating components are missing."
   },
-  "flag": ["misplaced_behaviour"]
+  "flag": ["misplaced_behaviour"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

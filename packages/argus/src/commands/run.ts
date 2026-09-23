@@ -7,7 +7,7 @@ import { JevClient } from "../providers/jev/JevClient";
 import { DEFAULT_RETRIES, MAX_RETRIES } from "../providers/jev/retries";
 import { ReviewProgress } from "../reports/ReviewProgress";
 import { reportData } from "../reports/report-data";
-import { terminalReport } from "../reports/terminal";
+import { runSummary } from "../reports/terminal";
 import { RequestBatcher } from "../services/RequestBatcher";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY, ReviewRunner } from "../services/ReviewRunner";
 import { DEFAULT_FOLLOW_UP_LIMIT, ReviewSession, selectRequests } from "../services/ReviewSession";
@@ -78,7 +78,9 @@ export class RunCommand extends BaseCommand {
       writeJson(reportPath, report);
       if (report.summary.blocked) process.exitCode = 1;
       console.log(
-        ctx.args.json ? JSON.stringify(report, null, JSON_INDENT) : `${terminalReport(report)}\nReport: ${reportPath}`,
+        ctx.args.json
+          ? JSON.stringify(report, null, JSON_INDENT)
+          : runSummary(report, { config: loaded.path, path: reportPath, base: ctx.args.base }),
       );
     } finally {
       release();

@@ -120,7 +120,7 @@ export class EvaluationStore {
   }
 }
 
-function parseEvaluation(value: unknown, criteria?: Record<string, string>): Evaluation {
+export function parseEvaluation(value: unknown, criteria?: Record<string, string>): Evaluation {
   return object<Evaluation>({
     version: (v) => {
       if (v !== CACHE_VERSION) throw new Error("version");

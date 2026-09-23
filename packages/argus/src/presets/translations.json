@@ -8,5 +8,6 @@
     "needs_review": "The translation is missing, explicitly unfinished, incorrect or loses meaning or placeholders.",
     "insufficient_context": "The source meaning cannot be established without additional context."
   },
-  "flag": ["needs_review"]
+  "flag": ["needs_review"],
+  "reviewQueues": { "insufficient_context": "context" }
 }

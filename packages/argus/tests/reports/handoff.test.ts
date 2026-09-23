@@ -193,16 +193,16 @@ test("stock preset upgrade is explicit, idempotent, and preserves custom questio
 test("CLI handoff and verdict import work offline and reject conflicting output modes", async () => {
   const f = await reviewedFixture();
   writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
-  const result = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--llm"]);
+  const result = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--llm"]);
   expect(result.code).toBe(0);
   expect(result.stdout).toContain(f.item.reviewId);
   const path = join(f.directory, "verdicts.json");
   writeFileSync(path, JSON.stringify(verdict(f.item.reviewId)));
   const imported = await cli(f.loaded.root, ["verify", "--config", f.loaded.path, "--import", path]);
   expect(imported.code).toBe(0);
-  const next = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--llm"]);
+  const next = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--llm"]);
   expect(next.stdout).toContain("No unverified");
-  const summaryArgs = ["report", "--config", f.loaded.path, "--llm", "--summary"];
+  const summaryArgs = ["report", "create", "--config", f.loaded.path, "--llm", "--summary"];
   const empty = await cli(f.loaded.root, summaryArgs);
   expect(empty.code).toBe(0);
   expect(empty.stdout).toContain("0 candidates · 0 batches");
@@ -211,7 +211,7 @@ test("CLI handoff and verdict import work offline and reject conflicting output 
   expect(included.code).toBe(0);
   expect(included.stdout).toContain("1 candidates · 1 batches");
   expect(included.stdout).toContain("--include-verified --batch 1");
-  const full = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--llm", "--include-verified"]);
+  const full = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--llm", "--include-verified"]);
   expect(full.code).toBe(0);
   const fullPath = full.stderr.match(/^Verdict template: (.+)$/m)?.[1];
   const emptyPath = next.stderr.match(/^Verdict template: (.+)$/m)?.[1];
@@ -219,7 +219,7 @@ test("CLI handoff and verdict import work offline and reject conflicting output 
   expect(fullPath).not.toBe(emptyPath);
   expect(parseSubmission(JSON.parse(readFileSync(fullPath, "utf8"))).verdicts).toHaveLength(1);
   expect(parseSubmission(JSON.parse(readFileSync(emptyPath, "utf8"))).verdicts).toHaveLength(0);
-  expect((await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--llm", "--html"])).code).toBe(1);
+  expect((await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--llm", "--html"])).code).toBe(1);
 });
 
 test("CLI exports all handoff parts by default and selects only an explicitly requested batch", async () => {
@@ -229,12 +229,12 @@ test("CLI exports all handoff parts by default and selects only an explicitly re
   );
   expect(llmParts(f.report)).toHaveLength(2);
   writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
-  const args = ["report", "--config", f.loaded.path, "--llm"];
+  const args = ["report", "create", "--config", f.loaded.path, "--llm"];
   const summary = await cli(f.loaded.root, [...args, "--summary"]);
   expect(summary.code).toBe(0);
   expect(summary.stdout).toContain("2 candidates · 2 batches");
   expect(summary.stdout).toContain("naming-accuracy: 2");
-  expect(summary.stdout).toContain(`argus report --llm --config ${f.loaded.path} --batch 1`);
+  expect(summary.stdout).toContain(`argus report create --llm --config ${f.loaded.path} --batch 1`);
   expect(summary.stdout).toContain("Batch numbers: 1–2");
   expect(summary.stdout).not.toContain("func delete_first");
   expect(summary.stdout).not.toContain("```json");
@@ -264,14 +264,14 @@ test("CLI exports all handoff parts by default and selects only an explicitly re
 
 test.each(["0", "-1", "1.5"])("CLI rejects invalid handoff batch %s", async (batch) => {
   const f = fixture();
-  const result = await cli(f.loaded.root, ["report", "--llm", `--batch=${batch}`]);
+  const result = await cli(f.loaded.root, ["report", "create", "--llm", `--batch=${batch}`]);
   expect(result.code).toBe(1);
   expect(result.stdout + result.stderr).toContain("--batch must be a positive integer");
 });
 
 test("CLI requires LLM output even when the explicitly selected batch is one", async () => {
   const f = fixture();
-  const result = await cli(f.loaded.root, ["report", "--batch", "1"]);
+  const result = await cli(f.loaded.root, ["report", "create", "--batch", "1"]);
   expect(result.code).toBe(1);
   expect(result.stdout + result.stderr).toContain("require --llm");
 });
@@ -283,7 +283,7 @@ test.each([
   [["--llm", "--summary", "--html"], "Choose one of --llm, --json or --html"],
 ])("CLI rejects conflicting summary options %j", async (args, message) => {
   const f = fixture();
-  const result = await cli(f.loaded.root, ["report", ...args]);
+  const result = await cli(f.loaded.root, ["report", "create", ...args]);
   expect(result.code).toBe(1);
   expect(result.stdout + result.stderr).toContain(message);
 });
@@ -306,6 +306,7 @@ test("summary commands preserve shell-sensitive config paths, Git bases and sele
   expect(result.stdout.toString().trim().split("\n")).toEqual([
     "argus",
     "report",
+    "create",
     "--llm",
     "--config",
     config,
@@ -321,7 +322,7 @@ test("LLM export supplies a template that imports partial verdicts with automati
   const f = await reviewedFixture("func delete_all():\n    return 1\n\nfunc delete_other():\n    return 2\n");
   f.write("guide.md", "This helper intentionally returns a preview.");
   writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
-  const args = ["report", "--config", f.loaded.path, "--llm"];
+  const args = ["report", "create", "--config", f.loaded.path, "--llm"];
   expect((await cli(f.loaded.root, [...args, "--summary"])).code).toBe(0);
   expect(existsSync(join(f.loaded.stateDir, "reviews"))).toBe(false);
   const exported = await cli(f.loaded.root, args);
@@ -399,7 +400,7 @@ test("HTML copy templates share a saved snapshot and altered snapshots cannot ce
   const f = await reviewedFixture();
   writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
   const htmlPath = join(f.directory, "report.html");
-  const result = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--html", htmlPath]);
+  const result = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--html", htmlPath]);
   expect(result.code).toBe(0);
   const data = readFileSync(htmlPath, "utf8").match(
     /<script id="argus-report-data" type="application\/json">([\s\S]*?)<\/script>/,
@@ -412,7 +413,7 @@ test("HTML copy templates share a saved snapshot and altered snapshots cannot ce
   expect(snapshots.resolve(template).verdicts).toEqual([]);
   const path = join(f.loaded.stateDir, "reviews", `${template.snapshotId}.json`);
   const saved = JSON.parse(readFileSync(path, "utf8"));
-  expect(saved.report.contexts).toEqual(report.contexts);
+  expect(snapshots.read(template.snapshotId).contexts).toEqual(report.contexts);
   saved.report.model = "modified";
   writeFileSync(path, JSON.stringify(saved));
   expect(() => snapshots.resolve(template)).toThrow("does not match its snapshot");
@@ -435,7 +436,7 @@ test("HTML verdict files cover filtered and settled checks while CLI templates r
   f.store.save({ ...matched, answer });
   writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
   const htmlPath = join(f.directory, "all-checks.html");
-  const exported = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--html", htmlPath]);
+  const exported = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--html", htmlPath]);
   expect(exported.code).toBe(0);
   const data = readFileSync(htmlPath, "utf8").match(
     /<script id="argus-report-data" type="application\/json">([\s\S]*?)<\/script>/,
@@ -458,6 +459,7 @@ test("HTML verdict files cover filtered and settled checks while CLI templates r
   writeFileSync(report.verdictFile, JSON.stringify(template));
   const exportedAgain = await cli(f.loaded.root, [
     "report",
+    "create",
     "--config",
     f.loaded.path,
     "--html",
@@ -465,7 +467,7 @@ test("HTML verdict files cover filtered and settled checks while CLI templates r
   ]);
   expect(exportedAgain.code).toBe(0);
   expect(JSON.parse(readFileSync(report.verdictFile, "utf8"))).toEqual(template);
-  const handoff = await cli(f.loaded.root, ["report", "--config", f.loaded.path, "--llm"]);
+  const handoff = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, "--llm"]);
   expect(handoff.code).toBe(0);
   const candidatePath = handoff.stderr.match(/^Verdict template: (.+)$/m)?.[1];
   if (!candidatePath) throw new Error("Missing candidate template");

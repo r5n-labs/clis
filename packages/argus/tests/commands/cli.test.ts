@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ReportCommand } from "../../src/commands/report";
 import { createAnalysis } from "../../src/composition/analysis";
 import { parseConfig, parseQuestion } from "../../src/config/validation";
 import { collectChanges } from "../../src/contexts/ChangeContextBuilder";
@@ -12,6 +13,22 @@ import { reportData } from "../../src/reports/report-data";
 import { ProjectScanner } from "../../src/services/ProjectScanner";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { cli, fixture, response } from "../helpers";
+
+test("report only groups subcommands and shows help without loading a project or creating a snapshot", async () => {
+  const group = new ReportCommand();
+  group.init();
+  expect(group.execute).toBeUndefined();
+  expect(group.args).toEqual({});
+  expect(group.getSubcommand("create")?.execute).toBeDefined();
+  const f = fixture();
+  const result = await cli(f.loaded.root, ["report"]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("Create and inspect review snapshots");
+  expect(result.stdout).toContain("create");
+  expect(result.stdout).toContain("list");
+  expect(result.stdout).not.toContain("Verdict template:");
+  expect(existsSync(join(f.loaded.root, ".argus"))).toBe(false);
+});
 
 test.each([
   ["--concurrency", "0"],
@@ -52,13 +69,13 @@ test.each([false, true])("bare --html creates a report beside the config (extern
   const configArgs = external ? ["--config", f.loaded.path] : [];
   expect((await cli(f.loaded.root, ["init", "--root", f.loaded.root, ...configArgs])).code).toBe(0);
   const reports = join(external ? f.loaded.stateDir : join(f.loaded.root, ".argus"), "reports");
-  expect((await cli(f.loaded.root, ["report", ...configArgs])).code).toBe(0);
+  expect((await cli(f.loaded.root, ["report", "create", ...configArgs])).code).toBe(0);
   expect(existsSync(reports)).toBe(false);
-  const conflict = await cli(f.loaded.root, ["report", ...configArgs, "--html", "--json"]);
+  const conflict = await cli(f.loaded.root, ["report", "create", ...configArgs, "--html", "--json"]);
   expect(conflict.code).toBe(1);
   expect(conflict.stdout + conflict.stderr).toContain("Choose either --json or --html");
   expect(existsSync(reports)).toBe(false);
-  const result = await cli(f.loaded.root, ["report", ...configArgs, "--html"]);
+  const result = await cli(f.loaded.root, ["report", "create", ...configArgs, "--html"]);
   expect(result.code).toBe(0);
   const files = readdirSync(reports);
   expect(files).toHaveLength(1);
@@ -74,13 +91,13 @@ test("--html creates explicit parent directories and preserves existing reports"
   const f = fixture();
   expect((await cli(f.loaded.root, ["init"])).code).toBe(0);
   const relativePath = ".argus/reports/full.html";
-  const result = await cli(f.loaded.root, ["report", "--html", relativePath]);
+  const result = await cli(f.loaded.root, ["report", "create", "--html", relativePath]);
   expect(result.code).toBe(0);
   const path = join(f.loaded.root, relativePath);
   expect(realpathSync(result.stdout.trim().replace(/^Report: /, ""))).toBe(realpathSync(path));
   const original = readFileSync(path, "utf8");
   expect(original).toContain("<!doctype html>");
-  expect((await cli(f.loaded.root, ["report", "--html", relativePath])).code).toBe(1);
+  expect((await cli(f.loaded.root, ["report", "create", "--html", relativePath])).code).toBe(1);
   expect(readFileSync(path, "utf8")).toBe(original);
 });
 
