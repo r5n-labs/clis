@@ -110,19 +110,32 @@ test("oversized expansion retains the initial answer without billing or truncati
   const f = prepared();
   f.loaded.config.maxRequestBytes = 6000;
   f.write("counter.gd", `class_name Counter\nstatic func value():\n    return "${"x".repeat(9000)}"\n`);
-  let calls = 0;
+  const requests: ApiPayload[] = [];
   const plan = await f.plan();
+  const initial = plan.items[0];
+  const batch = new RequestBatcher().batches(plan, f.loaded.config)[0];
+  if (!initial || !batch) throw new Error("Missing initial request");
+  const context = structuredClone(initial.context);
+  const inputHash = initial.inputHash;
+  const payload = structuredClone(batch.payload);
+  const answer = insufficient(payload).answers.q0;
+  if (!answer) throw new Error("Missing initial answer");
   await new ReviewSession(
     new ReviewRunner(f.store, {
       async evaluate(payload) {
-        calls++;
+        requests.push(structuredClone(payload));
         return insufficient(payload);
       },
     }),
   ).run(plan, f.loaded.config, { limit: 0, followUpLimit: 10 }, () => {});
-  expect(calls).toBe(1);
+  expect(requests).toEqual([payload]);
   expect(plan.items[0]?.contextNote).toContain("Expanded context requires");
-  expect(plan.items[0]?.evaluation?.answer.choice).toBe("insufficient_context");
+  for (const current of [plan, await f.plan()]) {
+    expect(current.items[0]?.context).toEqual(context);
+    expect(current.items[0]?.inputHash).toBe(inputHash);
+    expect(current.items[0]?.evaluation?.answer).toEqual(answer);
+    expect(new RequestBatcher().batches(current, f.loaded.config)).toEqual([]);
+  }
 });
 
 test("the follow-up cap counts only submitted expanded requests across both phases", async () => {
@@ -131,20 +144,28 @@ test("the follow-up cap counts only submitted expanded requests across both phas
     "owner.gd",
     "func first():\n    return Counter.value()\nfunc second():\n    return Counter.value()\nfunc third():\n    return Counter.value()\n",
   );
-  let calls = 0;
+  const requests: ApiPayload[] = [];
   const session = new ReviewSession(
     new ReviewRunner(f.store, {
       async evaluate(payload) {
-        calls++;
+        requests.push(structuredClone(payload));
         return insufficient(payload);
       },
     }),
   );
+  await session.run(await f.plan(), f.loaded.config, { limit: 1, followUpLimit: 0 }, () => {});
+  expect(requests).toHaveLength(1);
+  requests.length = 0;
   const plan = await f.plan();
-  await session.run(plan, f.loaded.config, { limit: 0, followUpLimit: 1 }, () => {});
-  expect(calls).toBe(4);
-  expect(plan.items.filter((item) => item.expanded && !item.evaluation)).toHaveLength(2);
-  await session.run(await f.plan(), f.loaded.config, { limit: 1, followUpLimit: 1 }, () => {});
-  expect(calls).toBe(5);
-  expect((await f.plan()).items.filter((item) => !item.evaluation)).toHaveLength(1);
+  expect(plan.items.map((item) => !!item.expanded)).toEqual([true, false, false]);
+  await session.run(plan, f.loaded.config, { limit: 0, followUpLimit: 2 }, () => {});
+  expect(requests.map((request) => request.state.related.length > 0)).toEqual([true, false, false, true]);
+  expect(plan.items.filter((item) => item.expanded && !item.evaluation).map((item) => item.target.name)).toEqual([
+    "third",
+  ]);
+  requests.length = 0;
+  await session.run(await f.plan(), f.loaded.config, { limit: 0, followUpLimit: 1 }, () => {});
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.state.related.length).toBeGreaterThan(0);
+  expect((await f.plan()).items.filter((item) => !item.evaluation)).toEqual([]);
 });

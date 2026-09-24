@@ -27,6 +27,6 @@ test.each([
   'msgid "Missing translation"',
   'msgid "Broken quote\nmsgstr "Value"',
   'msgid "Value"\nmsgstr "Text"\ntrailing_garbage',
-])("invalid gettext is rejected rather than partially cached: %s", (source) => {
+])("invalid gettext is rejected during target extraction: %s", (source) => {
   expect(() => translationTargets("broken.po", source)).toThrow("gettext");
 });

@@ -79,14 +79,14 @@ test("expanded usage includes argument preparation and result use, not same-name
   expect(context.notes?.join()).toContain("1 of 1");
 });
 
-test("test context includes fixtures and resolves autoload calls without reading excluded scripts", async () => {
+test("test context includes fixtures and resolves autoload calls without parsing excluded scripts", async () => {
   const context = await review(
     {
       "project.godot": '[autoload]\nLedger="*res://ledger.gd"\nSecret="*res://addons/secret.gd"\n',
       "target.gd":
         "var balance = 0\nfunc setup():\n    balance = 5\nfunc teardown():\n    balance = 0\nfunc test_pay():\n    Ledger.pay(balance)\n    Secret.hidden()\n",
       "ledger.gd": "func pay(amount):\n    return amount > 0\n",
-      "addons/secret.gd": "func hidden():\n    return 123\n",
+      "addons/secret.gd": "func hidden(\n",
     },
     { name: "test_pay", group: "tests", references: true },
   );

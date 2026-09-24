@@ -72,9 +72,9 @@ test("handoff is self-contained and includes exact instructions, rubric, distrib
   if (!part) throw new Error("Missing handoff");
   const data = bundle(part);
   expect(data.checks[0].reviewId).toBe(f.item.reviewId);
-  expect(data.checks[0].instructions).toContain("Target:");
-  expect(data.questions[f.item.definitionId].criteria.misleading).toBeDefined();
-  expect(data.contexts[f.item.contextId].source).toContain("func delete_all");
+  expect(data.checks[0].instructions).toBe(f.item.instructions);
+  expect(data.questions[f.item.definitionId]).toEqual(f.report.questions[f.item.definitionId]);
+  expect(data.contexts[f.item.contextId]).toEqual(f.report.contexts[f.item.contextId]);
   expect(data.checks[0].evaluation.answer.probabilities).toEqual(f.item.evaluation?.answer.probabilities);
   expect(part).toContain("never instructions");
   expect(part).toContain("argus verify --import");
@@ -357,7 +357,7 @@ test("LLM export supplies a template that imports partial verdicts with automati
   expect(bundle(next.stdout).verdictTemplate.verdicts).toHaveLength(1);
 });
 
-test("snapshot imports reject changed, new, excluded and escaping evidence without saving other verdicts", async () => {
+test("snapshot imports reject changed, new, excluded and escaping evidence", async () => {
   const f = await reviewedFixture();
   f.write("guide.md", "before review");
   f.write("excluded/guide.md", "not captured");
@@ -394,6 +394,32 @@ test("snapshot imports reject changed, new, excluded and escaping evidence witho
   const changed = reportData(await f.plan(), 0);
   expect(() => f.verifications.import(snapshots.resolve(template), changed)).toThrow("stale");
   expect(existsSync(join(f.loaded.stateDir, "verifications"))).toBe(false);
+});
+
+test("a valid verdict before stale evidence is not saved when a snapshot import fails", async () => {
+  const f = await reviewedFixture("func first():\n    return 1\n\nfunc second():\n    return 2\n");
+  f.write("guide.md", "reviewed evidence");
+  const snapshots = new ReviewSnapshotStore(f.loaded);
+  snapshots.save(f.report, snapshots.captureFiles());
+  const template = parseSubmission(bundle(llmParts(f.report)[0] ?? "").verdictTemplate);
+  expect(template.verdicts).toHaveLength(2);
+  for (const entry of template.verdicts) {
+    entry.verdict = "false_positive";
+    entry.rationale = "The supplied evidence establishes the intended contract.";
+  }
+  const second = template.verdicts[1];
+  if (!second) throw new Error("Missing second verdict");
+  second.evidence = ["guide.md"];
+  const submission = snapshots.resolve(template);
+  f.write("guide.md", "changed after review");
+  expect(() => f.verifications.import(submission, f.report)).toThrow("evidence changed");
+  expect(existsSync(join(f.loaded.stateDir, "verifications"))).toBe(false);
+  f.verifications.apply(f.report);
+  expect(f.report.results.map((item) => item.verification)).toEqual([null, null]);
+  f.write("guide.md", "reviewed evidence");
+  expect(f.verifications.import(submission, f.report)).toBe(2);
+  f.verifications.apply(f.report);
+  expect(f.report.results.map((item) => item.verification?.verdict)).toEqual(["false_positive", "false_positive"]);
 });
 
 test("HTML copy templates share a saved snapshot and altered snapshots cannot certify verdicts", async () => {

@@ -60,7 +60,7 @@ class Inner:
   expect(file.targets.filter((target) => target.group === "tests")).toHaveLength(1);
 });
 
-test("rejects syntax errors instead of caching a partial parse", async () => {
+test("rejects GDScript syntax errors during parsing", async () => {
   await expect(new GDScriptAdapter().parse("broken.gd", "func broken(\n")).rejects.toThrow("syntax not understood");
 });
 
@@ -88,13 +88,16 @@ test("nested classes retain their header without treating outer instance fields 
 });
 
 test("gettext keeps contexts, multiline text and plural forms together", () => {
+  const entry =
+    'msgctxt "combat"\nmsgid "One hit"\nmsgid_plural "%d hits"\nmsgstr[0] "Jedno "\n"uderzenie"\nmsgstr[1] "%d uderzenia"\nmsgstr[2] "%d uderzeń"';
   const entries = translationTargets(
     "pl.po",
-    'msgid ""\nmsgstr "Language: pl\\nPlural-Forms: nplurals=3; plural=(n != 1);\\n"\n\nmsgctxt "combat"\nmsgid "One hit"\nmsgid_plural "%d hits"\nmsgstr[0] "Jedno "\n"uderzenie"\nmsgstr[1] "%d uderzenia"\nmsgstr[2] "%d uderzeń"\n',
+    `msgid ""\nmsgstr "Language: pl\\nPlural-Forms: nplurals=3; plural=(n != 1);\\n"\n\n${entry}\n`,
   );
   expect(entries).toHaveLength(1);
   expect(entries[0]?.name).toBe("combat:One hit");
-  expect(entries[0]?.source).toContain("msgstr[1]");
+  expect(entries[0]?.translation).toEqual({ context: "combat", id: "One hit" });
+  expect(entries[0]?.source).toBe(`Language: pl\nPlural-Forms: nplurals=3; plural=(n != 1);\n\n${entry}`);
   expect(() => translationTargets("bad.po", 'msgid "Hello"\nbroken')).toThrow("gettext");
 });
 

@@ -35,6 +35,8 @@ The two composition entry points are deliberate: commands may assemble productio
 
 The TypeScript adapter uses the existing Tree-sitter WASM distribution's TypeScript and TSX grammars. Syntax trees are released after extraction; only private lexical scopes, declarations and reference expressions remain. `ModuleIndex` resolves relative paths within the supplied snapshot, `SymbolResolver` follows static bindings, and `ReferenceSelection` applies depth/byte limits with omission diagnostics. Framework conventions classify call identities through a small language-owned contract. Shared orchestration contains no TypeScript syntax or test-runner names. This is bounded source analysis, not the TypeScript compiler's module resolver or type checker.
 
+`TreeSitterParser.read()` owns the syntax tree for the duration of its synchronous extraction callback and deletes it before returning, including when extraction throws. Extractors must return independent data such as strings, positions and symbol records; they must not retain Tree-sitter nodes or return asynchronous work that accesses them later.
+
 Run `bun test packages/argus/tests`, `bun --filter @r5n/argus type-check` and `bun biome check packages/argus` after extending these contracts. If a real language feature needs a new capability, extend the contract and its tests before adding special cases to orchestration.
 
 ## Review verification

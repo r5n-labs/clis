@@ -101,7 +101,7 @@ test("--html creates explicit parent directories and preserves existing reports"
   expect(readFileSync(path, "utf8")).toBe(original);
 });
 
-test("closed configuration rejects malformed choices, duplicates, probabilities and cache policies", () => {
+test("closed configuration rejects unknown fields, malformed choices, duplicate questions and invalid confidence or context", () => {
   expect(() => parseConfig({ version: 1, root: ".", questions: {}, unexpected: true })).toThrow("Unknown");
   expect(() => parseQuestion({ id: "a", type: "choice", instructions: "Ask", criteria: { a: "One" } })).toThrow(
     "two choices",

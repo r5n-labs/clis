@@ -75,18 +75,63 @@ test("changing one method invalidates only its questions; declarations and calle
   expect((await f.plan()).items.every((item) => !item.evaluation)).toBe(true);
 });
 
-test("questions sharing context are batched after cache filtering and request limits are exact", async () => {
+test("questions sharing context are batched after cached questions are removed", async () => {
   const f = fixture();
   f.write("example.gd", SOURCE);
   const naming = f.loaded.config.questions.methods[0];
   if (!naming) throw new Error("Missing naming preset");
   naming.context = "file";
+  const batcher = new RequestBatcher();
+  const initial = await f.plan();
+  await new ReviewRunner(f.store, { evaluate: async (payload) => response(payload) }).run(
+    initial,
+    batcher.batches(initial, f.loaded.config),
+  );
+  f.loaded.config.questions.methods.push({ ...naming, id: "other", instructions: "Another question" });
+  const plan = await f.plan();
+  expect(plan.items.filter((item) => item.evaluation).map((item) => item.question.id)).toEqual([
+    "naming-accuracy",
+    "naming-accuracy",
+  ]);
+  const batches = batcher.batches(plan, { ...f.loaded.config, maxQuestions: 2 });
+  expect(batches).toHaveLength(1);
+  expect(batches[0]?.items.map((item) => [item.target.name, item.question.id])).toEqual([
+    ["increment", "other"],
+    ["get_count", "other"],
+  ]);
+  expect(Object.values(batches[0]?.payload.questions ?? {}).map((question) => question.instructions)).toEqual(
+    plan.items.filter((item) => !item.evaluation).map((item) => item.apiQuestion.instructions),
+  );
+});
+
+test("request limits accept exact question and UTF-8 byte boundaries and split one byte over", async () => {
+  const f = fixture();
+  f.write("example.gd", 'func greeting():\n    return "Cześć 👋"\n');
+  const naming = f.loaded.config.questions.methods[0];
+  if (!naming) throw new Error("Missing naming preset");
   f.loaded.config.questions.methods.push({ ...naming, id: "other", instructions: "Another question" });
   const plan = await f.plan();
   const batcher = new RequestBatcher();
-  expect(batcher.batches(plan, f.loaded.config)).toHaveLength(1);
-  expect(batcher.batches(plan, { ...f.loaded.config, maxQuestions: 2 })).toHaveLength(2);
-  expect(() => batcher.batches(plan, { ...f.loaded.config, maxRequestBytes: 10 })).toThrow("Context too large");
+  const batch = batcher.batches(plan, f.loaded.config)[0];
+  if (!batch) throw new Error("Missing request");
+  const serialised = JSON.stringify(batch.payload);
+  const exactBytes = Buffer.byteLength(serialised);
+  expect(exactBytes).toBeGreaterThan(serialised.length);
+  const limits = { ...f.loaded.config, maxQuestions: 2, maxRequestBytes: exactBytes };
+  expect(batcher.batches(plan, limits).map((entry) => entry.payload)).toEqual([batch.payload]);
+  const split = batcher.batches(plan, { ...limits, maxRequestBytes: exactBytes - 1 });
+  expect(split.map((entry) => entry.items.length)).toEqual([1, 1]);
+  expect(split.flatMap((entry) => entry.items)).toEqual(batch.items);
+  for (const entry of split) expect(Buffer.byteLength(JSON.stringify(entry.payload))).toBeLessThan(exactBytes);
+  expect(batcher.batches(plan, { ...limits, maxQuestions: 1 }).map((entry) => entry.items.length)).toEqual([1, 1]);
+  const single = split[0];
+  if (!single) throw new Error("Missing single-question request");
+  const singlePlan = { ...plan, items: single.items };
+  const singleBytes = Buffer.byteLength(JSON.stringify(single.payload));
+  expect(batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes })[0]?.payload).toEqual(single.payload);
+  expect(() => batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes - 1 })).toThrow(
+    "Context too large",
+  );
   expect(existsSync(f.store.directory)).toBe(false);
 });
 

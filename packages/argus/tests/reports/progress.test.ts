@@ -83,15 +83,18 @@ test("narrow terminals omit the bar when only the count fits", async () => {
 test.each([true, false])("retry notices retain the saved progress count (TTY: %s)", async (tty) => {
   const capture = output(tty);
   const progress = new ReviewProgress(capture.stream);
-  await progress.track({
-    model: "test-model",
-    total: 2,
-    async run(update) {
-      update(1);
-      progress.retry({ reason: "Jev returned an invalid response", retry: 1, retries: 3, delayMs: 1000 });
-      update(2);
-    },
-  });
+  const error = new Error("Stopped during retry");
+  await expect(
+    progress.track({
+      model: "test-model",
+      total: 2,
+      async run(update) {
+        update(1);
+        progress.retry({ reason: "Jev returned an invalid response", retry: 1, retries: 3, delayMs: 1000 });
+        throw error;
+      },
+    }),
+  ).rejects.toBe(error);
   expect(capture.text()).toContain("Jev returned an invalid response; retry 1/3 in at least 1s…");
-  expect(capture.text()).toEndWith("Saved 2/2 requests\n");
+  expect(capture.text()).toEndWith("Stopped after saving 1/2 requests\n");
 });
