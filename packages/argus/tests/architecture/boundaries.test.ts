@@ -21,7 +21,10 @@ function allowed(from: string, to: string): boolean {
   if (!IMPLEMENTATIONS.has(layer)) return !IMPLEMENTATIONS.has(dependency);
   if (ADAPTER_DEPENDENCIES.has(dependency)) return true;
   if (layer === dependency && owner === dependencyOwner) return true;
-  if (layer === "frameworks") return dependency === "formats" || to === "languages/gdscript/runtime.ts";
+  if (layer === "frameworks")
+    return (
+      dependency === "formats" || to === "languages/gdscript/runtime.ts" || to === "languages/typescript/testing.ts"
+    );
   if (layer === "reviews" && to === "storage/fingerprints.ts") return true;
   return false;
 }
@@ -60,6 +63,13 @@ const other = require("../frameworks/example/runtime");`),
   expect(allowed("languages/python/Adapter.ts", "languages/gdscript/parser.ts")).toBe(false);
   expect(allowed("reviews/translations/Evidence.ts", "formats/gettext/parser.ts")).toBe(false);
   expect(allowed("frameworks/godot/Runtime.ts", "languages/gdscript/GDScriptAdapter.ts")).toBe(false);
+  expect(allowed("frameworks/test-runners/TestRunnerConvention.ts", "languages/typescript/testing.ts")).toBe(true);
+  expect(
+    allowed("frameworks/test-runners/TestRunnerConvention.ts", "languages/typescript/TypeScriptExtractor.ts"),
+  ).toBe(false);
+  expect(
+    allowed("languages/typescript/TypeScriptExtractor.ts", "frameworks/test-runners/TestRunnerConvention.ts"),
+  ).toBe(false);
 });
 
 test("shared analysis contains no framework paths, source suffixes or gettext syntax", () => {

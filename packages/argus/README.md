@@ -1,6 +1,6 @@
 # Argus
 
-Incremental code reviews with Jev. Argus extracts GDScript syntax, builds review context automatically, asks configurable questions, and remembers each answer against the code and question that produced it. Private and unreleased.
+Incremental code reviews with Jev. Argus extracts GDScript and TypeScript syntax, builds review context automatically, asks configurable questions, and remembers each answer against the code and question that produced it. Private and unreleased.
 
 ## Usage
 
@@ -63,9 +63,29 @@ Each change is validated and saved atomically. The editor refuses to overwrite a
 
 ## Source discovery
 
-Translation entries are paired automatically across `.po` files by `msgctxt` and `msgid`, including projects whose message IDs are keys rather than English sentences. Metadata and plural forms accompany each entry. Test targets are named `test_*` methods. Naming and comment checks also apply to ordinary methods and constructors. Nested classes have distinct identities.
+Translation entries are paired automatically across `.po` files by `msgctxt` and `msgid`, including projects whose message IDs are keys rather than English sentences. Metadata and plural forms accompany each entry. GDScript test targets are named `test_*` methods. Naming and comment checks also apply to ordinary methods and constructors. Nested classes have distinct identities.
 
-Tree-sitter supplies GDScript syntax and declaration dependencies, plus Godot scene, resource and project-setting syntax. The gettext adapter uses `gettext-parser` for catalogue parsing and validation, with a separate source-range locator to retain original entries and line numbers. Invalid syntax stops planning instead of silently dropping evidence. Plural catalogues must declare their `Plural-Forms` header. The default scan includes `.gd`, `.tres`, `.tscn` and `.po` files, excluding `.git`, `.godot`, `.argus`, `addons`, `node_modules` and `dist`. Symlinks are skipped. Only selected files are available as implementation context. The scanner also reads non-excluded `project.godot` autoload mappings; excluded autoload scripts remain unavailable.
+Tree-sitter supplies GDScript, TypeScript and TSX syntax and declaration dependencies, plus Godot scene, resource and project-setting syntax. The gettext adapter uses `gettext-parser` for catalogue parsing and validation, with a separate source-range locator to retain original entries and line numbers. Invalid syntax stops planning instead of silently dropping evidence. Plural catalogues must declare their `Plural-Forms` header. The default scan includes `.gd`, `.tres`, `.tscn`, `.po`, `.ts`, `.tsx`, `.mts` and `.cts` files, excluding `.git`, `.godot`, `.argus`, `addons`, `node_modules` and `dist`. Symlinks are skipped. Only selected files are available as implementation context. The scanner also reads non-excluded `project.godot` autoload mappings; excluded autoload scripts remain unavailable.
+
+### TypeScript
+
+New configurations include TypeScript automatically. Existing explicit `include` arrays stay unchanged. For a TypeScript-only project:
+
+```sh
+argus init
+argus config set include '["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"]'
+argus config preset add test-meaningfulness test-promises
+argus check
+argus run --limit 5
+```
+
+Argus extracts named functions, generators, methods, constructors, accessors, arrow-function variables and fields, and classes. It preserves complete implementation bodies, JSDoc and comments. Overload signatures, interfaces and declarations supply contract evidence; declarations without implementations are not method checks. TSX bodies retain their JSX. JavaScript files and React/Next.js runtime conventions are outside this release.
+
+Static context follows lexical bindings, selected local helpers, declared parameter and return types, constructors, inherited contracts, relative imports and re-exports. Relative `.js`, `.mjs` and `.cjs` references can resolve to their TypeScript counterparts; directory imports can resolve included `index` files. TypeScript `import = require()` and identifier `export =` declarations are supported. Package exports, `tsconfig` path aliases, arbitrary CommonJS `require()` calls, dynamic dispatch and full generic/union inference are not resolved. Argus does not run the compiler, resolve installed packages or execute project configuration. Unresolved expressions and omitted bodies are labelled in the review context; reference depth and byte limits still apply.
+
+Separate Bun, Vitest and Jest conventions recognise inline `test`/`it` callbacks, suites and lifecycle fixtures imported from `bun:test`, `vitest` or `@jest/globals`, including aliases, namespace imports and chained modifiers such as `each`, `skip` and `only`. Unbound runner globals are recognised in `.test.*`, `.spec.*` and `__tests__/` files. Each test declaration is reviewed once; parameter tables are not executed. Ancestor-suite fixtures are included without sibling-suite setup. Test factories, callbacks supplied by identifier and custom runner wrappers are not expanded. Existing checks, cache identities, reports and verification commands work with these targets.
+
+Member reassignment tracking is conservative: an assignment such as `obj.value = next` marks every same-named member in that module as reassigned, without identifying the receiver. Argus then avoids resolving untyped members from their initialisers, which may omit implementation evidence even for an unrelated object's member. Explicitly declared types can still supply resolution. This avoids treating a potentially replaced value as a reliable dependency.
 
 ## Custom questions
 
@@ -161,7 +181,7 @@ bun --filter @r5n/argus type-check
 bun --filter @r5n/argus build
 ```
 
-The build embeds the Tree-sitter runtime, GDScript and Godot resource grammars, and the gettext parser into `dist/cli.js`. The Godot resource grammar is a pinned, patched WASM asset with [build provenance and rebuild instructions](src/formats/godot-resource/grammar/README.md). The executable needs Bun, and Git for change checks, but no installed runtime packages or companion WASM files. Language and format adapters extend `SourceAdapter`; framework integrations and review contributors provide evidence through explicit contracts. Dependency tests enforce these boundaries. See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and extension rules. Configuration and network boundaries use the monorepo's `banditypes` conventions. See [schema.json](schema.json) for editor configuration support and [TypeSafe's documentation](https://docs.typesafe.ai/primitives) for the API's question model.
+The build embeds the Tree-sitter runtime, GDScript, TypeScript, TSX and Godot resource grammars, and the gettext parser into `dist/cli.js`. The Godot resource grammar is a pinned, patched WASM asset with [build provenance and rebuild instructions](src/formats/godot-resource/grammar/README.md). The executable needs Bun, and Git for change checks, but no installed runtime packages or companion WASM files. Language and format adapters extend `SourceAdapter`; framework integrations and review contributors provide evidence through explicit contracts. Dependency tests enforce these boundaries. See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and extension rules. Configuration and network boundaries use the monorepo's `banditypes` conventions. See [schema.json](schema.json) for editor configuration support and [TypeSafe's documentation](https://docs.typesafe.ai/primitives) for the API's question model.
 
 ## Jev → LLM review
 
