@@ -232,8 +232,11 @@ test("queue metadata preserves evaluation and review identities, including exist
   expect(next.results[0]?.reviewId).toBe(previous.results[0]?.reviewId);
   expect(next.results[0]?.evaluation).toEqual(previous.results[0]?.evaluation);
   expect(questionFingerprint(question, f.loaded.config.model)).toBe(hash);
-  delete question.reviewQueues;
   expect(next.results[0]?.definitionId).toBe(fingerprint(question));
+  expect(next.results[0]?.definitionId).not.toBe(previous.results[0]?.definitionId);
+  expect(next.results[0]?.inputHash).toBe(previous.results[0]?.inputHash);
+  expect(next.results[0]?.questionHash).toBe(previous.results[0]?.questionHash);
+  delete question.reviewQueues;
   const loaded = parseConfig(f.loaded.config);
   expect(loaded.questions.methods[0]?.reviewQueues?.insufficient_context).toBe("context");
   expect(() => parseQuestion({ ...question, reviewQueues: { unknown: "context" } })).toThrow(

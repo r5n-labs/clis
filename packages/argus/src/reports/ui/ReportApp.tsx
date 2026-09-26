@@ -6,7 +6,7 @@ import { useReportView } from "./use-report-view";
 
 export function ReportApp({ report }: { report: Report }) {
   const mainId = useId();
-  const view = useReportView(report.results);
+  const view = useReportView(report);
   const project = report.root.split(/[\\/]/).filter(Boolean).at(-1) ?? report.root;
 
   return (
@@ -37,7 +37,12 @@ export function ReportApp({ report }: { report: Report }) {
             <time dateTime={report.generatedAt}>{new Date(report.generatedAt).toLocaleString()}</time>
           </div>
         </section>
-        <ReportSummary onChange={view.updateFilters} status={view.filters.status} summary={report.summary} />
+        <ReportSummary
+          needsReview={view.needsReview}
+          onChange={view.updateFilters}
+          status={view.filters.status}
+          summary={report.summary}
+        />
         <ReportResults report={report} view={view} />
         <footer className="report-footer">
           <span>

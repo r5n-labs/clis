@@ -1,15 +1,19 @@
 import { useCallback, useDeferredValue, useMemo, useState } from "react";
-import type { Filters, Result, Sort, SortKey } from "./select-results";
+import { reviewCandidates } from "../llm";
+import type { Report } from "../report-data";
+import type { Filters, Sort, SortKey } from "./select-results";
 import { DEFAULT_FILTERS, DEFAULT_SORT, PAGE_SIZE, selectResults } from "./select-results";
 
-export function useReportView(results: Result[]) {
+export function useReportView(report: Report) {
+  const { results, questions } = report;
+  const needsReview = useMemo(() => reviewCandidates(report).length, [report]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
   const [page, setPage] = useState(0);
   const deferredSearch = useDeferredValue(filters.search);
   const filteredResults = useMemo(
-    () => selectResults(results, { ...filters, search: deferredSearch }, sort),
-    [results, filters, deferredSearch, sort],
+    () => selectResults(results, { ...filters, search: deferredSearch }, sort, questions),
+    [results, filters, deferredSearch, sort, questions],
   );
   const pageCount = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -30,6 +34,7 @@ export function useReportView(results: Result[]) {
   }, []);
 
   return {
+    needsReview,
     filters,
     sort,
     currentPage,

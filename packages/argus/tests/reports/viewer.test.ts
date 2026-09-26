@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
+import { parseQuestion } from "../../src/config/validation";
 import { htmlReport } from "../../src/reports/html";
 import { reportData } from "../../src/reports/report-data";
 import type { Result } from "../../src/reports/ui/select-results";
-import { DEFAULT_FILTERS, DEFAULT_SORT, selectResults } from "../../src/reports/ui/select-results";
+import { DEFAULT_FILTERS, DEFAULT_SORT, resultKey, selectResults } from "../../src/reports/ui/select-results";
 import { fixture } from "../helpers";
 
 function result(options: {
@@ -140,4 +141,23 @@ test("standalone HTML embeds the viewer and safely round-trips hostile report st
   expect(html).not.toMatch(/<link[^>]+href=/);
   expect(html).toContain("default-src 'none'");
   expect(html).toContain('id="root"');
+});
+
+test("distinct gettext entries with the same display name retain independent viewer rows", async () => {
+  const f = fixture();
+  f.loaded.config.questions.translations = [
+    parseQuestion({
+      id: "check",
+      type: "choice",
+      context: "target",
+      instructions: "Check",
+      criteria: { yes: "Yes", no: "No" },
+    }),
+  ];
+  f.write("en.po", 'msgctxt "a"\nmsgid "b:c"\nmsgstr "One"\n\nmsgctxt "a:b"\nmsgid "c"\nmsgstr "Two"\n');
+  const report = reportData(await f.plan(), 0);
+  expect(report.results).toHaveLength(2);
+  expect(new Set(report.results.map((item) => item.target)).size).toBe(1);
+  expect(new Set(report.results.map((item) => item.reviewId)).size).toBe(2);
+  expect(new Set(report.results.map(resultKey)).size).toBe(2);
 });

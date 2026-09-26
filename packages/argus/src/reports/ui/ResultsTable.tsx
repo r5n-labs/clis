@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import { Fragment, useCallback, useState } from "react";
+import { isReviewCandidate } from "../candidates";
 import type { Report } from "../report-data";
 import { ResultDetails } from "./ResultDetails";
 import type { Result, Sort, SortKey } from "./select-results";
@@ -68,6 +69,7 @@ export function ResultsTable({
             const key = resultKey(item);
             const open = expanded === key;
             const answer = item.evaluation?.answer;
+            const needsReview = isReviewCandidate(item, report?.questions ?? {});
             return (
               <Fragment key={key}>
                 <tr className={open ? "expanded-row" : undefined}>
@@ -87,11 +89,11 @@ export function ResultsTable({
                   </td>
                   <td className="confidence-cell">{confidence(answer?.confidence)}</td>
                   <td>
-                    <span className={`status status-${item.flagged ? "flagged" : item.status}`}>
+                    <span className={`status status-${needsReview ? "flagged" : item.status}`}>
                       <span aria-hidden="true" />
                       {item.verification
                         ? label(item.verification.verdict)
-                        : item.flagged
+                        : needsReview
                           ? "Needs review"
                           : label(item.status)}
                     </span>

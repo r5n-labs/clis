@@ -13,13 +13,13 @@ export function reportData(plan: ReviewPlan, requests: number) {
     const contextId = fingerprint(item.context);
     contexts[contextId] ??= structuredClone(item.context);
     const { reviewQueues: _reviewQueues, ...definition } = item.question;
-    const definitionId = fingerprint(definition);
+    const definitionId = fingerprint(item.question);
     questions[definitionId] ??= structuredClone(item.question);
     return {
       reviewId: fingerprint({
         protocol: REVIEW_PROTOCOL,
         input: item.inputHash,
-        definitionId,
+        definitionId: fingerprint(definition),
         evaluation: item.evaluation ?? null,
       }),
       definitionId,

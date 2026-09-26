@@ -1,7 +1,8 @@
+import { isReviewCandidate } from "../candidates";
 import type { Report } from "../report-data";
 
 export type Result = Report["results"][number];
-export type StatusFilter = "all" | "flagged" | "checked" | "pending" | "blocked";
+export type StatusFilter = "all" | "review" | "flagged" | "checked" | "pending" | "blocked";
 export type Filters = {
   search: string;
   category: string;
@@ -25,8 +26,14 @@ export const PAGE_SIZE = 50;
 export const PERCENT = 100;
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
-export function selectResults(results: readonly Result[], filters: Filters, sort: Sort): Result[] {
+export function selectResults(
+  results: readonly Result[],
+  filters: Filters,
+  sort: Sort,
+  questions: Report["questions"] = {},
+): Result[] {
   const query = filters.search.trim().toLowerCase();
+  const candidates = new Set(results.filter((item) => isReviewCandidate(item, questions)));
   return results
     .filter((item) => {
       const answer = item.evaluation?.answer;
@@ -34,6 +41,7 @@ export function selectResults(results: readonly Result[], filters: Filters, sort
       if (filters.group && item.group !== filters.group) return false;
       if (filters.answer && answer?.choice !== filters.answer) return false;
       if (filters.status === "flagged" && !item.flagged) return false;
+      if (filters.status === "review" && !candidates.has(item)) return false;
       if (["checked", "pending", "blocked"].includes(filters.status) && item.status !== filters.status) return false;
       if (filters.minConfidence > 0 && (answer?.confidence === undefined || answer.confidence < filters.minConfidence))
         return false;
@@ -58,17 +66,18 @@ export function selectResults(results: readonly Result[], filters: Filters, sort
     })
     .sort(
       (left, right) =>
-        compare(left, right, sort) ||
+        compare(left, right, sort, candidates) ||
         collator.compare(left.path, right.path) ||
         left.line - right.line ||
         collator.compare(left.question, right.question),
     );
 }
 
-function compare(left: Result, right: Result, sort: Sort): number {
+function compare(left: Result, right: Result, sort: Sort, candidates: ReadonlySet<Result>): number {
   const direction = sort.direction === "asc" ? 1 : -1;
   if (sort.key === "priority")
     return (
+      Number(candidates.has(right)) - Number(candidates.has(left)) ||
       Number(right.flagged) - Number(left.flagged) ||
       Number(right.status === "blocked") - Number(left.status === "blocked") ||
       (right.evaluation?.answer.confidence ?? 0) - (left.evaluation?.answer.confidence ?? 0)
@@ -95,5 +104,5 @@ export function confidence(value: number | undefined): string {
 }
 
 export function resultKey(item: Result): string {
-  return `${item.group}:${item.path}:${item.target}:${item.question}`;
+  return item.reviewId;
 }

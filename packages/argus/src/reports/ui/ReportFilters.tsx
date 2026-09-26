@@ -5,7 +5,8 @@ import { label, PERCENT } from "./select-results";
 
 const STATUS_OPTIONS: { value: StatusFilter; title: string }[] = [
   { value: "all", title: "All statuses" },
-  { value: "flagged", title: "Needs review" },
+  { value: "review", title: "Needs review" },
+  { value: "flagged", title: "Flagged" },
   { value: "checked", title: "Checked" },
   { value: "pending", title: "Pending" },
   { value: "blocked", title: "Blocked" },

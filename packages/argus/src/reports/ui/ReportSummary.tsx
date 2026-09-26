@@ -5,16 +5,16 @@ import type { Filters, StatusFilter } from "./select-results";
 
 const SUMMARY_CARDS: {
   status: StatusFilter;
-  field: "flagged" | "checked" | "pending" | "blocked";
+  field: "needsReview" | "checked" | "pending" | "blocked";
   title: string;
   description: string;
   icon: string;
 }[] = [
   {
-    status: "flagged",
-    field: "flagged",
+    status: "review",
+    field: "needsReview",
     title: "Needs review",
-    description: "Flagged by your configured rules",
+    description: "Outstanding findings and context checks",
     icon: "↗",
   },
   { status: "checked", field: "checked", title: "Checked", description: "Saved evaluations available", icon: "✓" },
@@ -30,10 +30,12 @@ const SUMMARY_CARDS: {
 
 export function ReportSummary({
   summary,
+  needsReview,
   status,
   onChange,
 }: {
   summary: Report["summary"];
+  needsReview: number;
   status: StatusFilter;
   onChange: (change: Partial<Filters>) => void;
 }) {
@@ -50,7 +52,7 @@ export function ReportSummary({
       {SUMMARY_CARDS.map((card) => (
         <button
           aria-pressed={status === card.status}
-          className={`summary-card summary-${card.status}`}
+          className={`summary-card summary-${card.status === "review" ? "flagged" : card.status}`}
           key={card.status}
           onClick={selectStatus}
           type="button"
@@ -59,7 +61,7 @@ export function ReportSummary({
             {card.title}
             <span aria-hidden="true">{card.icon}</span>
           </span>
-          <strong>{summary[card.field].toLocaleString()}</strong>
+          <strong>{(card.field === "needsReview" ? needsReview : summary[card.field]).toLocaleString()}</strong>
           <small>{card.description}</small>
         </button>
       ))}

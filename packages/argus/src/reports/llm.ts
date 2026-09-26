@@ -1,4 +1,5 @@
 import { verdictTemplate } from "../verification/template";
+import { isReviewCandidate } from "./candidates";
 import type { Report } from "./report-data";
 import { REVIEW_PROTOCOL } from "./review-protocol";
 
@@ -8,16 +9,7 @@ const UNSAVED_SNAPSHOT_ID = "<snapshot unavailable; export with argus report cre
 type Result = Report["results"][number];
 
 export function reviewCandidates(report: Report, includeVerified = false): Result[] {
-  return report.results.filter((item) => {
-    const choice = item.evaluation?.answer.choice;
-    const candidate =
-      item.flagged ||
-      item.status === "blocked" ||
-      choice === "insufficient_context" ||
-      (choice && report.questions[item.definitionId]?.reviewQueues?.[choice] === "context");
-    const settled = item.verification && item.verification.verdict !== "uncertain";
-    return candidate && (includeVerified || !settled);
-  });
+  return report.results.filter((item) => isReviewCandidate(item, report.questions, includeVerified));
 }
 
 function evidenceBundle(report: Report, results: Result[]) {
