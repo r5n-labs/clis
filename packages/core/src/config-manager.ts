@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { record, unknown } from "banditypes";
 import { deepMerge } from "./util";
+import { updateJson } from "./util/json-format";
 
 const JSON_INDENT = 2;
 const configSchema = record(unknown());
@@ -62,7 +63,10 @@ export class ConfigManager<T extends object> {
     const temporaryPath = `${savePath}.${crypto.randomUUID()}.tmp`;
     try {
       const mode = this.exists() ? fs.statSync(this.configPath).mode : undefined;
-      fs.writeFileSync(temporaryPath, JSON.stringify(this.config, null, JSON_INDENT), { flag: "wx", mode });
+      const content = this.exists()
+        ? updateJson(fs.readFileSync(this.configPath, "utf-8"), this.config)
+        : `${JSON.stringify(this.config, null, JSON_INDENT)}\n`;
+      fs.writeFileSync(temporaryPath, content, { flag: "wx", mode });
       if (mode !== undefined) fs.chmodSync(temporaryPath, mode);
       fs.renameSync(temporaryPath, savePath);
     } catch (error) {
