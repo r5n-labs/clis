@@ -90,7 +90,11 @@ export class SymbolResolver {
   ): Resolved | undefined {
     if (!bindings?.length) return undefined;
     const implementations = bindings.filter((binding) => binding.unit?.kind === "function");
-    const candidates = implementations.length === 1 ? implementations : bindings;
+    const candidates =
+      implementations.length === 1 &&
+      bindings.every((binding) => binding === implementations[0] || binding.overloadSignature)
+        ? implementations
+        : bindings;
     for (const binding of bindings) if (binding.unit) include(binding.unit);
     if (candidates.length !== 1) {
       return undefined;
@@ -104,10 +108,11 @@ export class SymbolResolver {
       const module = this.index.resolve(this.index.module(binding.scope), binding.imported.module);
       return module ? this.exported(module, binding.imported.name, include, next) : undefined;
     }
-    if (binding.type) return this.resolve(binding.type, binding.scope, include, next);
+    const evaluationScope = binding.evaluationScope ?? binding.scope;
+    if (binding.type) return this.resolve(binding.type, evaluationScope, include, next);
     if (binding.unit && (binding.unit.kind === "function" || binding.unit.kind === "class" || binding.unit.members))
       return { kind: "unit", unit: binding.unit };
-    if (binding.value) return this.resolve(binding.value, binding.scope, include, next);
+    if (binding.value) return this.resolve(binding.value, evaluationScope, include, next);
     return binding.unit ? { kind: "unit", unit: binding.unit } : undefined;
   }
 

@@ -10,6 +10,7 @@ export type Expression =
 export type Binding = {
   name: string;
   scope: Scope;
+  evaluationScope?: Scope;
   unit?: Unit;
   value?: Expression;
   type?: Expression;
@@ -17,6 +18,7 @@ export type Binding = {
   reassigned?: boolean;
   reserved?: boolean;
   member?: boolean;
+  overloadSignature?: boolean;
 };
 export type Scope = {
   name: string;
@@ -25,6 +27,7 @@ export type Scope = {
   bindings: Map<string, Binding[]>;
   thisBoundary?: boolean;
   thisOwner?: Unit;
+  declarationBoundary?: boolean;
 };
 export type Use = { expression: Expression; scope: Scope; text: string; reportUnresolved: boolean };
 export type Unit = {

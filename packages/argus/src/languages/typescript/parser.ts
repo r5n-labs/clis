@@ -6,14 +6,14 @@ declare const ARGUS_TSX_WASM: string | undefined;
 const typescript = TreeSitterParser.load({
   label: "TypeScript",
   bytes: grammarBytes(
-    "tree-sitter-wasm/typescript/tree-sitter-typescript.wasm",
+    new URL("./grammar/tree-sitter-typescript.wasm", import.meta.url).href,
     typeof ARGUS_TYPESCRIPT_WASM === "string" ? ARGUS_TYPESCRIPT_WASM : undefined,
   ),
 });
 const tsx = TreeSitterParser.load({
   label: "TSX",
   bytes: grammarBytes(
-    "tree-sitter-wasm/tsx/tree-sitter-tsx.wasm",
+    new URL("./grammar/tree-sitter-tsx.wasm", import.meta.url).href,
     typeof ARGUS_TSX_WASM === "string" ? ARGUS_TSX_WASM : undefined,
   ),
 });

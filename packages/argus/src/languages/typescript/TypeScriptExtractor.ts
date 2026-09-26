@@ -26,6 +26,15 @@ const DECLARATIONS = new Set([
 ]);
 const CLASS_NODES = new Set(["class_declaration", "abstract_class_declaration", "class"]);
 const VARIABLE_NODES = new Set(["variable_declarator", "public_field_definition"]);
+const MODULE_NODES = new Set(["internal_module", "module"]);
+const OVERLOAD_SIGNATURES = new Set(["function_signature", "method_signature", "abstract_method_signature"]);
+const NAMED_DECLARATIONS = new Set([
+  "function_declaration",
+  "generator_function_declaration",
+  "class_declaration",
+  "abstract_class_declaration",
+  "method_definition",
+]);
 
 export class TypeScriptExtractor {
   private readonly module: ModuleSymbols;
@@ -33,6 +42,7 @@ export class TypeScriptExtractor {
   private readonly scopes = new Map<number, Scope>();
   private readonly callbacks = new Map<number, TestCallback>();
   private readonly names = new Map<string, number>();
+  private readonly objects = new Map<number, Unit>();
 
   constructor(
     private readonly path: string,
@@ -41,7 +51,7 @@ export class TypeScriptExtractor {
   ) {
     this.module = {
       path,
-      scope: { name: basename(path), bindings: new Map() },
+      scope: { name: basename(path), bindings: new Map(), declarationBoundary: true },
       units: [],
       exports: [],
       stars: [],
@@ -52,6 +62,7 @@ export class TypeScriptExtractor {
   extract(root: Node): ModuleSymbols {
     const create = (node: Node, name: string) => this.unit(node, name, "import", this.module.scope);
     collectImports(root, this.module, create);
+    this.reserveVariables(root, this.module.scope);
     this.visit(root, this.module.scope);
     collectExports(root, this.module, create);
     this.markAssignments(root);
@@ -96,19 +107,47 @@ export class TypeScriptExtractor {
       this.visitVariable(node, parent);
       return;
     }
+    if (node.type === "object") {
+      this.visitObject(node, parent);
+      return;
+    }
     if (DECLARATIONS.has(node.type)) {
       const name = node.childForFieldName("name")?.text;
-      if (name) bindDeclaration(parent, { name, unit: this.unit(node, name, "declaration", parent) });
+      if (name)
+        bindDeclaration(parent, {
+          name,
+          unit: this.unit(node, name, "declaration", parent),
+          overloadSignature: OVERLOAD_SIGNATURES.has(node.type),
+        });
       return;
     }
     if (node.type === "call_expression") {
       const found = testCallback(node, parent, this.path, this.conventions);
       if (found) this.callbacks.set(found.callback.id, found.metadata);
     }
-    const scope = ["statement_block", "for_statement", "for_in_statement", "catch_clause"].includes(node.type)
-      ? { name: parent.name, parent, bindings: new Map() }
-      : parent;
+    const staticBlock = node.type === "class_static_block";
+    const moduleBoundary = MODULE_NODES.has(node.type);
+    const declarationBody =
+      node.type === "statement_block" &&
+      !!node.parent &&
+      (FUNCTIONS.has(node.parent.type) || MODULE_NODES.has(node.parent.type));
+    const scope: Scope =
+      staticBlock ||
+      moduleBoundary ||
+      (!declarationBody && ["statement_block", "for_statement", "for_in_statement", "catch_clause"].includes(node.type))
+        ? {
+            name: moduleBoundary ? `${parent.name}.${node.childForFieldName("name")?.text}` : parent.name,
+            parent,
+            bindings: new Map(),
+            declarationBoundary: staticBlock || moduleBoundary,
+          }
+        : parent;
     this.scopes.set(node.id, scope);
+    if (staticBlock || moduleBoundary) this.reserveVariables(node, scope);
+    if (node.type === "for_in_statement" && node.childForFieldName("kind")) {
+      const declaration = node.childForFieldName("kind")?.text === "var" ? this.variableScope(scope) : scope;
+      for (const name of patternNames(node.childForFieldName("left"))) bind(declaration, { name });
+    }
     if (["program", "statement_block", "class_body"].includes(node.type)) this.reserveNames(node, scope);
     if (node.type === "catch_clause")
       for (const name of patternNames(node.childForFieldName("parameter"))) bind(scope, { name });
@@ -123,6 +162,7 @@ export class TypeScriptExtractor {
         ? declaration.namedChildren
         : [declaration];
       for (const variable of variables) {
+        if (variable.parent?.type === "variable_declaration") continue;
         if (
           !VARIABLE_NODES.has(variable.type) &&
           !FUNCTIONS.has(variable.type) &&
@@ -136,13 +176,48 @@ export class TypeScriptExtractor {
     }
   }
 
+  private reserveVariables(node: Node, scope: Scope): void {
+    for (const child of node.namedChildren) {
+      if (
+        FUNCTIONS.has(child.type) ||
+        CLASS_NODES.has(child.type) ||
+        MODULE_NODES.has(child.type) ||
+        child.type === "class_static_block"
+      )
+        continue;
+      if (child.type === "variable_declaration") {
+        for (const variable of child.namedChildren)
+          for (const name of patternNames(variable.childForFieldName("name")))
+            if (!scope.bindings.has(name)) bind(scope, { name, reserved: true });
+      }
+      if (child.type === "for_in_statement" && child.childForFieldName("kind")?.text === "var")
+        for (const name of patternNames(child.childForFieldName("left")))
+          if (!scope.bindings.has(name)) bind(scope, { name, reserved: true });
+      this.reserveVariables(child, scope);
+    }
+  }
+
+  private declarationScope(node: Node, scope: Scope): Scope {
+    const declaration = valueWrapper(node).parent;
+    const variable = node.type === "variable_declarator" ? node : declaration;
+    if (variable?.type !== "variable_declarator" || variable.parent?.type !== "variable_declaration") return scope;
+    return this.variableScope(scope);
+  }
+
+  private variableScope(scope: Scope): Scope {
+    let current = scope;
+    while (!current.declarationBoundary && current.parent) current = current.parent;
+    return current;
+  }
+
   private visitClass(node: Node, parent: Scope): void {
     const name = this.bindingName(node) ?? node.childForFieldName("name")?.text ?? "default";
     const unit = this.unit(node, name, "class", parent);
     const scope: Scope = { name: `${parent.name}.${name}`, parent, owner: unit, thisOwner: unit, bindings: new Map() };
     unit.members = scope;
     this.bindTypeParameters(node, scope);
-    bindDeclaration(parent, { name, unit });
+    if (this.bindingName(node) || NAMED_DECLARATIONS.has(node.type))
+      bindDeclaration(this.declarationScope(node, parent), { name, unit, evaluationScope: parent });
     const internalName = node.childForFieldName("name")?.text;
     if (node.type === "class" && internalName) bind(scope, { name: internalName, unit });
     const heritage = node.namedChildren.find((child) => child.type === "class_heritage");
@@ -164,13 +239,15 @@ export class TypeScriptExtractor {
       unit.returnType = node.childForFieldName("return_type")
         ? expression(node.childForFieldName("return_type"))
         : undefined;
-      if (bindingName && !metadata) bindDeclaration(parent, { name: bindingName, unit });
+      if (bindingName && !metadata && (this.bindingName(node) || NAMED_DECLARATIONS.has(node.type)))
+        bindDeclaration(this.declarationScope(node, parent), { name: bindingName, unit, evaluationScope: parent });
     }
     const scope: Scope = {
       name: unit ? `${parent.name}.${unit.name}` : parent.name,
       parent,
       owner: unit,
       bindings: new Map(),
+      declarationBoundary: true,
       thisBoundary: node.type !== "arrow_function" && node.type !== "method_definition",
       thisOwner: node.type === "method_definition" ? parent.owner : undefined,
     };
@@ -181,7 +258,16 @@ export class TypeScriptExtractor {
     if (unit && ["function_expression", "generator_function"].includes(node.type) && internalName)
       bind(scope, { name: internalName, unit });
     this.bindParameters(node, scope);
-    for (const child of node.namedChildren) this.visit(child, scope);
+    const body = node.childForFieldName("body");
+    const bodyScope: Scope = {
+      name: scope.name,
+      parent: scope,
+      owner: unit,
+      bindings: new Map(),
+      declarationBoundary: true,
+    };
+    if (body) this.reserveVariables(body, bodyScope);
+    for (const child of node.namedChildren) this.visit(child, child.id === body?.id ? bodyScope : scope);
   }
 
   private bindParameters(node: Node, scope: Scope): void {
@@ -218,18 +304,25 @@ export class TypeScriptExtractor {
     const unit = names[0] ? this.unit(node, names.join(", "), "declaration", scope) : undefined;
     const type = node.childForFieldName("type");
     for (const name of names)
-      bindDeclaration(scope, {
+      bindDeclaration(this.declarationScope(node, scope), {
         name,
         unit,
+        evaluationScope: scope,
         value: names.length === 1 && value ? expression(value) : undefined,
         type: names.length === 1 && type ? expression(type) : undefined,
       });
-    if (value?.type === "object" && unit) {
-      const members: Scope = { name: `${scope.name}.${unit.name}`, parent: scope, owner: unit, bindings: new Map() };
-      unit.members = members;
-      this.visit(value, members);
-      return;
-    }
+    if (initializer?.type === "object" && unit) this.objects.set(initializer.id, unit);
+    for (const child of node.namedChildren) this.visit(child, scope);
+  }
+
+  private visitObject(node: Node, parent: Scope): void {
+    const existing = this.objects.get(node.id);
+    const name = this.bindingName(node);
+    const unit = existing ?? this.unit(node, name ?? "<object>", "declaration", parent);
+    if (!existing && name) bindDeclaration(parent, { name, unit });
+    const scope: Scope = { name: `${parent.name}.${unit.name}`, parent, owner: unit, bindings: new Map() };
+    unit.members = scope;
+    this.scopes.set(node.id, scope);
     for (const child of node.namedChildren) this.visit(child, scope);
   }
 
@@ -259,7 +352,11 @@ export class TypeScriptExtractor {
   private unit(node: Node, name: string, kind: Unit["kind"], scope: Scope): Unit {
     let wrapper = valueWrapper(node);
     if (wrapper.parent && [...VARIABLE_NODES, "pair"].includes(wrapper.parent.type)) wrapper = wrapper.parent;
-    if (wrapper.parent?.type === "lexical_declaration" && wrapper.parent.namedChildren.length === 1)
+    if (
+      wrapper.parent &&
+      ["lexical_declaration", "variable_declaration"].includes(wrapper.parent.type) &&
+      wrapper.parent.namedChildren.length === 1
+    )
       wrapper = wrapper.parent;
     if (wrapper.parent?.type === "export_statement") wrapper = wrapper.parent;
     const key = `${kind}:${scope.name}.${name}`;
@@ -295,18 +392,42 @@ export class TypeScriptExtractor {
       "assignment_expression",
       "augmented_assignment_expression",
       "update_expression",
+      "for_in_statement",
     ])) {
       const node = assignment.childForFieldName("left") ?? assignment.childForFieldName("argument");
       if (!node) continue;
       const scope = this.scopes.get(assignment.id) ?? this.module.scope;
-      if (node.type === "identifier") for (const binding of lookup(scope, node.text) ?? []) binding.reassigned = true;
-      if (node.type === "member_expression") {
-        const name = node.childForFieldName("property")?.text;
-        if (!name) continue;
-        for (const unit of this.module.units)
-          for (const binding of unit.members?.bindings.get(name) ?? []) binding.reassigned = true;
-      }
+      this.markAssignmentTarget(node, scope);
     }
+  }
+
+  private markAssignmentTarget(node: Node, scope: Scope): void {
+    const value = expression(node);
+    if (value.kind === "name") {
+      for (const binding of lookup(scope, value.name) ?? []) binding.reassigned = true;
+      return;
+    }
+    if (value.kind === "member" || node.type === "subscript_expression") {
+      for (const unit of this.module.units)
+        for (const [name, bindings] of unit.members?.bindings ?? [])
+          if (value.kind !== "member" || name === value.name) for (const binding of bindings) binding.reassigned = true;
+      return;
+    }
+    if (["assignment_pattern", "object_assignment_pattern", "pair_pattern"].includes(node.type)) {
+      const target = node.childForFieldName(node.type === "pair_pattern" ? "value" : "left");
+      if (target) this.markAssignmentTarget(target, scope);
+      return;
+    }
+    if (node.type === "shorthand_property_identifier_pattern") {
+      for (const binding of lookup(scope, node.text) ?? []) binding.reassigned = true;
+      return;
+    }
+    if (
+      ["object_pattern", "array_pattern", "rest_pattern", "parenthesized_expression", "non_null_expression"].includes(
+        node.type,
+      )
+    )
+      for (const child of node.namedChildren) this.markAssignmentTarget(child, scope);
   }
 
   private collectUses(unit: Unit, node: Node): void {

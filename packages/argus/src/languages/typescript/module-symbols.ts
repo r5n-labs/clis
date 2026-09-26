@@ -62,7 +62,8 @@ export function collectExports(root: Node, module: ModuleSymbols, create: Declar
     if (path) {
       const unit = create(node, `export:${node.startIndex}`);
       const namespace = node.namedChildren.find((child) => child.type === "namespace_export");
-      const alias = namespace?.namedChildren.at(-1)?.text;
+      const aliasNode = namespace?.namedChildren.at(-1);
+      const alias = literal(aliasNode ?? null) ?? aliasNode?.text;
       if (alias) module.exports.push({ name: alias, imported: "*", module: path, unit });
       else module.stars.push({ module: path, unit });
       continue;
