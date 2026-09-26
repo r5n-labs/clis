@@ -56,7 +56,7 @@ export class ReferenceResolver {
     const local = environment.method?.bindings.find((binding) => binding.name === name);
     if (local) return this.resolve(local.value, environment, lookup);
     const member = this.findMember(environment.owner, name, lookup);
-    if (member) return this.resolveFoundMember(member, lookup);
+    if (member) return this.resolveFoundMember(member, environment.owner, lookup);
     const singleton = this.index.runtime.singleton(name);
     if (singleton) {
       const { path, source } = singleton.evidence;
@@ -83,17 +83,21 @@ export class ReferenceResolver {
       return { kind: "class", owner: nested };
     }
     const member = this.findMember(owner, name, lookup);
-    return member ? this.resolveFoundMember(member, lookup) : undefined;
+    return member ? this.resolveFoundMember(member, owner, lookup) : undefined;
   }
 
-  private resolveFoundMember(member: Member, lookup: Lookup): ResolvedValue | undefined {
+  private resolveFoundMember(member: Member, owner: IndexedClass, lookup: Lookup): ResolvedValue | undefined {
     this.evidence.includeClass(member.owner);
     if (member.method) return { kind: "method", owner: member.owner, method: member.method };
     if (member.binding) {
+      const lookupFromOwner = member.owner === owner ? lookup : { ...lookup, origin: member.owner.file.path };
       this.evidence.includeBinding(member.owner, member.binding.name);
-      if (member.binding.initialiser && !this.resolve(member.binding.initialiser, { owner: member.owner }, lookup))
+      if (
+        member.binding.initialiser &&
+        !this.resolve(member.binding.initialiser, { owner: member.owner }, lookupFromOwner)
+      )
         this.evidence.recordUnresolved(member.owner.file.path, member.binding.initialiser);
-      return this.resolve(member.binding.value, { owner: member.owner }, lookup);
+      return this.resolve(member.binding.value, { owner: member.owner }, lookupFromOwner);
     }
     return undefined;
   }
@@ -108,7 +112,7 @@ export class ReferenceResolver {
     const method = owner.symbols.methods.find((entry) => entry.name === name);
     if (method) return { owner, method };
     const base = this.baseClass(owner, next);
-    return base?.kind === "class" ? this.findMember(base.owner, name, next) : undefined;
+    return base?.kind === "class" ? this.findMember(base.owner, name, { ...next, contract: true }) : undefined;
   }
 
   baseClass(owner: IndexedClass, lookup: Lookup): ResolvedValue | undefined {

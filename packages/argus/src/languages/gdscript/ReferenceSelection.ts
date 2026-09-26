@@ -146,8 +146,11 @@ export class ReferenceSelection {
     const bindings: SourceExpression[] = (environment.method?.uses ?? [])
       .filter(
         (name) =>
-          environment.owner.symbols.bindings.some((binding) => binding.name === name) ||
-          environment.owner.symbols.methods.some((method) => method.name === name),
+          !environment.method?.bindings.some((binding) => binding.name === name) &&
+          this.resolver.findMember(environment.owner, name, {
+            visited: new Set(),
+            origin: environment.owner.file.path,
+          }),
       )
       .map((name) => ({ kind: "name", name }));
     const operations = [...(environment.method?.operations ?? environment.owner.symbols.operations), ...bindings];

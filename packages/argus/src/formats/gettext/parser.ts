@@ -17,7 +17,7 @@ export function translationTargets(path: string, source: string): SourceTarget[]
     if (!entry) continue;
     const name = `${entry.msgctxt ?? ""}:${entry.msgid}`;
     targets.push({
-      id: `translations:${path}:${name}`,
+      id: `translations:${JSON.stringify([path, entry.msgctxt ?? "", entry.msgid])}`,
       group: "translations",
       path,
       owner: path,

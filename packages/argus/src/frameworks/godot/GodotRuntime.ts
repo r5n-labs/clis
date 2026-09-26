@@ -24,6 +24,7 @@ export class GodotRuntime implements ScriptRuntime {
   }
 
   singleton(name: string) {
+    if (!Object.hasOwn(this.singletons, name)) return undefined;
     const reference = this.singletons[name];
     return reference
       ? { reference, evidence: { path: PROJECT_FILE, source: `[autoload]\n${name}="*${reference}"` } }
