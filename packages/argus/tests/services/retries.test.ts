@@ -31,7 +31,7 @@ async function requestFixture() {
   return { ...f, reviewPlan: plan, batches, payload: batch.payload };
 }
 
-test.each(["json", "answers", "network", "timeout", 408, 429, 500, 502, 503, 504, 529])(
+test.each(["json", "answers", "network", "timeout", 408, 429, 500, 502, 503, 504, 520, 529])(
   "retries %s and saves only the valid response",
   async (failure) => {
     const f = await requestFixture();
@@ -62,25 +62,33 @@ test.each(["json", "answers", "network", "timeout", 408, 429, 500, 502, 503, 504
   },
 );
 
-test("persistent invalid responses exhaust retries without caching answers; zero disables retries", async () => {
-  const f = await requestFixture();
-  for (const retries of [0, 3]) {
-    let calls = 0;
-    const time = scheduler();
-    const client = new JevClient(
-      "test-key",
-      (async () => {
-        calls++;
-        return Response.json({});
-      }) as typeof fetch,
-      { retries, scheduler: time.clock },
-    );
-    await expect(new ReviewRunner(f.store, client).run(f.reviewPlan, f.batches)).rejects.toThrow("invalid response");
-    expect(calls).toBe(retries + 1);
-    expect(time.waits).toEqual(retries ? [1000, 2000, 4000] : []);
-    expect((await f.plan()).items.every((item) => !item.evaluation)).toBe(true);
-  }
-});
+test.each(["invalid response", "HTTP 520"])(
+  "persistent %s exhausts retries without caching answers",
+  async (failure) => {
+    const f = await requestFixture();
+    for (const retries of [0, undefined]) {
+      let calls = 0;
+      const time = scheduler();
+      const notices: RetryNotice[] = [];
+      const client = new JevClient(
+        "test-key",
+        (async () => {
+          calls++;
+          return failure === "HTTP 520" ? new Response("unavailable", { status: 520 }) : Response.json({});
+        }) as typeof fetch,
+        { retries, scheduler: time.clock, onRetry: (notice) => notices.push(notice) },
+      );
+      await expect(new ReviewRunner(f.store, client).run(f.reviewPlan, f.batches)).rejects.toThrow(failure);
+      const delays = retries === 0 ? [] : [1000, 2000, 4000];
+      expect(calls).toBe(delays.length + 1);
+      expect(time.waits).toEqual(delays);
+      expect(notices.map((notice) => ({ retry: notice.retry, delayMs: notice.delayMs }))).toEqual(
+        delays.map((delayMs, index) => ({ retry: index + 1, delayMs })),
+      );
+      expect((await f.plan()).items.every((item) => !item.evaluation)).toBe(true);
+    }
+  },
+);
 
 test.each([400, 401, 403, 404, 422])("does not retry permanent HTTP %s failures", async (status) => {
   const f = await requestFixture();

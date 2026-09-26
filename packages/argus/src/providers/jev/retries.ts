@@ -3,7 +3,7 @@ export const MAX_RETRIES = 10;
 const INITIAL_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30_000;
 const BACKOFF_FACTOR = 2;
-const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 529]);
 
 export type RetryNotice = { reason: string; retry: number; retries: number; delayMs: number };
 
