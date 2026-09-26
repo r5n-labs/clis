@@ -16,7 +16,8 @@ Install the pinned Tree-sitter CLI and activate Emscripten 4.0.15 in the current
 
 ```sh
 ARGUS_GRAMMAR_DIR="$PWD/packages/argus/src/formats/godot-resource/grammar"
-ARGUS_GRAMMAR_WORK=$(mktemp -d "$HOME/Desktop/Dev/tmp/argus-grammar.XXXXXX")
+mkdir -p "$PWD/.claude"
+ARGUS_GRAMMAR_WORK=$(mktemp -d "$PWD/.claude/argus-godot-grammar.XXXXXX")
 git clone https://github.com/PrestonKnopp/tree-sitter-godot-resource.git "$ARGUS_GRAMMAR_WORK/source"
 cd "$ARGUS_GRAMMAR_WORK/source"
 git switch --detach 302c1895f54bf74d53a08572f7b26a6614209adc

@@ -16,7 +16,7 @@ Bun + TypeScript monorepo of zero-dependency, single-file CLIs built on one priv
 | Run tests by name | `bun test -t "pattern"` |
 | Lint workflows | `actionlint` (config in `.github/actionlint.yaml`) |
 | Clean and reinstall | `bun clean` |
-| Run a CLI from source | `bun sis <command>` / `bun hydra <command>` / `bun atlas <command>` |
+| Run a CLI from source | `bun sis <command>` / `bun hydra <command>` / `bun atlas <command>` / `bun argus <command>` |
 | Debug a CLI | `bun sis:dbg <command>` (also `hydra:dbg`, `atlas:dbg`) |
 
 ## Core Mandates
@@ -38,6 +38,7 @@ packages/
   sisyphus/  @r5n/sisyphus  published: monorepo versioning and releases via "stones" (bins: sis, sisyphus)
   hydra/     @r5n/hydra     published: self-hosted GitHub Actions runner fleet manager
   atlas/     @r5n/atlas     private (unreleased): profile-based env composition (init, profiles, run, export)
+  argus/     @r5n/argus     private (unreleased): incremental syntax-aware reviews with Jev
 tools/       @r5n/tools     private: bunPackageBuilder, publish scripts, shared tsconfig/biome, CI composite action
 ```
 
@@ -122,6 +123,8 @@ export class CheckCommand extends BaseCommand {
 - `commands/actions/templates/` ships the GitHub and GitLab CI workflows that `sis actions init` installs; `build.ts` copies them into `dist/templates`.
 
 ## Testing
+
+Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries through parser adapters. `argus check` plans without API calls, `run` evaluates missing answers, `report create` saves a review snapshot, report retrieval commands read that snapshot, and `verify --import` saves independently reviewed verdicts. Use an external `--config` to keep state outside the reviewed project; change questions require `--base <revision>`. Jev flags are candidates, not verified defects. Its single-file build embeds all grammar WASM and HTML viewer assets; `bun packages/argus/scripts/smoke.ts` checks a copied build without adjacent assets or API calls.
 
 - `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.

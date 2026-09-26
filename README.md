@@ -56,7 +56,7 @@ Holds your world up. Compose named configuration profiles — inheritance, doten
 
 ### 👁️ [Argus](packages/argus) — incremental code review · *in development*
 
-Extracts GDScript syntax, asks Jev configurable review questions, and caches each answer against its source and question fingerprints. New questions and changed code are evaluated incrementally. Includes naming, comments, architecture, tests, translations and change review.
+Extracts GDScript, TypeScript and TSX syntax, asks Jev configurable review questions, and caches each answer against its source and question fingerprints. New questions and changed code are evaluated incrementally. Includes naming, comments, architecture, tests, translations and change review.
 
 ```bash
 bun argus init --root /path/to/game --config /path/to/reviews/config.json
