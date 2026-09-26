@@ -87,13 +87,16 @@ export class ReferenceSelection {
   }
 
   private render(root?: Unit): Selection {
-    const primary = [this.target.documentation, this.target.comments, this.target.source].filter(Boolean).join("\n\n");
+    const primary = [this.target.documentation, this.target.leadingComments ?? this.target.comments, this.target.source]
+      .filter(Boolean)
+      .join("\n\n");
     let remaining = Math.max(
       0,
       (this.options.sourceBytes ?? DEFAULT_SOURCE_BYTES) - Buffer.byteLength(JSON.stringify(primary)),
     );
     const local: string[] = [];
     const related = new Map<string, string>();
+    const rendered: Unit[] = [];
     const units = [...this.selected].sort(
       ([a, left], [b, right]) =>
         left.depth - right.depth ||
@@ -104,18 +107,23 @@ export class ReferenceSelection {
       const path = this.index.owner(unit).path;
       if (
         unit === root ||
+        rendered.some(
+          (container) =>
+            this.index.owner(container).path === path && unit.start >= container.start && unit.end <= container.end,
+        ) ||
         (path === this.target.path &&
           unit.start >= (root?.start ?? 0) &&
           unit.end <= (root?.end ?? this.module.units.reduce((end, item) => Math.max(end, item.end), 0)))
       )
         continue;
-      const source = full ? [unit.comments, unit.source].filter(Boolean).join("\n") : this.classContract(unit);
+      const source = full ? [unit.documentation, unit.source].filter(Boolean).join("\n") : this.classContract(unit);
       const bytes = Buffer.byteLength(JSON.stringify(source));
       if (bytes > remaining) {
         this.note(this.target.path, `Omitted by context allowance: ${path}:${unit.name}`);
         continue;
       }
       remaining -= bytes;
+      if (full) rendered.push(unit);
       if (path === this.target.path) local.push(source);
       else related.set(path, [related.get(path), source].filter(Boolean).join("\n\n"));
     }

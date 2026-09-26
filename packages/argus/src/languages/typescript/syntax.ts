@@ -107,10 +107,35 @@ export function leadingComments(node: Node): string {
   const comments: string[] = [];
   let previous = node.previousNamedSibling;
   while (previous?.type === "comment") {
+    if (trailingCommentOwner(previous)) break;
     comments.unshift(previous.text);
     previous = previous.previousNamedSibling;
   }
   return comments.join("\n");
+}
+
+export function trailingComments(node: Node): Node[] {
+  const comments: Node[] = [];
+  let next = node.nextSibling;
+  while (next) {
+    if ([",", ";", "empty_statement"].includes(next.type)) {
+      next = next.nextSibling;
+      continue;
+    }
+    if (next.type !== "comment" || trailingCommentOwner(next)?.id !== node.id) break;
+    comments.push(next);
+    next = next.nextSibling;
+  }
+  return comments;
+}
+
+function trailingCommentOwner(comment: Node): Node | undefined {
+  let next = comment.nextNamedSibling;
+  while (next?.type === "comment") next = next.nextNamedSibling;
+  if (comment.text.startsWith("/*") && next?.startPosition.row === comment.endPosition.row) return undefined;
+  let previous = comment.previousNamedSibling;
+  while (previous && ["comment", "empty_statement"].includes(previous.type)) previous = previous.previousNamedSibling;
+  return previous?.endPosition.row === comment.startPosition.row ? previous : undefined;
 }
 
 export function identifiers(node: Node): string[] {

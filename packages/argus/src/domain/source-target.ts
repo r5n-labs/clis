@@ -11,6 +11,7 @@ export type SourceTarget = {
   endLine: number;
   source: string;
   comments: string;
+  leadingComments?: string;
   declarations: string[];
   references: string[];
   calls: string[];

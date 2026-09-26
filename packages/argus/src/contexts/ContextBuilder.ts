@@ -27,7 +27,10 @@ export class ContextBuilder {
     let unresolved: ReviewContext["unresolved"];
     let referenceScope: string | undefined;
     if (mode === "file" && target.group !== "changes") source = file?.source ?? source;
-    if (mode === "target") source = [target.documentation, target.comments, target.source].filter(Boolean).join("\n");
+    if (mode === "target")
+      source = [target.documentation, target.leadingComments ?? target.comments, target.source]
+        .filter(Boolean)
+        .join("\n");
     if (mode === "class" || mode === "references" || mode === "file") {
       const selection =
         target.group === "changes"

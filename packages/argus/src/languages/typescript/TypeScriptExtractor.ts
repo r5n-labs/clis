@@ -10,6 +10,7 @@ import {
   leadingComments,
   literal,
   patternNames,
+  trailingComments,
   unwrapValue,
   valueWrapper,
 } from "./syntax";
@@ -364,21 +365,28 @@ export class TypeScriptExtractor {
     this.names.set(key, occurrence);
     const uniqueName = occurrence === 1 ? name : `${name} #${occurrence}`;
     const body = node.childForFieldName("body");
+    const leading = leadingComments(wrapper);
+    const trailing = trailingComments(wrapper);
+    const end = trailing.at(-1) ?? wrapper;
     const unit: Unit = {
       id: `${this.path}:${kind}:${scope.name}.${uniqueName}`,
       name: uniqueName,
       kind,
       scope,
-      source: wrapper.text,
+      source: this.source.slice(wrapper.startIndex, end.endIndex),
       header: body ? this.source.slice(wrapper.startIndex, body.startIndex).trimEnd() : wrapper.text,
-      comments: [leadingComments(wrapper), ...node.descendantsOfType("comment").map((entry) => entry.text)]
+      comments: [
+        leading,
+        ...wrapper.descendantsOfType("comment").map((entry) => entry.text),
+        ...trailing.map((entry) => entry.text),
+      ]
         .filter(Boolean)
         .join("\n"),
-      documentation: leadingComments(wrapper),
+      documentation: leading,
       line: wrapper.startPosition.row + 1,
-      endLine: wrapper.endPosition.row + 1,
+      endLine: end.endPosition.row + 1,
       start: wrapper.startIndex,
-      end: wrapper.endIndex,
+      end: end.endIndex,
       uses: [],
       bases: [],
     };
@@ -484,6 +492,7 @@ export class TypeScriptExtractor {
       endLine: unit.endLine,
       source: unit.source,
       comments: unit.comments,
+      leadingComments: unit.documentation,
       documentation: unit.scope.owner?.kind === "class" ? unit.scope.owner.documentation : undefined,
       declarations:
         unit.kind === "class"
