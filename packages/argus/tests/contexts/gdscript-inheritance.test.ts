@@ -62,11 +62,18 @@ test.each(MODES)("%s context preserves local shadowing and overridden fields", a
   }
 });
 
-test.each(MODES)("%s context terminates inherited member lookup cycles", async (mode) => {
+test.each(MODES)("%s context includes inherited fields through cyclic bases", async (mode) => {
   const f = inheritedFixture(mode);
   f.write("base.gd", "class_name Base\nextends Derived\nvar flag = true\n");
   const item = await f.item();
   expect(item.context.related.find((entry) => entry.path === "base.gd")?.source).toContain("var flag = true");
+});
+
+test.each(MODES)("%s context terminates absent inherited member lookup cycles", async (mode) => {
+  const f = inheritedFixture(mode, "func enabled():\n    return self.absent_flag\n");
+  f.write("base.gd", "class_name Base\nextends Derived\nvar flag = true\n");
+  const item = await f.item();
+  expect(item.context.unresolved?.flatMap((entry) => entry.expressions)).toContain("self.absent_flag");
 });
 
 test.each(MODES)("%s context preserves external depth limits for inherited initialisers", async (mode) => {

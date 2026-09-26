@@ -92,6 +92,7 @@ test("handoff splits whole findings without duplicating unused contexts or break
   ];
   const parts = llmParts(f.report);
   expect(parts).toHaveLength(2);
+  expect(parts.map((part) => bundle(part).checks)).toEqual(f.report.results.map((item) => [item]));
   expect(bundle(parts[0] ?? "").contexts.first.source).toContain("````");
   expect(Object.keys(bundle(parts[0] ?? "").contexts)).toEqual(["first"]);
   expect(Object.keys(bundle(parts[1] ?? "").contexts)).toEqual(["second"]);
