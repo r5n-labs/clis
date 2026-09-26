@@ -66,7 +66,7 @@ export class VerificationStore {
       const path = realpathSync(resolve(root, evidence.path));
       const inside = relative(root, path);
       if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) return false;
-      return checksum(readFileSync(path, "utf8")) === evidence.sha256;
+      return checksum(readFileSync(path)) === evidence.sha256;
     } catch {
       return false;
     }

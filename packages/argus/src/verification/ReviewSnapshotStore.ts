@@ -11,7 +11,7 @@ import type { Report } from "../reports/report-data";
 import { REVIEW_PROTOCOL } from "../reports/review-protocol";
 import { restoreEvidence, SharedEvidence } from "../reports/SharedEvidence";
 import { parseReport } from "../reports/schema";
-import { projectPaths, readProjectFile } from "../services/project-files";
+import { projectPaths, readProjectBytes } from "../services/project-files";
 import { writeJson } from "../storage/EvaluationStore";
 import { checksum, fingerprint } from "../storage/fingerprints";
 import { hashValue, parseVerificationImport, type VerificationImport } from "./schema";
@@ -28,6 +28,7 @@ type SnapshotIdentity = {
 };
 
 const TEMPLATE_FILE_MODE = 0o600;
+const NUL_BYTE = 0;
 const TEMPLATE_SUFFIXES = {
   candidates: "verdicts",
   "all-candidates": "all-verdicts",
@@ -54,8 +55,8 @@ export class ReviewSnapshotStore {
     const exclude = [...config.exclude, ".git", ...statePaths];
     const files = new Map<string, string>();
     for (const path of projectPaths(root, exclude)) {
-      const source = readProjectFile(root, path);
-      if (!source.includes("\0")) files.set(path, checksum(source));
+      const source = readProjectBytes(root, path);
+      if (!source.includes(NUL_BYTE)) files.set(path, checksum(source));
     }
     return Object.fromEntries(files);
   }

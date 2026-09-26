@@ -3,7 +3,7 @@ import type { AnalysisServices } from "../analysis/contracts";
 import type { LoadedConfig } from "../config/types";
 import type { Project, SourceTarget } from "../domain/source-target";
 import { ProjectAssembler } from "../services/ProjectAssembler";
-import { isExcluded, matches, readProjectFile } from "../services/project-files";
+import { isExcluded, matches } from "../services/project-files";
 
 async function git(root: string, args: string[]): Promise<string> {
   const result = Bun.spawn(["git", ...args], {
@@ -47,11 +47,13 @@ export async function collectChanges(loaded: LoadedConfig, project: Project, bas
   const targets: SourceTarget[] = [];
   for (const path of [...new Set([...tracked, ...untracked])].sort()) {
     if (!matches(path, loaded.config.include) || isExcluded(path, loaded.config.exclude)) continue;
-    const after = project.files.get(path)?.source ?? "";
+    const file = project.files.get(path);
     const isNew = untracked.includes(path);
+    if (isNew && !file) continue;
+    const after = file?.source ?? "";
     const before = baseline.files.get(path)?.source ?? "";
     const diff = isNew
-      ? `New file: ${path}\n${readProjectFile(loaded.root, path)}`
+      ? `New file: ${path}\n${after}`
       : await git(loaded.root, [
           "diff",
           "--relative",
@@ -75,7 +77,7 @@ export async function collectChanges(loaded: LoadedConfig, project: Project, bas
       source,
       comments: "",
       declarations: [],
-      references: project.files.get(path)?.references ?? [],
+      references: file?.references ?? [],
       calls: [],
       changeContext: { before: baseline, after: project },
     });

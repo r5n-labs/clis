@@ -26,10 +26,14 @@ export function* projectPaths(root: string, exclude: readonly string[], director
 }
 
 export function readProjectFile(root: string, path: string): string {
+  return readProjectBytes(root, path).toString("utf8");
+}
+
+export function readProjectBytes(root: string, path: string): Buffer {
   const absolute = resolve(root, path);
   const resolved = realpathSync(absolute);
   const rel = relative(realpathSync(root), resolved);
   if (rel === ".." || rel.startsWith(`..${sep}`) || lstatSync(absolute).isSymbolicLink())
     throw new Exit(`Source escapes project or is a symlink: ${path}`);
-  return readFileSync(absolute, "utf8");
+  return readFileSync(absolute);
 }

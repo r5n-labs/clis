@@ -16,7 +16,7 @@ export function canonical(value: unknown): string {
   return encoded;
 }
 
-export function checksum(source: string): string {
+export function checksum(source: string | Uint8Array): string {
   return createHash("sha256").update(source).digest("hex");
 }
 export function fingerprint(value: unknown): string {
