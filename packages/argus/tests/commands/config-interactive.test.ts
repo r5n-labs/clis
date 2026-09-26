@@ -113,3 +113,31 @@ test("guided edits configure review queues for custom answer choices", async () 
     clear: "findings",
   });
 });
+
+test("removing an answer choice prunes its flags and queues before saving", async () => {
+  const f = fixture();
+  expect((await cli(f.loaded.root, ["init", "--config", f.loaded.path])).code).toBe(0);
+  new ConfigEditor(f.loaded.path).addQuestion("methods", {
+    id: "custom",
+    type: "choice",
+    instructions: "Check the contract",
+    criteria: { keep: "Retained concern", drop: "Removed concern", okay: "Established" },
+    flag: ["keep", "drop"],
+    reviewQueues: { keep: "findings", drop: "context" },
+  });
+  await interactive(
+    f.loaded.root,
+    ["config", "question", "edit", "methods", "custom", "--config", f.loaded.path],
+    [
+      { prompt: "Question: custom", keys: [DOWN, DOWN, ENTER] },
+      { prompt: "Answer choices", keys: [DOWN, ENTER] },
+      { prompt: "drop", keys: [DOWN, ENTER] },
+      { prompt: "Answer choices", keys: [UP, ENTER] },
+      { prompt: "Question: custom", keys: [UP, ENTER] },
+    ],
+  );
+  const question = loadConfig(f.loaded.path).config.questions.methods.find((entry) => entry.id === "custom");
+  expect(question?.criteria).toEqual({ keep: "Retained concern", okay: "Established" });
+  expect(question?.flag).toEqual(["keep"]);
+  expect(question?.reviewQueues).toEqual({ keep: "findings" });
+});

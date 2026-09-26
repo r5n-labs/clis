@@ -6,6 +6,7 @@ import { reviewCandidates } from "../reports/llm";
 import { reportData } from "../reports/report-data";
 import { ReviewSnapshotStore } from "../verification/ReviewSnapshotStore";
 import { VerificationStore } from "../verification/VerificationStore";
+import { noPositionals, rejectExtraArguments, validateStringOptions } from "./options";
 import { requireInteractive, reviewBase } from "./prompts";
 import { loadReview, prepareReview, reviewArgs } from "./shared";
 import { promptVerdictFile } from "./verdict-prompt";
@@ -19,14 +20,17 @@ export class VerifyCommand extends BaseCommand {
   name = "verify";
   description = "Save external LLM verdicts against current source and question fingerprints";
   args = verifyArgs;
+  positionals = noPositionals;
   prompts = true;
 
-  async execute(ctx: Ctx<typeof verifyArgs>): Promise<void> {
+  async execute(ctx: Ctx<typeof verifyArgs, typeof noPositionals>): Promise<void> {
     validateKnownArgs(ctx.args, verifyArgs, "Run 'argus verify --help'");
-    if (!ctx.args.import?.trim()) requireInteractive(ctx.interactive, "Use --import <verdicts.json>");
+    rejectExtraArguments(ctx.positionals.extra);
+    validateStringOptions(ctx.args, ["config", "base", "import"]);
+    if (ctx.args.import === undefined) requireInteractive(ctx.interactive, "Use --import <verdicts.json>");
     const { loaded, store } = loadReview(ctx.args.config);
     const snapshots = new ReviewSnapshotStore(loaded);
-    const path = ctx.args.import?.trim() || (await promptVerdictFile(snapshots));
+    const path = ctx.args.import ?? (await promptVerdictFile(snapshots));
     const value = readJson(path);
     const base = await reviewBase(loaded, ctx.args.base, ctx.interactive);
     const release = store.lock();

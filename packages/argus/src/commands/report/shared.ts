@@ -8,6 +8,9 @@ import { htmlReport } from "../../reports/html";
 import { ReviewCatalogue } from "../../reports/ReviewCatalogue";
 import type { Report } from "../../reports/report-data";
 import { ReviewSnapshotStore, type TemplateSelection } from "../../verification/ReviewSnapshotStore";
+import { rejectExtraArguments, validateStringOptions } from "../options";
+
+export { noPositionals } from "../options";
 
 export const snapshotArgs = args({
   config: { type: "string", description: "Path to Argus configuration" },
@@ -22,7 +25,6 @@ export const selectionArgs = args({
     description: "Include candidates settled when this snapshot was created",
   },
 });
-export const noPositionals = positionals({ extra: { variadic: true } });
 export const idPositionals = positionals({
   id: { description: "Full review or evidence ID (omit to choose interactively)" },
   extra: { variadic: true },
@@ -48,10 +50,8 @@ export function validateOptions(
   extra: string[],
 ): void {
   validateKnownArgs(values, definitions, "Run 'argus report --help'");
-  if (extra.length) throw new Exit(`Unexpected arguments: ${extra.join(" ")}`);
-  for (const key of ["config", "snapshot"])
-    if (values[key] !== undefined && (typeof values[key] !== "string" || !values[key].trim()))
-      throw new Exit(`--${key} requires a value`);
+  rejectExtraArguments(extra);
+  validateStringOptions(values, ["config", "snapshot", "base"]);
 }
 
 export function printJson(value: unknown): void {

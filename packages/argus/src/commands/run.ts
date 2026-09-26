@@ -13,6 +13,8 @@ import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY, ReviewRunner } from "../services/
 import { DEFAULT_FOLLOW_UP_LIMIT, ReviewSession, selectRequests } from "../services/ReviewSession";
 import { writeJson } from "../storage/EvaluationStore";
 import { VerificationStore } from "../verification/VerificationStore";
+import { noPositionals, rejectExtraArguments, validateStringOptions } from "./options";
+import { reviewBase } from "./prompts";
 import { loadReview, prepareReview, reviewArgs } from "./shared";
 
 const runArgs = args({
@@ -31,9 +33,13 @@ export class RunCommand extends BaseCommand {
   name = "run";
   description = "Ask Jev only the questions missing from the cache";
   args = runArgs;
+  positionals = noPositionals;
+  prompts = true;
 
-  async execute(ctx: Ctx<typeof runArgs>): Promise<void> {
+  async execute(ctx: Ctx<typeof runArgs, typeof noPositionals>): Promise<void> {
     validateKnownArgs(ctx.args, runArgs, "Run 'argus run --help'");
+    rejectExtraArguments(ctx.positionals.extra);
+    validateStringOptions(ctx.args, ["config", "base"]);
     if (!Number.isSafeInteger(ctx.args.limit) || ctx.args.limit < 0)
       throw new Exit("--limit must be a non-negative integer");
     if (!Number.isSafeInteger(ctx.args["follow-up-limit"]) || ctx.args["follow-up-limit"] < 0)
@@ -47,9 +53,10 @@ export class RunCommand extends BaseCommand {
     if (!Number.isSafeInteger(ctx.args.retries) || ctx.args.retries < 0 || ctx.args.retries > MAX_RETRIES)
       throw new Exit(`--retries must be an integer between 0 and ${MAX_RETRIES}`);
     const { loaded, store } = loadReview(ctx.args.config);
+    const base = await reviewBase(loaded, ctx.args.base, ctx.interactive);
     const release = store.lock();
     try {
-      const plan = await prepareReview(loaded, store, ctx.args.base);
+      const plan = await prepareReview(loaded, store, base);
       const allBatches = new RequestBatcher().batches(plan, loaded.config);
       const options = { limit: ctx.args.limit, followUpLimit: ctx.args["follow-up-limit"] };
       const batches = selectRequests(allBatches, options);
@@ -80,7 +87,7 @@ export class RunCommand extends BaseCommand {
       console.log(
         ctx.args.json
           ? JSON.stringify(report, null, JSON_INDENT)
-          : runSummary(report, { config: loaded.path, path: reportPath, base: ctx.args.base }),
+          : runSummary(report, { config: loaded.path, path: reportPath, base }),
       );
     } finally {
       release();

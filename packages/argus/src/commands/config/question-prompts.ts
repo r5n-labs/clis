@@ -54,6 +54,7 @@ async function editField(draft: Question, field: keyof typeof FIELDS): Promise<v
       return;
     case "criteria":
       draft.criteria = await promptCriteria(draft.criteria);
+      draft.flag = draft.flag.filter((choice) => Object.hasOwn(draft.criteria, choice));
       if (draft.reviewQueues)
         draft.reviewQueues = Object.fromEntries(
           Object.entries(draft.reviewQueues).filter(([choice]) => Object.hasOwn(draft.criteria, choice)),

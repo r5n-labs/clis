@@ -1,6 +1,7 @@
 import { positionals } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { PRESETS } from "../../presets";
+import { noPositionals, rejectExtraArguments } from "../options";
 import { configActions, configArgs } from "./shared";
 
 const presetPositionals = positionals({
@@ -20,8 +21,10 @@ class PresetUpgradeCommand extends BaseCommand {
   name = "upgrade";
   description = "Replace unmodified broad comment/test presets with independent checks";
   args = configArgs;
+  positionals = noPositionals;
 
-  async execute(ctx: Ctx<typeof configArgs>): Promise<void> {
+  async execute(ctx: Ctx<typeof configArgs, typeof noPositionals>): Promise<void> {
+    rejectExtraArguments(ctx.positionals.extra);
     configActions(ctx.args, this.args).upgradePresets();
   }
 }

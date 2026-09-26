@@ -38,7 +38,7 @@ export class ConfigActions {
     const changed = this.editor.addPresets(selected);
     console.log(changed ? `Saved ${this.editor.path}` : "Selected presets are already configured");
     if (selected.includes("changes") || selected.includes("all"))
-      log.info("Change checks require --base <revision> on check, run and report (for example --base HEAD)");
+      log.info("Change checks require --base <revision> on check, run and report create (for example --base HEAD)");
   }
 
   async addQuestion(groupName?: string, file?: string): Promise<void> {

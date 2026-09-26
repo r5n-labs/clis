@@ -5,7 +5,7 @@ import { Exit } from "@r5n/cli-core";
 import { JSON_INDENT } from "../constants";
 import type { Question, TargetGroup } from "../domain/question";
 import { presetQuestions } from "../presets";
-import { loadConfig } from "./loader";
+import { loadConfigDocument } from "./loader";
 import type { ArgusConfig } from "./types";
 import { parseConfig, parseQuestion, record } from "./validation";
 
@@ -18,10 +18,10 @@ export class ConfigEditor {
   private document: Record<string, unknown>;
 
   constructor(configPath?: string) {
-    this.path = loadConfig(configPath).path;
-    this.source = readFileSync(this.path, "utf8");
-    this.document = record(JSON.parse(this.source), "config");
-    parseConfig(this.document);
+    const { path, source, document } = loadConfigDocument(configPath);
+    this.path = path;
+    this.source = source;
+    this.document = document;
   }
 
   get config(): ArgusConfig {
