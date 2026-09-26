@@ -1,0 +1,13 @@
+{
+  "id": "test-quality",
+  "type": "choice",
+  "context": "references",
+  "instructions": "Does this test exercise its claimed production behaviour with assertions that would detect a regression? Inspect the implementation and helpers provided. Do not penalise focused tests for omitting unrelated cases. If the relevant implementation cannot be identified, choose insufficient_context.",
+  "criteria": {
+    "meaningful": "Assertions observe the claimed production behaviour and can fail if it regresses.",
+    "weak": "The test passes without establishing the claimed behaviour, or mostly repeats its implementation.",
+    "insufficient_context": "The relevant implementation, helpers or test contract are unavailable."
+  },
+  "flag": ["weak"],
+  "reviewQueues": { "insufficient_context": "context" }
+}

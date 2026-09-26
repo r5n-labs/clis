@@ -1,0 +1,13 @@
+{
+  "id": "architecture-ownership",
+  "type": "choice",
+  "context": "references",
+  "instructions": "Does this class place behaviour with the component responsible for it? Infer ownership from the supplied contracts, collaborators and project rules. Coordinating collaborators and delegating implementation can be legitimate responsibilities. Prefer cohesive responsibilities, composition and explicit contracts; identify concrete misplaced behaviour rather than imposing a particular framework or application architecture. Treat omitted implementations as missing evidence, not as ownership violations.",
+  "criteria": {
+    "cohesive": "Responsibilities belong to this class or it coordinates its collaborators.",
+    "misplaced_behaviour": "Concrete domain behaviour is implemented by a coordinator or unrelated owner.",
+    "insufficient_context": "The ownership contract or collaborating components are missing."
+  },
+  "flag": ["misplaced_behaviour"],
+  "reviewQueues": { "insufficient_context": "context" }
+}

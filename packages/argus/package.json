@@ -1,0 +1,36 @@
+{
+  "bin": { "argus": "dist/cli.js" },
+  "description": "Argus CLI - Incremental, syntax-aware code reviews with Jev",
+  "devDependencies": {
+    "@r5n/cli-core": "workspace:*",
+    "@r5n/tools": "workspace:*",
+    "@types/gettext-parser": "9.0.0",
+    "@types/prismjs": "1.26.6",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "banditypes": "0.3.0",
+    "gettext-parser": "9.1.1",
+    "prismjs": "1.30.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tree-sitter-wasm": "1.1.2",
+    "web-tree-sitter": "0.27.0"
+  },
+  "files": ["dist", "schema.json", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+  "license": "Apache-2.0",
+  "main": "dist/cli.js",
+  "name": "@r5n/argus",
+  "private": true,
+  "scripts": {
+    "benchmark": "bun --bun benchmarks/run.ts",
+    "build": "rm -rf dist && bun build.ts",
+    "clean": "rm -rf dist node_modules",
+    "dev": "bun --bun src/cli.ts",
+    "package:dryRun": "bun ../../tools/scripts/publish-package.ts . --dry-run",
+    "package:prepare": "NODE_ENV=production bun run build && bun ../../tools/scripts/prepare-publish.ts .",
+    "package:publish": "bun ../../tools/scripts/publish-package.ts .",
+    "type-check": "bun --bun tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}

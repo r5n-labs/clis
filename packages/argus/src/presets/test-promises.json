@@ -1,0 +1,13 @@
+{
+  "id": "test-promises",
+  "type": "choice",
+  "context": "references",
+  "instructions": "Does this test actually verify each concrete behaviour promised by its name and documentation? A test can meaningfully exercise a UI yet fail to verify a promised resource deduction, cancellation, cache reuse or timing condition. Compare the claims to executed actions and assertions. Do not invent promises or require unrelated cases. Delegated assertions and fixtures count when supplied.",
+  "criteria": {
+    "verified": "The actions and assertions establish the concrete claims in the test name and documentation.",
+    "unverified_promise": "A specific promised behaviour is not exercised or would not cause an assertion to fail if broken.",
+    "insufficient_context": "Missing helpers, implementation or fixture behaviour prevent deciding whether the promise is verified."
+  },
+  "flag": ["unverified_promise"],
+  "reviewQueues": { "insufficient_context": "context" }
+}

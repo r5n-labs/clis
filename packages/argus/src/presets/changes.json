@@ -1,0 +1,13 @@
+{
+  "id": "change-regression",
+  "type": "choice",
+  "context": "references",
+  "instructions": "Does this diff introduce a concrete behavioural regression relative to the before version? Use the before/after source and supplied context. Distinguish intentional behaviour changes from contradictions or broken contracts. Do not report speculative problems without supporting code.",
+  "criteria": {
+    "no_evidence": "No concrete regression is established by this context.",
+    "likely_regression": "The change visibly breaks a contract or previously working behaviour.",
+    "insufficient_context": "Required callers, contracts or implementation details are missing."
+  },
+  "flag": ["likely_regression"],
+  "reviewQueues": { "insufficient_context": "context" }
+}

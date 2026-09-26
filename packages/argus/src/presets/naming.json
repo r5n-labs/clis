@@ -1,0 +1,15 @@
+{
+  "id": "naming-accuracy",
+  "type": "choice",
+  "context": "class",
+  "instructions": "Evaluate whether the method name makes sense from its local contract: its complete implementation, class purpose, relevant declarations, documentation and inherited interface. Judge semantic accuracy, not naming taste. Permit conventional hooks, deliberate base stubs, interface-compatible overrides and documented development exceptions. A name need not describe every internal detail. Comments explain intent but do not prove behaviour. Missing external implementations, callers or runtime wiring are extraction gaps: choose insufficient_context when essential, never needs_explanation merely because Argus omitted them.",
+  "criteria": {
+    "matches": "The name accurately conveys the primary behaviour or return value in its class context. It need not list every implementation detail or guard.",
+    "too_vague": "The name is compatible with the behaviour but fails to communicate its specific purpose, even with its class context. No concrete contradiction is present.",
+    "misleading": "The implementation materially contradicts the behaviour, return value, or side-effect expectations conveyed by the name.",
+    "insufficient_context": "The supplied source does not establish enough of the behaviour or naming contract to judge, for example an unresolved external implementation or ambiguous override contract.",
+    "needs_explanation": "Visible code relies on a specific non-obvious precondition or intentional exception to the naming contract that the supplied local documentation and inherited contract do not explain. The name can remain appropriate with a short contract comment. Identify this only from visible evidence, not missing dependencies."
+  },
+  "flag": ["misleading", "too_vague", "needs_explanation"],
+  "reviewQueues": { "insufficient_context": "context", "needs_explanation": "documentation" }
+}
