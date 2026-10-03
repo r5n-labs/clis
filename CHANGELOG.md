@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-10-03 - @r5n/argus@0.2.0, @r5n/atlas@0.5.0, @r5n/cli-core@0.5.0, @r5n/hydra@0.10.0, @r5n/sisyphus@0.11.0, @r5n/tools@0.3.0
+
+**Packages**
+- ✨ `@r5n/argus` 0.1.0 → 0.2.0
+- ✨ `@r5n/atlas` 0.4.2 → 0.5.0
+- ✨ `@r5n/cli-core` 0.4.4 → 0.5.0
+- ✨ `@r5n/hydra` 0.9.4 → 0.10.0
+- ✨ `@r5n/sisyphus` 0.10.0 → 0.11.0
+- ✨ `@r5n/tools` 0.2.2 → 0.3.0
+
+### 🪨 Features
+**Packages:** `@r5n/argus` · `@r5n/atlas` · `@r5n/cli-core` · `@r5n/hydra` · `@r5n/sisyphus` · `@r5n/tools`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`991f08b`](https://github.com/r5n-labs/clis/commit/991f08b) feat(argus): add incremental reviews and harden CLI workflows (#43)
+  <details>
+  <summary>Details</summary>
+
+  Add the private Argus CLI for incremental reviews of TypeScript, TSX,
+  GDScript, Godot resources and gettext. Persist source evidence, evaluations,
+  review snapshots and verdicts so cached results remain tied to the code
+  under review. Bundle the parsers and portable HTML report in one executable.
+  
+  Preserve configuration and runner data across the shared CLIs. Harden
+  Sisyphus commit analysis, previews, provider file discovery, publication
+  manifests and ledger archival to prevent incomplete release plans and
+  loss of existing state.
+  
+  Share npm output parsing and JSON update logic, and replace private-helper
+  test seams with checks at command, child-process and publication boundaries.
+  
+  Validation: 1,698 tests pass with one conditional skip; all six CI checks,
+  workspace type checks, lint, builds and copied-executable smoke checks pass.
+  </details>
+
+</details>
+
+### 🪨 Chores
+**Packages:** `@r5n/cli-core` · `@r5n/sisyphus`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`4632c71`](https://github.com/r5n-labs/clis/commit/4632c71) chore: json format
+
+</details>
+
 ## 2026-09-16 - @r5n/atlas@0.4.2, @r5n/cli-core@0.4.4, @r5n/hydra@0.9.4, @r5n/sisyphus@0.10.0, @r5n/tools@0.2.2
 
 **Packages**
