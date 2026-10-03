@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
-import { isValidNpmTag, type ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
+import { isValidNpmTag } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
 import {
   CHANGELOG_FILE,
@@ -20,15 +20,14 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
-async function captureIgnoredInputsExit(orchestrator: ReleaseOrchestrator): Promise<Exit> {
-  const internals = orchestrator as unknown as { validateIgnoredBuildInputs(): Promise<void> };
+async function captureExit(operation: () => Promise<void>): Promise<Exit> {
   try {
-    await internals.validateIgnoredBuildInputs();
+    await operation();
   } catch (error) {
     if (error instanceof Exit) return error;
     throw error;
   }
-  throw new Error("Expected ignored build inputs to be rejected");
+  throw new Error("Expected operation to be rejected with Exit");
 }
 
 describe("ReleaseOrchestrator npm publication", () => {
@@ -95,14 +94,14 @@ describe("ReleaseOrchestrator npm publication", () => {
     fixture = undefined;
   });
 
-  test("skips private packages and publishes prepared public package artifacts", async () => {
+  test("skips private packages and publishes constructor's prepared artifact", async () => {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
     process.chdir(root);
     const published = startRegistry();
 
     const privatePackage = makePublishPackage(root, "packages/private", "@fixture/private", { private: true });
-    const publicPackage = makePublishPackage(root, "packages/public", "@fixture/public");
+    const publicPackage = makePublishPackage(root, "packages/public", "constructor");
     await Bun.$`git add packages/private packages/public`.quiet();
     await Bun.$`git commit -q -m "add publish packages"`.quiet();
     const originalManifest = readFileSync(join(root, publicPackage.file), "utf-8");
@@ -115,7 +114,15 @@ describe("ReleaseOrchestrator npm publication", () => {
     expect(existsSync(join(root, "packages/private/build-count.txt"))).toBe(false);
     expect(readFileSync(join(root, "packages/public/build-count.txt"), "utf-8")).toBe("1");
     expect(readFileSync(join(root, publicPackage.file), "utf-8")).toBe(originalManifest);
-    expect(published).toEqual(["@fixture/public"]);
+    expect(published).toEqual(["constructor"]);
+    const ledger = await ReleaseLedger.loadActive(root);
+    if (!ledger || !registry) throw new Error("Expected active ledger and registry");
+    const snapshot = ledger.data;
+    expect(Object.hasOwn(snapshot.artifacts, publicPackage.name)).toBe(true);
+    expect(Object.hasOwn(snapshot.operations.npmRegistries, publicPackage.name)).toBe(true);
+    expect(snapshot.operations.npmRegistries[publicPackage.name]).toBe(String(registry.url));
+    expect(snapshot.operations.npm[publicPackage.name]?.state).toBe("completed");
+    expect(existsSync(ledger.resolveArtifactPath(publicPackage.name))).toBe(true);
   });
 
   test("preserves restricted publication access from the immutable artifact", async () => {
@@ -322,11 +329,8 @@ describe("ReleaseOrchestrator npm publication", () => {
     await orchestrator.initializeExternalRelease([pkg], [], true);
     await orchestrator.finalizeExternalRelease([pkg], []);
 
-    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
-      "Repository contains 1 ignored build input(s) outside node_modules",
-    );
-
-    const error = await captureIgnoredInputsExit(orchestrator);
+    const error = await captureExit(() => orchestrator.publishToNpm([pkg]));
+    expect(error.message).toBe("Repository contains 1 ignored build input(s) outside node_modules");
     expect(error.hint).toContain("packages/public/ignored.js");
     expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
@@ -356,11 +360,8 @@ describe("ReleaseOrchestrator npm publication", () => {
     await orchestrator.initializeExternalRelease([pkg], [], true);
     await orchestrator.finalizeExternalRelease([pkg], []);
 
-    await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
-      "Repository contains 1 ignored build input(s) outside node_modules",
-    );
-
-    const error = await captureIgnoredInputsExit(orchestrator);
+    const error = await captureExit(() => orchestrator.publishToNpm([pkg]));
+    expect(error.message).toBe("Repository contains 1 ignored build input(s) outside node_modules");
     expect(error.hint).toContain("packages/public/payload.txt");
     expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
@@ -421,10 +422,8 @@ describe("ReleaseOrchestrator npm publication", () => {
     await orchestrator.finalizeExternalRelease([pkg], []);
 
     try {
-      await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow(
-        "Repository contains 1 ignored build input(s) outside node_modules",
-      );
-      const error = await captureIgnoredInputsExit(orchestrator);
+      const error = await captureExit(() => orchestrator.publishToNpm([pkg]));
+      expect(error.message).toBe("Repository contains 1 ignored build input(s) outside node_modules");
       expect(error.hint).toContain("packages/public/vendor/dependency/ignored.js");
     } finally {
       rmSync(dependency, { force: true, recursive: true });

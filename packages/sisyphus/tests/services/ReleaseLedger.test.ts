@@ -217,6 +217,64 @@ describe("ReleaseLedger", () => {
     expect((await Bun.$`git status --porcelain`.cwd(worktree).quiet()).stdout.toString()).toBe("");
   });
 
+  test("isolates nested snapshot edits from the active ledger and persisted data", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const options = input({ createRelease: true, npm: true, push: true });
+    options.stones = [
+      {
+        id: "0001-release",
+        message: "ship it",
+        patch: [PACKAGE_NAME],
+        commits: [
+          {
+            hash: "abc1234",
+            message: "feat: ship it",
+            subject: "feat: ship it",
+            type: "feat",
+            packages: [PACKAGE_NAME],
+          },
+        ],
+      },
+    ];
+    const ledger = await ReleaseLedger.create(options, root);
+    const source = join(root, "public.tgz");
+    writeFileSync(source, "artifact");
+    await ledger.setArtifact(PACKAGE_NAME, source);
+    await ledger.setNpmRegistry(PACKAGE_NAME, "https://registry.npmjs.org/");
+    await ledger.configurePush("origin", { canonicalUrl: "https://github.com/fixture/repo.git" }, [
+      { destination: "refs/heads/main", oid: OID, source: "refs/heads/main" },
+    ]);
+    await ledger.configureProviderRelease(PACKAGE_NAME, { notes: "Notes", tag: "v1", title: "Release" });
+    const expected = JSON.stringify(ledger.data);
+    const persisted = readFileSync(ledger.activePath, "utf8");
+    const snapshot = ledger.data;
+    const pkg = snapshot.packages[0];
+    const patch = snapshot.stones[0]?.patch;
+    const commit = snapshot.stones[0]?.commits?.[0];
+    const artifact = snapshot.artifacts[PACKAGE_NAME];
+    const providerRelease = snapshot.operations.providerReleases[PACKAGE_NAME];
+    const push = snapshot.operations.push;
+    const ref = push?.refs[0];
+    if (!pkg || !patch || !commit || !artifact || !providerRelease || !push || !ref)
+      throw new Error("Expected complete snapshot fixture");
+    snapshot.options.npm = false;
+    pkg.name = "changed";
+    snapshot.releaseTags.length = 0;
+    Reflect.set(patch, "0", "changed");
+    commit.packages.length = 0;
+    artifact.path = "changed";
+    snapshot.operations.npm[PACKAGE_NAME] = { state: "started", startedAt: snapshot.updatedAt };
+    snapshot.operations.npmRegistries[PACKAGE_NAME] = "https://changed.example/";
+    providerRelease.notes = "changed";
+    push.destination.canonicalUrl = "https://changed.example/repo.git";
+    ref.oid = TREE_OID;
+
+    expect(JSON.stringify(ledger.data)).toBe(expected);
+    expect(readFileSync(ledger.activePath, "utf8")).toBe(persisted);
+    expect(JSON.stringify((await ReleaseLedger.loadActive(root))?.data)).toBe(expected);
+  });
+
   test("rejects an active ledger collision", async () => {
     const root = await createRepository();
     roots.push(root);
@@ -599,5 +657,53 @@ describe("ReleaseLedger", () => {
     expect(existsSync(ledger.resolveArtifactPath(PACKAGE_NAME))).toBe(true);
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
     expect(readFileSync(historyPath, "utf-8").endsWith("\n")).toBe(true);
+  });
+
+  test("preserves both releases when another completion and creation race with archival", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "../helpers/release-ledger-completion.ts"),
+        root,
+        JSON.stringify(input({ tags: false })),
+      ],
+      { stderr: "pipe", stdin: "ignore", stdout: "pipe" },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+    const result = JSON.parse(stdout);
+    expect(result.intercepted).toBe(true);
+    expect(result.history).toMatchObject({ id: "first", phase: "completed", packages: BASE_INPUT.packages });
+    expect(result.active).toMatchObject({ id: "next", phase: "planned", packages: BASE_INPUT.packages });
+    expect((await ReleaseLedger.loadActive(root))?.id).toBe("next");
+  });
+
+  test("a stale completed handle cannot archive the next active release", async () => {
+    const root = await createRepository();
+    roots.push(root);
+    const first = await ReleaseLedger.create({ ...input({ tags: false }), id: "first" }, root);
+    const historyPath = join(first.releaseDirectory, "history/first.json");
+    mkdirSync(dirname(historyPath), { recursive: true });
+    writeFileSync(historyPath, "existing history\n");
+    await expect(first.complete()).rejects.toThrow("history ledger already exists");
+    const competing = await ReleaseLedger.loadActive(root);
+    if (!competing) throw new Error("Expected completed active ledger");
+    rmSync(historyPath);
+    await competing.complete();
+    const archived = readFileSync(historyPath, "utf8");
+    const next = await ReleaseLedger.create({ ...input({ tags: false }), id: "next" }, root);
+    const active = readFileSync(next.activePath, "utf8");
+
+    await expect(first.complete()).rejects.toThrow();
+
+    expect(readFileSync(historyPath, "utf8")).toBe(archived);
+    expect(readFileSync(next.activePath, "utf8")).toBe(active);
+    expect((await ReleaseLedger.loadActive(root))?.id).toBe("next");
   });
 });
