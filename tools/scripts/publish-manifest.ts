@@ -28,11 +28,11 @@ export interface RootManifest {
 
 export function extractCatalogs(rootPkg: RootManifest): CatalogMap {
   const workspaces = Array.isArray(rootPkg.workspaces) ? undefined : rootPkg.workspaces;
-  const catalogs: CatalogMap = { [DEFAULT_CATALOG]: { ...rootPkg.catalog, ...workspaces?.catalog } };
-
-  Object.assign(catalogs, rootPkg.catalogs, workspaces?.catalogs);
-
-  return catalogs;
+  return {
+    [DEFAULT_CATALOG]: { ...rootPkg.catalog, ...workspaces?.catalog },
+    ...rootPkg.catalogs,
+    ...workspaces?.catalogs,
+  };
 }
 
 export function extractWorkspaceGlobs(rootPkg: RootManifest): string[] {
@@ -47,7 +47,8 @@ export function resolveCatalogVersion(
   packageName: string,
 ): string {
   const catalogName = specifier.slice(CATALOG_PREFIX.length) || DEFAULT_CATALOG;
-  const catalogVersion = catalogs[catalogName]?.[name];
+  const catalog = Object.hasOwn(catalogs, catalogName) ? catalogs[catalogName] : undefined;
+  const catalogVersion = catalog && Object.hasOwn(catalog, name) ? catalog[name] : undefined;
 
   if (!catalogVersion) {
     throw new Error(`Catalog "${catalogName}" has no entry for "${name}" (required by ${packageName})`);
@@ -63,7 +64,7 @@ export function resolveWorkspaceVersion(
   packageName: string,
 ): string {
   const range = specifier.slice(WORKSPACE_PREFIX.length);
-  const entry = workspaceVersions[name];
+  const entry = Object.hasOwn(workspaceVersions, name) ? workspaceVersions[name] : undefined;
 
   if (!entry) {
     throw new Error(`Workspace package "${name}" (required by ${packageName}) was not found in the workspace`);
@@ -98,19 +99,15 @@ export function resolveDependencies(
 ): DependencyMap | undefined {
   if (!deps) return deps;
 
-  const resolved: DependencyMap = {};
-
-  for (const [name, version] of Object.entries(deps)) {
-    if (version.startsWith(CATALOG_PREFIX)) {
-      resolved[name] = resolveCatalogVersion(name, version, catalogs, packageName);
-    } else if (version.startsWith(WORKSPACE_PREFIX)) {
-      resolved[name] = resolveWorkspaceVersion(name, version, workspaceVersions, packageName);
-    } else {
-      resolved[name] = version;
-    }
-  }
-
-  return resolved;
+  return Object.fromEntries(
+    Object.entries(deps).map(([name, version]) => {
+      if (version.startsWith(CATALOG_PREFIX))
+        return [name, resolveCatalogVersion(name, version, catalogs, packageName)];
+      if (version.startsWith(WORKSPACE_PREFIX))
+        return [name, resolveWorkspaceVersion(name, version, workspaceVersions, packageName)];
+      return [name, version];
+    }),
+  );
 }
 
 export function createPublishManifest(

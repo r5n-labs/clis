@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CatalogMap, WorkspaceVersionMap } from "./publish-manifest";
 import {
   createPublishManifest,
@@ -105,6 +108,37 @@ describe("resolveDependencies", () => {
 });
 
 describe("createPublishManifest", () => {
+  test.each([
+    ["catalog:", 'Catalog "default" has no entry for "constructor"'],
+    ["catalog:constructor", 'Catalog "constructor" has no entry for "constructor"'],
+    ["workspace:^1.0.0", 'Workspace package "constructor"'],
+  ])("rejects an inherited missing dependency before serialising %s", (specifier, message) => {
+    expect(() =>
+      JSON.stringify(
+        createPublishManifest({ name: "fixture", dependencies: { constructor: specifier } }, extractCatalogs({}), {}),
+      ),
+    ).toThrow(message);
+  });
+
+  test("preserves declared prototype-named catalogue and workspace dependencies", () => {
+    const ownCatalogs = extractCatalogs(JSON.parse('{"catalogs":{"__proto__":{"constructor":"2.0.0"}}}'));
+    const manifest = createPublishManifest(
+      {
+        name: "fixture",
+        dependencies: { constructor: "catalog:__proto__" },
+        peerDependencies: { constructor: "workspace:^" },
+      },
+      ownCatalogs,
+      { constructor: { isPrivate: false, version: "2.0.0" } },
+    );
+
+    expect(JSON.parse(JSON.stringify(manifest))).toEqual({
+      name: "fixture",
+      dependencies: { constructor: "2.0.0" },
+      peerDependencies: { constructor: "^2.0.0" },
+    });
+  });
+
   test("drops devDependencies and resolves all dependency sections", () => {
     const manifest = createPublishManifest(
       {
@@ -167,5 +201,70 @@ describe("extractWorkspaceGlobs", () => {
 
   test("returns an empty list when workspaces is missing", () => {
     expect(extractWorkspaceGlobs({})).toEqual([]);
+  });
+});
+
+describe("prepare-publish dependency membership", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+  });
+
+  test.each([
+    { specifier: "catalog:", expected: undefined },
+    { specifier: "catalog:constructor", expected: undefined },
+    { specifier: "workspace:^1.0.0", expected: undefined },
+    { specifier: "catalog:__proto__", expected: "2.0.0" },
+    { specifier: "workspace:^", expected: "^2.0.0" },
+  ])("prepares only declared entries for $specifier", async ({ specifier, expected }) => {
+    const root = mkdtempSync(join(tmpdir(), "prepare-membership-"));
+    roots.push(root);
+    const packageDirectory = join(root, "packages", "fixture");
+    mkdirSync(packageDirectory, { recursive: true });
+    const original = JSON.stringify({ name: "fixture", version: "1.0.0", dependencies: { constructor: specifier } });
+    const manifestPath = join(packageDirectory, "package.json");
+    writeFileSync(manifestPath, original);
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({
+        private: true,
+        workspaces: ["packages/*"],
+        ...(expected ? { catalogs: { ["__proto__"]: { constructor: "2.0.0" } } } : {}),
+      }),
+    );
+    if (expected) {
+      const dependencyDirectory = join(root, "packages", "constructor");
+      mkdirSync(dependencyDirectory, { recursive: true });
+      writeFileSync(
+        join(dependencyDirectory, "package.json"),
+        JSON.stringify({ name: "constructor", version: "2.0.0" }),
+      );
+    }
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "prepare-publish.ts"), packageDirectory], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+
+    if (expected) {
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(readFileSync(manifestPath, "utf8"))).toEqual({
+        name: "fixture",
+        version: "1.0.0",
+        dependencies: { constructor: expected },
+      });
+    } else {
+      expect(exitCode).toBe(1);
+      expect(stdout + stderr).toContain(
+        specifier.startsWith("workspace:") ? "was not found in the workspace" : 'has no entry for "constructor"',
+      );
+      expect(readFileSync(manifestPath, "utf8")).toBe(original);
+    }
   });
 });

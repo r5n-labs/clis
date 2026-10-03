@@ -31,7 +31,7 @@ async function loadRootPackage(packagePath: string): Promise<{ rootDir: string; 
 }
 
 async function collectWorkspaceVersions(rootDir: string, rootPkg: RootManifest): Promise<WorkspaceVersionMap> {
-  const versions: WorkspaceVersionMap = {};
+  const versions = new Map<string, WorkspaceVersionMap[string]>();
 
   for (const workspaceGlob of extractWorkspaceGlobs(rootPkg)) {
     const glob = new Bun.Glob(`${workspaceGlob}/package.json`);
@@ -39,11 +39,11 @@ async function collectWorkspaceVersions(rootDir: string, rootPkg: RootManifest):
     for await (const match of glob.scan({ cwd: rootDir })) {
       const manifest = (await Bun.file(resolve(rootDir, match)).json()) as PackageManifest;
       if (!manifest.name) continue;
-      versions[manifest.name] = { isPrivate: manifest.private === true, version: manifest.version ?? null };
+      versions.set(manifest.name, { isPrivate: manifest.private === true, version: manifest.version ?? null });
     }
   }
 
-  return versions;
+  return Object.fromEntries(versions);
 }
 
 console.info(`Preparing ${packages.length} package${packages.length > 1 ? "s" : ""} for publish`);
