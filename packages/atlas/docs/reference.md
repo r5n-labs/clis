@@ -54,12 +54,12 @@ Atlas discovers the nearest project `.atlas/config.json` upward from the current
 ## Commands
 
 ```bash
-bun atlas init [--global] [--force]
-bun atlas profiles list [--json] [--cwd <dir>]
-bun atlas profiles show <profile> [--json] [--cwd <dir>]
-bun atlas run --profile app:web,env:dev -- <command...>
-bun atlas export --profile app:web,env:dev [--out .env] [--force]
-bun atlas export --profile app:web,env:dev --stdout
+atlas init [--global] [--force]
+atlas profiles list [--json] [--cwd <dir>]
+atlas profiles show <profile> [--json] [--cwd <dir>]
+atlas run --profile app:web,env:dev -- <command...>
+atlas export --profile app:web,env:dev [--out .env] [--force]
+atlas export --profile app:web,env:dev --stdout
 ```
 
 With `--json`, profile commands write results to stdout. Configuration and profile lookup errors produce a single `{"error": "..."}` object on stderr and a non-zero exit code.

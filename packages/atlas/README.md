@@ -8,14 +8,15 @@
 
 Combine named profiles for a team, application, environment or machine. Atlas resolves their dotenv files, literal values and secret references, then runs a command with that environment or exports a dotenv file.
 
-**Private and unreleased.** Run it from this monorepo with Bun.
+Requires [Bun](https://bun.sh).
 
 ## Quick start
 
-From the repository root:
+Install Atlas, then initialise configuration in your project:
 
 ```sh
-bun atlas init
+bun add -g @r5n/atlas
+atlas init
 ```
 
 Define profiles in the generated `.atlas/config.json`:
@@ -35,8 +36,8 @@ Define profiles in the generated `.atlas/config.json`:
 Run a command or export the resolved environment:
 
 ```sh
-bun atlas run --profile env:dev -- bun --version
-bun atlas export --profile env:dev
+atlas run --profile env:dev -- bun --version
+atlas export --profile env:dev
 ```
 
 Put child-command flags after `--`. The export uses `.env.generated` from the defaults; add `--out <path>` to choose another file.
@@ -45,20 +46,22 @@ Put child-command flags after `--`. The export uses `.env.generated` from the de
 
 | Task | Command |
 | --- | --- |
-| Initialise project or global config | `bun atlas init [--global]` |
-| List available profiles | `bun atlas profiles list` |
-| Inspect a profile | `bun atlas profiles show <profile>` |
-| Combine profiles for a process | `bun atlas run --profile app:web,env:dev -- <command...>` |
-| Export a dotenv file | `bun atlas export --profile app:web,env:dev --out <path>` |
-| Print dotenv to stdout | `bun atlas export --profile env:dev --stdout` |
+| Initialise project or global config | `atlas init [--global]` |
+| List available profiles | `atlas profiles list` |
+| Inspect a profile | `atlas profiles show <profile>` |
+| Combine profiles for a process | `atlas run --profile app:web,env:dev -- <command...>` |
+| Export a dotenv file | `atlas export --profile app:web,env:dev --out <path>` |
+| Print dotenv to stdout | `atlas export --profile env:dev --stdout` |
 
 ## How profiles combine
 
 Atlas merges global `~/.atlas/config.json` with the nearest project `.atlas/config.json`. Profiles can extend parents, read dotenv files, set non-secret values and resolve secrets from environment variables or files. Project profiles override global profiles of the same name.
 
-The [configuration reference](docs/reference.md) explains precedence, inheritance, secret references, dotenv parsing and export limits. Atlas preserves literal `$` references rather than expanding them.
+The [configuration reference](https://github.com/r5n-labs/clis/blob/develop/packages/atlas/docs/reference.md) explains precedence, inheritance, secret references, dotenv parsing and export limits. Atlas preserves literal `$` references rather than expanding them.
 
 Project configuration is applied automatically, and secret file references may point outside the project. Review a repository's `.atlas/config.json` before using Atlas inside it.
+
+For source commands, builds and checks, see the [development guide](https://github.com/r5n-labs/clis/blob/develop/packages/atlas/docs/development.md).
 
 ## Licence
 

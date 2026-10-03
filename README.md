@@ -18,20 +18,26 @@ Four command-line tools built with TypeScript and [Bun](https://bun.sh). Each bu
 | --- | --- | --- | --- |
 | <img src="packages/sisyphus/assets/logo.svg" width="48" alt="Sisyphus: a figure pushing a boulder uphill"> | [**Sisyphus**](packages/sisyphus) | Version and release a monorepo from small JSON change records called stones. | [npm](https://www.npmjs.com/package/@r5n/sisyphus) |
 | <img src="packages/hydra/assets/logo.svg" width="48" alt="Hydra: three serpent heads"> | [**Hydra**](packages/hydra) | Create and manage a fleet of self-hosted GitHub Actions runners. | [npm](https://www.npmjs.com/package/@r5n/hydra) |
-| <img src="packages/atlas/assets/logo.svg" width="48" alt="Atlas: a globe held aloft"> | [**Atlas**](packages/atlas) | Combine environment profiles and pass them to a command or dotenv file. | Private; run from source |
-| <img src="packages/argus/assets/logo.svg" width="48" alt="Argus: a watchful eye"> | [**Argus**](packages/argus) | Review code incrementally with configurable questions, cached model answers and independent verdicts. | Private; run from source |
+| <img src="packages/atlas/assets/logo.svg" width="48" alt="Atlas: a globe held aloft"> | [**Atlas**](packages/atlas) | Combine environment profiles and pass them to a command or dotenv file. | [npm](https://www.npmjs.com/package/@r5n/atlas) |
+| <img src="packages/argus/assets/logo.svg" width="48" alt="Argus: a watchful eye"> | [**Argus**](packages/argus) | Review code incrementally with configurable questions, cached model answers and independent verdicts. | [npm](https://www.npmjs.com/package/@r5n/argus) |
 
 ## Get started
 
-Install the published tools:
+Install the tools with Bun:
 
 ```sh
-bun add -g @r5n/sisyphus @r5n/hydra
+bun add -g @r5n/sisyphus @r5n/hydra @r5n/atlas @r5n/argus
 sis --help
 hydra --help
+atlas --help
+argus --help
 ```
 
-For Atlas, Argus or development, clone this repository and run commands from its root:
+Each tool's README has its own quick start and reference guides. Argus supports [Jev and Cloudflare Clef models](packages/argus/docs/models.md); planning and report inspection work without API calls.
+
+## Development
+
+Clone this repository and run commands from its root:
 
 ```sh
 git clone https://github.com/r5n-labs/clis.git
@@ -40,10 +46,6 @@ bun install
 bun atlas --help
 bun argus --help
 ```
-
-Each tool's README has its own quick start and reference guides. Argus supports [Jev and Cloudflare Clef models](packages/argus/docs/models.md); planning and report inspection work without API calls.
-
-## Development
 
 | Task | Command |
 | --- | --- |

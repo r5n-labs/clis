@@ -15,15 +15,15 @@ Run `argus config` for an interactive menu to add presets, create/edit/remove qu
 Direct commands are also available:
 
 ```sh
-bun argus config show
-bun argus config preset add comments architecture
-bun argus config preset add all
-bun argus config question add methods
-bun argus config question edit methods naming-accuracy
-bun argus config question remove methods naming-accuracy
-bun argus config set maxQuestions 16
-bun argus config set include '["**/*.gd", "**/*.po"]'
-bun argus config set exclude '["addons/**", ".godot/**", ".argus/**"]'
+argus config show
+argus config preset add comments architecture
+argus config preset add all
+argus config question add methods
+argus config question edit methods naming-accuracy
+argus config question remove methods naming-accuracy
+argus config set maxQuestions 16
+argus config set include '["**/*.gd", "**/*.po"]'
+argus config set exclude '["addons/**", ".godot/**", ".argus/**"]'
 ```
 
 `show` prints the effective configuration as JSON, including defaults. Presets are `naming`, `architecture`, `translations`, `changes`, `comment-contradictions`, `contract-explanations`, `test-meaningfulness` and `test-promises`. `all` enables these eight checks. The older broad `comments` and `tests` presets remain available. Identical presets are skipped. Unmodified earlier naming, comment, architecture and translation rubrics are upgraded when loading a config, without rewriting the file; `config show` displays the effective questions. Shared architecture and translation rubrics are framework-, format- and locale-independent; registered integrations supply specialised evidence. Custom instructions, criteria and context choices are preserved. Upgraded rubrics invalidate their old answers. Comment reviews now also cover uncommented methods; straightforward code does not require redundant comments. A preset that conflicts with a customised question stops the entire addition without changing the file. Adding `changes` or `all` requires `--base <revision>` on subsequent review commands.
@@ -31,8 +31,8 @@ bun argus config set exclude '["addons/**", ".godot/**", ".argus/**"]'
 Question add/edit commands open guided prompts for instructions, answer choices, code context, extra context files, target filters, the comments-only filter, flagged answers and confidence thresholds. To script these operations, supply `--file`:
 
 ```sh
-bun argus config question add methods --file question.json
-bun argus config question edit methods naming-accuracy --file naming-patch.json
+argus config question add methods --file question.json
+argus config question edit methods naming-accuracy --file naming-patch.json
 ```
 
 An add file contains a complete question, as shown below. An edit file contains only the fields to change, for example `{"minConfidence": 0.8}`. Supplied arrays and objects replace those fields in full; other fields are retained. Set `"minConcernProbability": null` in an edit patch to disable that optional threshold; omission leaves it unchanged. Interactive edits save the complete draft, including removed optional fields. Editing `id` renames the question. Explicit `question remove <group> <id>` removes it immediately; removing through the menu asks for confirmation. Cached answers are retained.
@@ -76,8 +76,8 @@ Groups are `methods`, `classes`, `files`, `tests`, `resources`, `translations` a
 New `all` configurations use independent `test-meaningfulness`, `test-promises`, `comment-contradictions` and `contract-explanations` checks. Existing configurations keep their broad `test-quality` and `comment-accuracy` checks until explicitly upgraded:
 
 ```sh
-bun argus config preset upgrade
-bun argus check
+argus config preset upgrade
+argus check
 ```
 
 The upgrade replaces only unmodified stock questions, preserves customised questions and retains old cache entries. New questions require new evaluations; this is intentional, because an answer to a broad question cannot be relabelled as answers to independent questions. Checks with identical context are still batched. Individual focused presets can also be added by name with `argus config preset add`.

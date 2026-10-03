@@ -17,9 +17,9 @@ Clef and Clef Flash provide the structured choice interface used by Argus. This 
 From the monorepo root:
 
 ```sh
-bun argus config set model clef --config /path/to/reviews/config.json
-bun argus check --config /path/to/reviews/config.json
-bun argus run --limit 5 --config /path/to/reviews/config.json
+argus config set model clef --config /path/to/reviews/config.json
+argus check --config /path/to/reviews/config.json
+argus run --limit 5 --config /path/to/reviews/config.json
 ```
 
 For Clef Flash, use `clef-flash`. For Jev, use `jev-1.13.0`. Other unprefixed model IDs are passed to TypeSafe, so their availability depends on that API; unsupported Cloudflare model IDs are rejected during planning.

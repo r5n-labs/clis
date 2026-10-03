@@ -15,11 +15,11 @@ Bundled directory exclusions apply at every depth, including package-local `node
 New configurations include TypeScript automatically. Existing explicit `include` arrays stay unchanged. For a TypeScript-only project:
 
 ```sh
-bun argus init
-bun argus config set include '["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"]'
-bun argus config preset add test-meaningfulness test-promises
-bun argus check
-bun argus run --limit 5
+argus init
+argus config set include '["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"]'
+argus config preset add test-meaningfulness test-promises
+argus check
+argus run --limit 5
 ```
 
 Argus extracts named functions, generators, methods, constructors, accessors, arrow-function variables and fields, and classes. It preserves complete implementation bodies, JSDoc and comments. Overload signatures, interfaces and declarations supply contract evidence; declarations without implementations are not method checks. TSX bodies retain their JSX. JavaScript files and React/Next.js runtime conventions are outside this release.

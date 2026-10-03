@@ -7,16 +7,16 @@
 Start a review with a compact overview. This saves the current evidence and a verdict template; it does not print the source or call the model API.
 
 ```sh
-bun argus report create
-bun argus report list
-bun argus report list --queue findings
-bun argus report list --queue context
-bun argus report list --queue documentation
-bun argus report show <review-id>
-bun argus report evidence <evidence-id>
-bun argus report batch 1
-bun argus report export | pbcopy
-bun argus report html
+argus report create
+argus report list
+argus report list --queue findings
+argus report list --queue context
+argus report list --queue documentation
+argus report show <review-id>
+argus report evidence <evidence-id>
+argus report batch 1
+argus report export | pbcopy
+argus report html
 ```
 
 In `argus -i`, Report includes `create` to create or refresh a snapshot; `argus report create` also works directly. Omitting the ID or number in a terminal opens a candidate picker for `show`, a candidate then source-fragment picker for `evidence`, or a batch picker for `batch`. `verify` without `--import` offers saved verdict templates (most recently modified first) and a manual file-path option. Interactive `check`, `run`, `report create` and `verify` prompt for a Git base when change questions require one. Escape cancels the current action. Menus retain the previous selection, including after leaving and reopening a submenu, for the current session. Without a terminal, provide the required inputs explicitly.
@@ -42,8 +42,8 @@ Creating a review snapshot automatically saves a complete, editable JSON file at
 Each handoff part also includes its own `verdictTemplate` for reviewers without filesystem access. Blank or omitted entries remain unreviewed. Reviewer model defaults to `unknown`; only replace it when the exact identity is available. The handoff does not authorise changes to project source. Import the completed file using the path printed during export:
 
 ```sh
-bun argus verify --import ".argus/reviews/<snapshot-id>.verdicts.json"
-bun argus report create --html
+argus verify --import ".argus/reviews/<snapshot-id>.verdicts.json"
+argus report create --html
 ```
 
 Use the same `--config` and `--base` as the original review where applicable. Verdicts distinguish `confirmed`, `false_positive`, `deferred` and `uncertain`. Import reports how many verdicts were saved and how many candidates remain, including uncertain reviews. Templates from batches with the same `snapshotId` can be combined by merging their verdicts arrays without duplicating IDs.
