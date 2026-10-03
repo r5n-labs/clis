@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
 import { version } from "../../package.json";
 import type { AtlasConfig } from "../types";
-import { buildRunEnvironment, RunCommand } from "./run";
+import { RunCommand } from "./run";
 
 const ATLAS_ROOT = join(import.meta.dir, "../..");
 const CHILD_KEEPALIVE_INTERVAL_MS = 1_000;
@@ -63,9 +63,10 @@ function spawnAtlas(args: string[]) {
   });
 }
 
-async function runAtlas(args: string[]): Promise<{ exitCode: number; stdout: string }> {
+async function runAtlas(args: string[], env = process.env): Promise<{ exitCode: number; stdout: string }> {
   const child = Bun.spawn([process.execPath, "src/cli.ts", ...args], {
     cwd: ATLAS_ROOT,
+    env,
     stderr: "ignore",
     stdin: "ignore",
     stdout: "pipe",
@@ -76,6 +77,7 @@ async function runAtlas(args: string[]): Promise<{ exitCode: number; stdout: str
 }
 
 function isProcessAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -84,12 +86,15 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function waitForFile(path: string): Promise<void> {
+async function waitForPid(path: string): Promise<number> {
   const deadline = Date.now() + TEST_TIMEOUT_MS;
   while (!existsSync(path)) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
     await Bun.sleep(FILE_POLL_INTERVAL_MS);
   }
+  const pid = Number(readFileSync(path, "utf8"));
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Invalid child PID in ${path}`);
+  return pid;
 }
 
 async function withTimeout<T>(promise: Promise<T>): Promise<T> {
@@ -104,19 +109,6 @@ async function withTimeout<T>(promise: Promise<T>): Promise<T> {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 }
-
-describe("buildRunEnvironment", () => {
-  test("combines process env with resolved Atlas env and lets Atlas values win", () => {
-    const project = join(tmpRoot, "repo");
-    writeJson(join(project, ".atlas", "config.json"), {
-      profiles: { "app:web": { vars: { APP: "web", EXISTING: "atlas" } } },
-    });
-
-    const env = buildRunEnvironment({ cwd: project, env: { EXISTING: "process", KEEP: "yes" }, profiles: ["app:web"] });
-
-    expect(env).toEqual({ APP: "web", EXISTING: "atlas", KEEP: "yes" });
-  });
-});
 
 describe("RunCommand", () => {
   test("normalizes a relative requested cwd before spawning the command", async () => {
@@ -140,26 +132,28 @@ describe("RunCommand", () => {
     expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners);
   });
 
-  test("uses configured default profiles when profile is omitted", async () => {
+  test.each([
+    { expected: "default", selection: [] },
+    { expected: "selected", selection: ["--profile", "selected"] },
+  ])("delivers inherited and composed profile values to the CLI child: $expected", async ({ expected, selection }) => {
     const project = join(tmpRoot, "repo");
-    const output = join(tmpRoot, "profile.txt");
+    const home = join(tmpRoot, "home");
+    mkdirSync(home, { recursive: true });
     writeJson(join(project, ".atlas", "config.json"), {
-      defaults: { profiles: ["app:default"] },
-      profiles: { "app:default": { vars: { ATLAS_DEFAULT_PROFILE: "applied" } } },
+      defaults: { profiles: ["default"] },
+      profiles: {
+        default: { vars: { ATLAS_TEST_DEFAULT: "applied", ATLAS_TEST_OVERLAP: "default" } },
+        selected: { vars: { ATLAS_TEST_OVERLAP: "selected" } },
+      },
     });
-
-    await new RunCommand().execute(
-      ctx({
-        command: [
-          process.execPath,
-          "-e",
-          `await Bun.write(${JSON.stringify(output)}, process.env.ATLAS_DEFAULT_PROFILE ?? "missing")`,
-        ],
-        cwd: project,
-      }),
+    const childScript =
+      "console.log(JSON.stringify([process.env.ATLAS_TEST_KEEP, process.env.ATLAS_TEST_OVERLAP, process.env.ATLAS_TEST_DEFAULT]))";
+    const { exitCode, stdout } = await runAtlas(
+      ["run", "--cwd", project, ...selection, "--", process.execPath, "-e", childScript],
+      { ...process.env, ATLAS_TEST_KEEP: "inherited", ATLAS_TEST_OVERLAP: "process", HOME: home },
     );
-
-    expect(readFileSync(output, "utf8")).toBe("applied");
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout)).toEqual(["inherited", expected, "applied"]);
   });
 
   test.each(["", "   ", ",", " , , "])("rejects an explicitly empty profile value %j", async (profile) => {
@@ -275,21 +269,33 @@ describe("RunCommand", () => {
     expect(stdout.trim()).toBe("a --version b");
   });
 
+  test.each(["", " ", "0", "-1", "1.5", "not-a-pid", "9007199254740992"])(
+    "rejects unsafe child readiness PID %j before any signal",
+    async (contents) => {
+      const ready = join(tmpRoot, "ready.txt");
+      writeFileSync(ready, contents);
+
+      await expect(waitForPid(ready)).rejects.toThrow("Invalid child PID");
+    },
+  );
+
   test.each(["SIGTERM", "SIGINT"] as const)(
     "forwards %s to the direct child and preserves its exit code",
     async (signal) => {
       const project = join(tmpRoot, "repo");
       const ready = join(tmpRoot, "ready.txt");
+      const pending = join(tmpRoot, "ready-pending.txt");
       const forwarded = join(tmpRoot, "forwarded.txt");
       mkdirSync(project, { recursive: true });
       writeJson(join(project, ".atlas", "config.json"), { profiles: {} });
       const childScript = [
-        'import { writeFileSync } from "node:fs";',
+        'import { renameSync, writeFileSync } from "node:fs";',
         `process.on(${JSON.stringify(signal)}, () => {`,
         `  writeFileSync(${JSON.stringify(forwarded)}, ${JSON.stringify(signal)});`,
         `  process.exit(${SIGNAL_EXIT_CODE});`,
         "});",
-        `writeFileSync(${JSON.stringify(ready)}, String(process.pid));`,
+        `writeFileSync(${JSON.stringify(pending)}, String(process.pid));`,
+        `renameSync(${JSON.stringify(pending)}, ${JSON.stringify(ready)});`,
         `setInterval(() => {}, ${CHILD_KEEPALIVE_INTERVAL_MS});`,
       ].join("\n");
       const atlas = spawnAtlas(["run", "--cwd", project, "--", process.execPath, "-e", childScript]);
@@ -297,8 +303,7 @@ describe("RunCommand", () => {
       let lifecycleCompleted = false;
 
       try {
-        await waitForFile(ready);
-        const reportedChildPid = Number(readFileSync(ready, "utf8"));
+        const reportedChildPid = await waitForPid(ready);
         childPid = reportedChildPid;
 
         atlas.kill(signal);
