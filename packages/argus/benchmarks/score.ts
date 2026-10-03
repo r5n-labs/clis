@@ -1,5 +1,5 @@
 import type { Question } from "../src/domain/question";
-import type { ApiResponse } from "../src/providers/jev/schemas";
+import type { ApiResponse } from "../src/providers/systemone/schemas";
 import { selectCandidate } from "../src/reports/selection";
 import type { BenchmarkCase } from "./cases";
 

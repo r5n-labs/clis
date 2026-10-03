@@ -11,7 +11,7 @@ import { loadReview, prepareReview, reviewArgs } from "./shared";
 
 export class CheckCommand extends BaseCommand {
   name = "check";
-  description = "Preview pending checks and request count without calling Jev";
+  description = "Preview pending checks and request count without calling a model";
   args = reviewArgs;
   positionals = noPositionals;
   prompts = true;

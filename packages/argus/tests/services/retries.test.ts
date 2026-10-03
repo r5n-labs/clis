@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { parseQuestion } from "../../src/config/validation";
-import { JevClient } from "../../src/providers/jev/JevClient";
-import { RequestScheduler } from "../../src/providers/jev/RequestScheduler";
-import type { RetryNotice } from "../../src/providers/jev/retries";
+import { RequestScheduler } from "../../src/providers/RequestScheduler";
+import type { RetryNotice } from "../../src/providers/retries";
+import { TypeSafeClient } from "../../src/providers/typesafe/TypeSafeClient";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { ReviewRunner } from "../../src/services/ReviewRunner";
 import { fixture, response } from "../helpers";
@@ -70,7 +70,7 @@ test.each([
     }
     return new Response("unavailable", { status: failure });
   }) as typeof fetch;
-  const client = new JevClient("test-key", transport, {
+  const client = new TypeSafeClient("test-key", transport, {
     scheduler: time.clock,
     onRetry: (notice) => notices.push(notice),
   });
@@ -101,7 +101,7 @@ test.each(["constructor", "__proto__"])("accepts and caches the declared answer 
   const batches = new RequestBatcher().batches(plan, f.loaded.config);
   const payload = batches[0]?.payload;
   if (!payload) throw new Error("Missing request");
-  const client = new JevClient("test-key", (async () => Response.json(response(payload))) as typeof fetch);
+  const client = new TypeSafeClient("test-key", (async () => Response.json(response(payload))) as typeof fetch);
   await new ReviewRunner(f.store, client).run(plan, batches);
   const answer = (await f.plan()).items[0]?.evaluation?.answer;
   expect(answer?.choice).toBe(choice);
@@ -117,7 +117,7 @@ test.each(["invalid response", "HTTP 520"])(
       let calls = 0;
       const time = scheduler();
       const notices: RetryNotice[] = [];
-      const client = new JevClient(
+      const client = new TypeSafeClient(
         "test-key",
         (async () => {
           calls++;
@@ -141,7 +141,7 @@ test.each([400, 401, 403, 404, 422])("does not retry permanent HTTP %s failures"
   const f = await requestFixture();
   let calls = 0;
   const time = scheduler();
-  const client = new JevClient(
+  const client = new TypeSafeClient(
     "test-key",
     (async () => {
       calls++;
@@ -158,7 +158,7 @@ test.each(["5", "Thu, 01 Jan 1970 00:00:05 GMT"])("honours Retry-After %s", asyn
   const f = await requestFixture();
   const time = scheduler();
   let calls = 0;
-  const client = new JevClient(
+  const client = new TypeSafeClient(
     "test-key",
     (async () => {
       calls++;

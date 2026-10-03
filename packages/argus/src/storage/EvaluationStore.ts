@@ -7,7 +7,7 @@ import { textValue } from "../config/validation";
 import { CACHE_VERSION, JSON_INDENT } from "../constants";
 import type { Evaluation } from "../domain/evaluation";
 import type { ReviewItem } from "../domain/review-plan";
-import { parseAnswer } from "../providers/jev/schemas";
+import { parseAnswer } from "../providers/systemone/schemas";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const PRIVATE_MODE = 0o600;

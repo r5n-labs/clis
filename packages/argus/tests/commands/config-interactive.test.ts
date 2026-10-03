@@ -34,7 +34,7 @@ test("guided question creation, editing, cancellation and removal persist only c
     ["config", "question", "add", "methods", "--config", f.loaded.path],
     [
       { prompt: "Question ID", keys: ["mutation", ENTER] },
-      { prompt: "What should Jev evaluate?", keys: ["Does this mutate state?", ENTER] },
+      { prompt: "What should the model evaluate?", keys: ["Does this mutate state?", ENTER] },
       { prompt: "Answer choices", keys: [ENTER] },
       { prompt: "Choice key", keys: ["yes", ENTER] },
       { prompt: "What does this choice mean?", keys: ["Mutates", ENTER] },

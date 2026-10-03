@@ -1,6 +1,8 @@
 import { Exit } from "@r5n/cli-core";
 import type { ArgusConfig } from "../config/types";
 import type { ApiPayload, RequestBatch, ReviewItem, ReviewPlan } from "../domain/review-plan";
+import { resolveModel } from "../providers/models";
+import { serialisePayload } from "../providers/systemone/payload";
 import { fingerprint } from "../storage/fingerprints";
 
 type BatchLimits = Pick<ArgusConfig, "maxQuestions" | "maxRequestBytes">;
@@ -8,7 +10,12 @@ type BatchLimits = Pick<ArgusConfig, "maxQuestions" | "maxRequestBytes">;
 export class RequestBatcher {
   batches(plan: ReviewPlan, limits: BatchLimits): RequestBatch[] {
     const groups = this.groupPendingQuestions(plan.items);
-    return groups.flatMap((items) => this.splitGroup(plan.model, items, limits));
+    const model = resolveModel(plan.model);
+    const effectiveLimits = {
+      maxQuestions: Math.min(limits.maxQuestions, model.maxQuestions),
+      maxRequestBytes: Math.min(limits.maxRequestBytes, model.maxRequestBytes),
+    };
+    return groups.flatMap((items) => this.splitGroup(model.id, items, effectiveLimits));
   }
 
   private groupPendingQuestions(items: ReviewItem[]): ReviewItem[][] {
@@ -66,6 +73,6 @@ export class RequestBatcher {
   }
 
   private bytes(payload: ApiPayload): number {
-    return Buffer.byteLength(JSON.stringify(payload));
+    return Buffer.byteLength(serialisePayload(payload));
   }
 }

@@ -3,8 +3,8 @@ import { args, Exit, validateKnownArgs } from "@r5n/cli-core";
 import type { Ctx } from "../base-command";
 import { BaseCommand } from "../base-command";
 import { JSON_INDENT } from "../constants";
-import { JevClient } from "../providers/jev/JevClient";
-import { DEFAULT_RETRIES, MAX_RETRIES } from "../providers/jev/retries";
+import { createEvaluator } from "../providers/create-evaluator";
+import { DEFAULT_RETRIES, MAX_RETRIES } from "../providers/retries";
 import { ReviewProgress } from "../reports/ReviewProgress";
 import { reportData } from "../reports/report-data";
 import { runSummary } from "../reports/terminal";
@@ -31,7 +31,7 @@ const runArgs = args({
 
 export class RunCommand extends BaseCommand {
   name = "run";
-  description = "Ask Jev only the questions missing from the cache";
+  description = "Evaluate only the questions missing from the cache";
   args = runArgs;
   positionals = noPositionals;
   prompts = true;
@@ -62,7 +62,7 @@ export class RunCommand extends BaseCommand {
       const batches = selectRequests(allBatches, options);
       if (batches.length) {
         const progress = new ReviewProgress();
-        const client = new JevClient(process.env.TYPESAFE_API_KEY?.trim() ?? "", fetch, {
+        const client = createEvaluator(plan.model, {
           retries: ctx.args.retries,
           onRetry: (notice) => progress.retry(notice),
         });

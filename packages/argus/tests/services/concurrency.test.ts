@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ApiPayload } from "../../src/domain/review-plan";
-import type { ApiResponse } from "../../src/providers/jev/schemas";
+import type { ApiResponse } from "../../src/providers/systemone/schemas";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { ReviewRunner } from "../../src/services/ReviewRunner";
 import { fixture, response } from "../helpers";
