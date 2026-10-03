@@ -38,7 +38,7 @@ packages/
   sisyphus/  @r5n/sisyphus  published: monorepo versioning and releases via "stones" (bins: sis, sisyphus)
   hydra/     @r5n/hydra     published: self-hosted GitHub Actions runner fleet manager
   atlas/     @r5n/atlas     private (unreleased): profile-based env composition (init, profiles, run, export)
-  argus/     @r5n/argus     private (unreleased): incremental syntax-aware reviews with Jev
+  argus/     @r5n/argus     private (unreleased): incremental syntax-aware reviews with decision models
 tools/       @r5n/tools     private: bunPackageBuilder, publish scripts, shared tsconfig/biome, CI composite action
 ```
 
@@ -46,7 +46,7 @@ tools/       @r5n/tools     private: bunPackageBuilder, publish scripts, shared 
 
 Each CLI package has the same scripts: `dev` (`bun --bun src/cli.ts`), `build` (`rm -rf dist && bun build.ts`), `type-check`, `package:prepare`, `package:dryRun` and `package:publish` (the last three run `tools/scripts/*` and must be invoked inside the package or via `bun --filter <name> <script>`; the root only has `package:prepare`).
 
-Tests live in `packages/<name>/tests/` for core, sisyphus and hydra, colocated as `src/**/*.test.ts` in atlas, and next to the scripts in `tools/scripts/`.
+Tests live in `packages/<name>/tests/` for core, sisyphus, hydra and argus, colocated as `src/**/*.test.ts` in atlas, and next to the scripts in `tools/scripts/`.
 
 ## Versions and Pins
 
@@ -124,7 +124,7 @@ export class CheckCommand extends BaseCommand {
 
 ## Testing
 
-Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries through parser adapters. `argus check` plans without API calls, `run` evaluates missing answers, `report create` saves a review snapshot, report retrieval commands read that snapshot, and `verify --import` saves independently reviewed verdicts. Use an external `--config` to keep state outside the reviewed project; change questions require `--base <revision>`. Jev flags are candidates, not verified defects. Its single-file build embeds all grammar WASM and HTML viewer assets; `bun packages/argus/scripts/smoke.ts` checks a copied build without adjacent assets or API calls.
+Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries through parser adapters. `argus check` plans without API calls, `run` evaluates missing answers, `report create` saves a review snapshot, report retrieval commands read that snapshot, and `verify --import` saves independently reviewed verdicts. Use an external `--config` to keep state outside the reviewed project; change questions require `--base <revision>`. Model flags are candidates, not verified defects. Its single-file build embeds all grammar WASM and HTML viewer assets; `bun packages/argus/scripts/smoke.ts` checks a copied build without adjacent assets or API calls.
 
 - `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.
@@ -147,6 +147,6 @@ Sisyphus releases this repo itself:
 - Conventional commits become stones: `bun sis version --fromCommits -y` (stones live in `.sisyphus/stones/`; `bun sis check --json` lists them).
 - Pushing pending stones to `develop` triggers `.github/workflows/release.yml`: it rolls with `bun sis roll --json --yes` (or `--resume --json` when `.git/sisyphus/release/active.json` exists), prints the JSON report, exposes `published` and `publishedPackages` as job outputs and exits with the roll's status. The workflow skips its own `release(🎉):` commits.
 - npm auth is trusted publishing (OIDC): `id-token: write`, npm 11 bootstrapped in the workflow, `NPM_CONFIG_PROVENANCE=false` because the self-hosted runner cannot sign provenance.
-- `private: true` packages (core, tools, atlas) get version bumps and tags but are never published.
+- `private: true` packages (core, tools, atlas, argus) get version bumps and tags but are never published.
 - `.sisyphus/config.json` declares the release build (`bun run build`, outputs `packages/*/dist/**`); undeclared gitignored files block `roll --npm` and `package:dryRun`, so run those from a pristine `git worktree add` when the checkout carries `dist/`, `.DS_Store` or `CLAUDE.md`.
 - Manual per-package publishing goes through `package:publish` / `package:dryRun`, which use `tools/scripts/publish-package.ts` to resolve `workspace:` and `catalog:` protocols, pack an immutable artifact and restore `package.json` even on failure. The pure manifest logic is in `tools/scripts/publish-manifest.ts` (tested).

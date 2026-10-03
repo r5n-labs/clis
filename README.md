@@ -1,96 +1,63 @@
 <div align="center">
 
-# ⚡ R5N CLIs
+# R5N CLIs
 
-**Greek myths for modern toil.**
+**Greek myths. Everyday tools.**
 
-Developer tooling named after the figures who knew something about repetitive work —
-built to make ours disappear.
+Release packages, run your own CI, compose environments and review code.
 
 [![CI](https://github.com/r5n-labs/clis/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/r5n-labs/clis/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Runtime](https://img.shields.io/badge/runtime-bun-f9f1e1.svg)](https://bun.sh)
 
 </div>
 
----
+Four command-line tools built with TypeScript and [Bun](https://bun.sh). Each bundles its runtime dependencies into one executable file, with scriptable commands and an interactive menu (`-i`).
 
-Command-line tools we built to run our own projects, released for anyone with the same problems: versioning a monorepo without ceremony, running self-hosted CI runners without babysitting them, and (soon) never copy-pasting a config again.
+## Choose a tool
 
-Everything is TypeScript on [Bun](https://bun.sh), built on one shared framework, shipped as a single bundled file per tool — zero runtime dependencies. Every CLI works both as a scriptable command and as an interactive menu (`-i`).
+| | Tool | What it does | Availability |
+| --- | --- | --- | --- |
+| <img src="packages/sisyphus/assets/logo.svg" width="48" alt="Sisyphus: a boulder on a slope"> | [**Sisyphus**](packages/sisyphus) | Version and release a monorepo from small JSON change records called stones. | [npm](https://www.npmjs.com/package/@r5n/sisyphus) |
+| <img src="packages/hydra/assets/logo.svg" width="48" alt="Hydra: three serpent heads"> | [**Hydra**](packages/hydra) | Create and manage a fleet of self-hosted GitHub Actions runners. | [npm](https://www.npmjs.com/package/@r5n/hydra) |
+| <img src="packages/atlas/assets/logo.svg" width="48" alt="Atlas: a globe held aloft"> | [**Atlas**](packages/atlas) | Combine environment profiles and pass them to a command or dotenv file. | Private; run from source |
+| <img src="packages/argus/assets/logo.svg" width="48" alt="Argus: a watchful eye"> | [**Argus**](packages/argus) | Review code incrementally with configurable questions, cached model answers and independent verdicts. | Private; run from source |
 
-## Pantheon
+## Get started
 
-### 🪨 [Sisyphus](packages/sisyphus) — monorepo versioning and releases
+Install the published tools:
 
-[![npm](https://img.shields.io/npm/v/@r5n/sisyphus.svg?label=%40r5n%2Fsisyphus)](https://www.npmjs.com/package/@r5n/sisyphus)
-
-Condemned to roll releases uphill forever — so he got good at it. Version changes are recorded as **stones**: small markdown files describing which packages bump and why (think changesets, with less ritual). Stack them as you work, then roll everything at once — version bumps, changelogs, git tags, npm publish, GitHub release.
-
-```bash
-bun add -g @r5n/sisyphus
-
-sis version --fromCommits   # turn conventional commits into stones
-sis check                   # see what's pending
-sis roll                    # the boulder goes up
+```sh
+bun add -g @r5n/sisyphus @r5n/hydra
+sis --help
+hydra --help
 ```
 
-Sisyphus releases this very repo: pending stones pushed to `develop` are rolled automatically by [CI](.github/workflows/release.yml) with npm trusted publishing (OIDC) — no registry tokens stored anywhere.
+For Atlas, Argus or development, clone this repository and run commands from its root:
 
-### 🐍 [Hydra](packages/hydra) — self-hosted GitHub Actions runners
-
-[![npm](https://img.shields.io/npm/v/@r5n/hydra.svg?label=%40r5n%2Fhydra)](https://www.npmjs.com/package/@r5n/hydra)
-
-Cut off one head, two grow back. Hydra provisions and manages fleets of GitHub Actions runners on your own hardware: downloads the runner once per version and hardlinks it into each instance, registers through the `gh` CLI (no PATs to paste), and keeps every head inspectable.
-
-```bash
-bun add -g @r5n/hydra
-
-hydra init          # set up a profile for a repo/org
-hydra create        # grow some heads
-hydra status        # who's alive, who's stuck
-hydra logs          # tail the latest job's logs when something crashes
+```sh
+git clone https://github.com/r5n-labs/clis.git
+cd clis
+bun install
+bun atlas --help
+bun argus --help
 ```
 
-### 🌍 [Atlas](packages/atlas) — env/config profiles · *in development*
-
-Holds your world up. Compose named configuration profiles — inheritance, dotenv files, secret references — and inject them into any process or render them to files. Aimed at ending config copy-paste between machines and AI coding tools. Unreleased; the v1 rebuild lands via [PR #12](https://github.com/r5n-labs/clis/pull/12).
-
-### 👁️ [Argus](packages/argus) — incremental code review · *in development*
-
-Extracts GDScript, TypeScript and TSX syntax, asks Jev configurable review questions, and caches each answer against its source and question fingerprints. New questions and changed code are evaluated incrementally. Includes naming, comments, architecture, tests, translations and change review.
-
-```bash
-bun argus init --root /path/to/game --config /path/to/reviews/config.json
-bun argus check --config /path/to/reviews/config.json
-bun argus run --config /path/to/reviews/config.json
-```
-
-### ⚙️ [cli-core](packages/core) — the shared framework · *internal*
-
-Commands, typed args, interactive prompts, config persistence, and error handling behind all of the above. Bundled into each CLI at build time, never published.
+Each tool's README has its own quick start and reference guides. Argus supports [Jev and Cloudflare Clef models](packages/argus/docs/models.md); planning and report inspection work without API calls.
 
 ## Development
 
-Requires Bun. The tracked `tools/` workspace contains shared development tooling.
+| Task | Command |
+| --- | --- |
+| Run a CLI from source | `bun sis`, `bun hydra`, `bun atlas`, `bun argus` |
+| Run tests | `bun test` |
+| Check formatting | `bun biome check` |
+| Apply formatting | `bun lint` |
+| Check types | `bun type-check` |
+| Build all CLIs | `bun run build` |
 
-```bash
-git clone git@github.com:r5n-labs/clis.git && cd clis
-bun install
+[cli-core](packages/core) provides the shared command framework; [tools](tools) contains build and publishing utilities. Both are private and bundled into the CLIs. See [AGENTS.md](AGENTS.md) for repository conventions.
 
-bun test              # all tests
-bun lint              # biome check + format
-bun type-check        # type-check every package
-bun run build         # bundle all CLIs
+Sisyphus releases this repository: pending stones pushed to `develop` are rolled by the [release workflow](.github/workflows/release.yml), using npm trusted publishing.
 
-bun sis <command>     # run sisyphus from source
-bun hydra <command>   # run hydra from source
-```
+## Licence
 
-Working on this codebase with an AI agent? Point it at [AGENTS.md](AGENTS.md).
-
-## License
-
-Apache 2.0 — see [LICENSE](LICENSE).
-
-<div align="center">
-<sub>Built by <a href="https://github.com/r5n-labs">r5n-labs</a> — for the work that never ends.</sub>
-</div>
+[Apache 2.0](LICENSE) · Built by [r5n-labs](https://github.com/r5n-labs).
