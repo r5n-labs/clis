@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseQuestion } from "../../src/config/validation";
 import { JevClient } from "../../src/providers/jev/JevClient";
 import { RequestScheduler } from "../../src/providers/jev/RequestScheduler";
 import type { RetryNotice } from "../../src/providers/jev/retries";
@@ -31,36 +32,82 @@ async function requestFixture() {
   return { ...f, reviewPlan: plan, batches, payload: batch.payload };
 }
 
-test.each(["json", "answers", "network", "timeout", 408, 429, 500, 502, 503, 504, 520, 529])(
-  "retries %s and saves only the valid response",
-  async (failure) => {
-    const f = await requestFixture();
-    const time = scheduler();
-    const notices: RetryNotice[] = [];
-    let calls = 0;
-    const transport = (async () => {
-      calls++;
-      if (calls > 1) {
-        expect((await f.plan()).items.every((item) => !item.evaluation)).toBe(true);
-        return Response.json(response(f.payload));
-      }
-      if (failure === "network") throw new TypeError("connection lost");
-      if (failure === "timeout") throw new DOMException("timeout", "TimeoutError");
-      if (failure === "json") return new Response("not json");
-      if (failure === "answers") return Response.json({ ...response(f.payload), answers: {} });
-      return new Response("unavailable", { status: failure });
-    }) as typeof fetch;
-    const client = new JevClient("test-key", transport, {
-      scheduler: time.clock,
-      onRetry: (notice) => notices.push(notice),
-    });
-    await new ReviewRunner(f.store, client).run(f.reviewPlan, f.batches);
-    expect(calls).toBe(2);
-    expect(time.waits).toEqual([1000]);
-    expect(notices[0]?.retry).toBe(1);
-    expect(f.reviewPlan.items.every((item) => item.evaluation)).toBe(true);
-  },
-);
+test.each([
+  "json",
+  "answers",
+  "constructor",
+  "toString",
+  "__proto__",
+  "network",
+  "timeout",
+  408,
+  429,
+  500,
+  502,
+  503,
+  504,
+  520,
+  529,
+])("retries %s and saves only the valid response", async (failure) => {
+  const f = await requestFixture();
+  const time = scheduler();
+  const notices: RetryNotice[] = [];
+  let calls = 0;
+  const transport = (async () => {
+    calls++;
+    if (calls > 1) {
+      expect((await f.plan()).items.every((item) => !item.evaluation)).toBe(true);
+      return Response.json(response(f.payload));
+    }
+    if (failure === "network") throw new TypeError("connection lost");
+    if (failure === "timeout") throw new DOMException("timeout", "TimeoutError");
+    if (failure === "json") return new Response("not json");
+    if (failure === "answers") return Response.json({ ...response(f.payload), answers: {} });
+    if (failure === "constructor" || failure === "toString" || failure === "__proto__") {
+      const invalid = response(f.payload);
+      for (const answer of Object.values(invalid.answers)) answer.choice = failure;
+      return Response.json(invalid);
+    }
+    return new Response("unavailable", { status: failure });
+  }) as typeof fetch;
+  const client = new JevClient("test-key", transport, {
+    scheduler: time.clock,
+    onRetry: (notice) => notices.push(notice),
+  });
+  await new ReviewRunner(f.store, client).run(f.reviewPlan, f.batches);
+  expect(calls).toBe(2);
+  expect(time.waits).toEqual([1000]);
+  expect(notices[0]?.retry).toBe(1);
+  expect(f.reviewPlan.items.every((item) => item.evaluation)).toBe(true);
+  expect((await f.plan()).items.map((item) => item.evaluation?.answer.choice)).toEqual(["matches"]);
+});
+
+test.each(["constructor", "__proto__"])("accepts and caches the declared answer choice %s", async (choice) => {
+  const f = fixture();
+  f.write("value.ts", "export function value() { return 1; }");
+  f.loaded.config.questions.methods = [
+    parseQuestion({
+      id: "custom",
+      type: "choice",
+      context: "target",
+      instructions: "Check the selected category",
+      criteria: Object.fromEntries([
+        [choice, "Needs inspection"],
+        ["clear", "Clear"],
+      ]),
+    }),
+  ];
+  const plan = await f.plan();
+  const batches = new RequestBatcher().batches(plan, f.loaded.config);
+  const payload = batches[0]?.payload;
+  if (!payload) throw new Error("Missing request");
+  const client = new JevClient("test-key", (async () => Response.json(response(payload))) as typeof fetch);
+  await new ReviewRunner(f.store, client).run(plan, batches);
+  const answer = (await f.plan()).items[0]?.evaluation?.answer;
+  expect(answer?.choice).toBe(choice);
+  expect(Object.hasOwn(answer?.probabilities ?? {}, choice)).toBe(true);
+  expect(answer?.probabilities[choice]).toBe(1);
+});
 
 test.each(["invalid response", "HTTP 520"])(
   "persistent %s exhausts retries without caching answers",

@@ -26,7 +26,7 @@ export function parseAnswer(value: unknown, criteria?: Record<string, string>): 
   const choices = Object.keys(answer.probabilities).sort();
   if (criteria && JSON.stringify(choices) !== JSON.stringify(Object.keys(criteria).sort()))
     throw new Exit("Answer choices do not match the question");
-  const score = answer.probabilities[answer.choice];
+  const score = Object.hasOwn(answer.probabilities, answer.choice) ? answer.probabilities[answer.choice] : undefined;
   if (score === undefined || score + CHOICE_TOLERANCE < Math.max(...Object.values(answer.probabilities)))
     throw new Exit("Answer choice disagrees with its probabilities");
   const total = Object.values(answer.probabilities).reduce((sum, item) => sum + item, 0);

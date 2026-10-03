@@ -81,6 +81,42 @@ test("group-specific question queues survive dictionary deduplication and snapsh
   }
 });
 
+test.each([
+  ["constructor", {}, "findings"],
+  ["toString", { clear: "context" }, "findings"],
+  ["__proto__", {}, "findings"],
+  ["constructor", undefined, "findings"],
+  ["__proto__", Object.fromEntries([["__proto__", "documentation"]]), "documentation"],
+  ["constructor", { constructor: "context" }, "context"],
+] as const)("routes own choice %s through its saved queue mapping %j", async (choice, reviewQueues, queue) => {
+  const f = fixture();
+  f.loaded.root = realpathSync(f.loaded.root);
+  f.loaded.config.root = f.loaded.root;
+  f.loaded.config.questions.methods = [
+    parseQuestion({
+      id: choice,
+      type: "choice",
+      context: "target",
+      instructions: "Check the selected category",
+      criteria: Object.fromEntries([
+        [choice, "Needs inspection"],
+        ["clear", "Clear"],
+      ]),
+      flag: [choice],
+      reviewQueues,
+    }),
+  ];
+  f.write("value.ts", "export function value() { return 1; }");
+  const { report } = await evaluated(f);
+  const snapshots = new ReviewSnapshotStore(f.loaded);
+  snapshots.save(report, snapshots.captureFiles());
+  const catalogue = new ReviewCatalogue(snapshots.read());
+  expect(catalogue.candidates(queue).map((item) => item.question)).toEqual([choice]);
+  const item = catalogue.candidates()[0];
+  if (!item) throw new Error("Missing review candidate");
+  expect(JSON.parse(JSON.stringify(catalogue.entry(item))).queue).toBe(queue);
+});
+
 test("Needs review uses the same outstanding candidates as handoff, including custom context answers", async () => {
   const f = fixture();
   const cases = ["flagged", "settled", "insufficient", "custom", "blocked", "uncertain", "pending", "clear"];

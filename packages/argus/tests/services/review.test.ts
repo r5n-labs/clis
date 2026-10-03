@@ -280,18 +280,24 @@ test("partial multi-answer saves recover every answer before rebatching", async 
   expect(batcher.batches(added, f.loaded.config)[0]?.items.map((item) => item.question.id)).toEqual(["third"]);
 });
 
-test("damaged recovery journals are rejected without leaking the run lock", async () => {
-  const f = fixture();
-  f.write("value.gd", "func value():\n    return 1\n");
-  const plan = await f.plan();
-  await new ReviewRunner(f.store, {
-    async evaluate(payload) {
-      return response(payload);
-    },
-  }).run(plan, new RequestBatcher().batches(plan, f.loaded.config));
-  const journal = join(f.store.directory, "pending", "damaged.json");
-  writeFileSync(journal, JSON.stringify([{ ...plan.items[0]?.evaluation, answer: { choice: "invented" } }]));
-  expect(() => f.store.recover()).toThrow("Invalid evaluation journal");
-  expect(() => f.store.lock()).toThrow("Invalid evaluation journal");
-  expect(existsSync(join(f.store.directory, "run.lock"))).toBe(false);
-});
+test.each(["missing-fields", "constructor", "__proto__", "invented"])(
+  "damaged recovery journal %s is rejected without leaking the run lock",
+  async (choice) => {
+    const f = fixture();
+    f.write("value.gd", "func value():\n    return 1\n");
+    const plan = await f.plan();
+    await new ReviewRunner(f.store, {
+      async evaluate(payload) {
+        return response(payload);
+      },
+    }).run(plan, new RequestBatcher().batches(plan, f.loaded.config));
+    const evaluation = plan.items[0]?.evaluation;
+    if (!evaluation) throw new Error("Missing saved evaluation");
+    const journal = join(f.store.directory, "pending", "damaged.json");
+    const answer = choice === "missing-fields" ? { choice: "invented" } : { ...evaluation.answer, choice };
+    writeFileSync(journal, JSON.stringify([{ ...evaluation, answer }]));
+    expect(() => f.store.recover()).toThrow("Invalid evaluation journal");
+    expect(() => f.store.lock()).toThrow("Invalid evaluation journal");
+    expect(existsSync(join(f.store.directory, "run.lock"))).toBe(false);
+  },
+);
