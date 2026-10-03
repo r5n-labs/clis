@@ -124,6 +124,8 @@ export class CheckCommand extends BaseCommand {
 
 ## Testing
 
+Use the repository-local [test-audit skill](.agents/skills/test-audit/SKILL.md) when authoring, changing or reviewing tests. Its [R5N integration](.agents/skills/test-audit/LOCAL.md) maps OpenClaw-specific commands and review tooling to this repository's Bun workflow.
+
 Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries through parser adapters. `argus check` plans without API calls, `run` evaluates missing answers, `report create` saves a review snapshot, report retrieval commands read that snapshot, and `verify --import` saves independently reviewed verdicts. Use an external `--config` to keep state outside the reviewed project; change questions require `--base <revision>`. Model flags are candidates, not verified defects. Its single-file build embeds all grammar WASM and HTML viewer assets; `bun packages/argus/scripts/smoke.ts` checks a copied build without adjacent assets or API calls.
 
 - `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.

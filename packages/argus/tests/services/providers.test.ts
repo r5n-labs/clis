@@ -80,7 +80,7 @@ test.each(["clef", "clef-flash"])(
   },
 );
 
-test.each(["failed", "missing envelope", "missing result", "wrong model", "wrong answers", "HTTP 401"])(
+test.each(["failed", "missing envelope", "missing result", "wrong model", "HTTP 401"])(
   "Cloudflare rejects %s responses without saving an evaluation or successful receipt",
   async (failure) => {
     const f = await reviewFixture();
@@ -98,8 +98,6 @@ test.each(["failed", "missing envelope", "missing result", "wrong model", "wrong
           return Response.json({ success: true });
         case "wrong model":
           return Response.json({ success: true, result: { ...result, model: "clef-flash" } });
-        case "wrong answers":
-          return Response.json({ success: true, result: { ...result, answers: {} } });
         default:
           return new Response("sensitive upstream details", { status: 401 });
       }

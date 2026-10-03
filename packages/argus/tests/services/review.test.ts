@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseQuestion } from "../../src/config/validation";
 import type { Evaluation } from "../../src/domain/evaluation";
@@ -166,38 +166,33 @@ test("partial failures preserve completed work and lock prevents concurrent bill
 test.each([
   ["jev-1.13.0", "jev-1.13.0"],
   ["clef", "@cf/cloudflare/clef"],
-])(
-  "a saved %s response is recovered as %s without billing again after an evaluation write fails",
-  async (model, alias) => {
-    const f = fixture();
-    f.loaded.config.model = model;
-    f.write("example.gd", "func value():\n    return 1\n");
-    class FailingStore extends EvaluationStore {
-      override save(): void {
-        throw new Error("disk full");
-      }
-    }
-    let calls = 0;
-    const client = {
-      async evaluate(payload: Parameters<typeof response>[0]) {
-        calls++;
-        return response(payload);
-      },
-    };
-    const plan = await f.plan();
-    const batches = new RequestBatcher().batches(plan, f.loaded.config);
-    await expect(new ReviewRunner(new FailingStore(f.store.directory), client).run(plan, batches)).rejects.toThrow(
-      "disk full",
-    );
-    f.loaded.config.model = alias;
-    const resumed = { ...plan, model: alias };
-    const resumedBatches = new RequestBatcher().batches(resumed, f.loaded.config);
-    expect(resumedBatches.map((batch) => batch.id)).toEqual(batches.map((batch) => batch.id));
-    await new ReviewRunner(f.store, client).run(resumed, resumedBatches);
-    expect(calls).toBe(1);
-    expect(resumed.items[0]?.evaluation).toBeDefined();
-  },
-);
+])("a saved %s response is recovered after replanning as %s when journal creation fails", async (model, alias) => {
+  const f = fixture();
+  f.loaded.config.model = model;
+  f.write("example.gd", "func value():\n    return 1\n");
+  let calls = 0;
+  const client = {
+    async evaluate(payload: Parameters<typeof response>[0]) {
+      calls++;
+      return response(payload);
+    },
+  };
+  const plan = await f.plan();
+  const batches = new RequestBatcher().batches(plan, f.loaded.config);
+  mkdirSync(f.store.directory, { recursive: true });
+  const blocker = join(f.store.directory, "pending");
+  writeFileSync(blocker, "Journal creation is blocked by this file");
+  await expect(new ReviewRunner(f.store, client).run(plan, batches)).rejects.toThrow("pending");
+  expect(calls).toBe(1);
+  unlinkSync(blocker);
+  f.loaded.config.model = alias;
+  const resumed = await f.plan();
+  const resumedBatches = new RequestBatcher().batches(resumed, f.loaded.config);
+  expect(resumedBatches).toHaveLength(1);
+  await new ReviewRunner(f.store, client).run(resumed, resumedBatches);
+  expect(calls).toBe(1);
+  expect((await f.plan()).items[0]?.evaluation?.answer.choice).toBe("matches");
+});
 
 test("model changes invalidate answers and source symlinks are not followed", async () => {
   const f = fixture();
