@@ -1,0 +1,16 @@
+{
+  "commits": [
+    {
+      "body": "Allow Argus to use Cloudflare Clef and Clef Flash through a shared evaluator, with provider-aware limits, canonical model identities and saved-response recovery.\n\nMake the CLI entry points easier to read with concise READMEs, linked reference guides and recognisable mythological logos for Sisyphus, Hydra, Atlas and Argus.\n\nInstall the repository-local test-audit skill, repair recovery coverage to exercise real interrupted runs and remove a duplicate validation case.",
+      "hash": "6559a38",
+      "message": "support Cloudflare models and refresh CLI guides (#44)",
+      "packages": ["@r5n/argus", "@r5n/atlas", "@r5n/hydra", "@r5n/sisyphus"],
+      "scope": "argus",
+      "subject": "feat(argus): support Cloudflare models and refresh CLI guides (#44)",
+      "type": "feat"
+    }
+  ],
+  "id": "0001-a0d5b2c0",
+  "message": "Features",
+  "minor": ["@r5n/argus", "@r5n/atlas", "@r5n/hydra", "@r5n/sisyphus"]
+}
