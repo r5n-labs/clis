@@ -35,6 +35,12 @@ export class MigrateCommand extends BaseCommand {
 
     const stoneData = this.collectStoneData(changesets);
 
+    if (!ctx.args.yes && process.stdout.isTTY !== true) {
+      throw new Exit(
+        "Non-interactive migration requires --yes",
+        "Use --yes to migrate or --dry-run to preview without changes",
+      );
+    }
     if (!ctx.args.yes && !(await this.confirmMigration(changesets.length))) return;
 
     const createdStones = await this.createStones(ctx, stoneData);
@@ -129,7 +135,7 @@ export class MigrateCommand extends BaseCommand {
     note(
       `${stonesList}\n\n` +
         `Run ${color.green(`${CLI_BIN} stone list`)} to view stones\n` +
-        `Run ${color.green(`${CLI_BIN} preview`)} to see what will be released`,
+        `Run ${color.green(`${CLI_BIN} roll --preview`)} to see what will be released`,
       color.green("Migration complete"),
     );
   }

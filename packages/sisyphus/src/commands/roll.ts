@@ -60,7 +60,7 @@ const rollArgs = args({
   json: { alias: "j", default: false, description: "Output the release result as JSON", type: "boolean" },
   noCommit: { default: false, description: "Skip creating release commit", type: "boolean" },
   npm: { alias: "n", description: "Publish to NPM", type: "boolean" },
-  preview: { default: false, description: "Preview changelogs then prompt to delete", type: "boolean" },
+  preview: { default: false, description: "Preview changelogs and optionally keep the files", type: "boolean" },
   publishOnly: { default: false, description: "Publish from currentRelease (no file changes)", type: "boolean" },
   push: { alias: "p", description: "Push commits and tags to remote", type: "boolean" },
   resume: { default: false, description: "Resume an incomplete release", type: "boolean" },
@@ -289,7 +289,7 @@ export class RollCommand extends BaseCommand {
     generator: ChangelogGenerator,
     reporter: RollReporter,
   ): Promise<boolean> {
-    if (ctx.args.json) return true;
+    if (ctx.args.json || ctx.args.yes || !this.stdoutWasTTY) return true;
 
     try {
       return await confirm({ initialValue: true, message: "Revert changes?" });

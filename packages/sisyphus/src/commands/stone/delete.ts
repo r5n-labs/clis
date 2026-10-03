@@ -1,4 +1,4 @@
-import { color, confirm, log, positionals } from "@r5n/cli-core";
+import { color, confirm, log, positionals, validateKnownArgs } from "@r5n/cli-core";
 import type { Ctx } from "../../base-command";
 import { StoneManager } from "../../services";
 import { StoneBaseCommand } from "./base";
@@ -14,6 +14,7 @@ export class StoneDeleteCommand extends StoneBaseCommand {
   prompts = true;
 
   async execute(ctx: DeleteCtx) {
+    validateKnownArgs(ctx.args, this.args, "Run 'sis stone delete --help' for supported options");
     const manager = new StoneManager(ctx.config);
     const stone = await this.resolveStone(ctx.positionals.id, manager, ctx.interactive);
 
