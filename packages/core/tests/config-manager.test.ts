@@ -78,6 +78,40 @@ describe("ConfigManager", () => {
     expect(defaults.profiles.primary.labels).toEqual(["initial"]);
   });
 
+  test.each(['{"__proto__":{"retained":true},"normal":1}', '{"profiles":{"__proto__":{"retained":true},"normal":{}}}'])(
+    "retains own prototype-sensitive JSON keys across load and save: %s",
+    (content) => {
+      const { path } = fixture();
+      writeFileSync(path, content);
+      const defaults = { profiles: {} };
+      const config = new ConfigManager<Record<string, unknown>>(path, defaults);
+      const expected = { ...defaults, ...JSON.parse(content) };
+      const loaded = config.getAll();
+
+      expect(loaded).toEqual(expected);
+      expect(Object.getOwnPropertyNames(content.includes('"profiles"') ? loaded.profiles : loaded)).toContain(
+        "__proto__",
+      );
+      expect(config.get("retained")).toBeUndefined();
+      config.set("updated", true);
+
+      expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ ...expected, updated: true });
+      expect(new ConfigManager(path, defaults).getAll()).toEqual({ ...expected, updated: true });
+    },
+  );
+
+  test("persists prototype-sensitive keys supplied through set", () => {
+    const { path } = fixture();
+    const config = new ConfigManager<Record<string, unknown>>(path, {});
+
+    config.set("__proto__", { retained: true });
+
+    expect(Object.hasOwn(config.getAll(), "__proto__")).toBe(true);
+    expect(config.get("retained")).toBeUndefined();
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(JSON.parse('{"__proto__":{"retained":true}}'));
+    expect(new ConfigManager<Record<string, unknown>>(path, {}).get("__proto__")).toEqual({ retained: true });
+  });
+
   test("preserves mixed JSON formatting when changing nested values and clearing arrays", () => {
     const { path } = fixture();
     const content = `{
