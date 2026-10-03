@@ -26,8 +26,10 @@ export async function prepareReview(loaded: LoadedConfig, store: EvaluationStore
       "Change questions require --base <git-revision>",
       "Supply a base revision or remove questions.changes from the config",
     );
-  const project = await new ProjectScanner(createAnalysis()).scan(loaded);
-  if (loaded.config.questions.changes.length && base)
-    project.targets.push(...(await collectChanges(loaded, project, base)));
+  const project = await new ProjectScanner(createAnalysis()).scan(
+    loaded,
+    loaded.config.questions.changes.length ? base : undefined,
+  );
+  if (loaded.config.questions.changes.length && base) project.targets.push(...(await collectChanges(loaded, project)));
   return new ReviewPlanner(store).plan(project, loaded.config);
 }

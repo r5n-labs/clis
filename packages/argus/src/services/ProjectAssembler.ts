@@ -1,12 +1,13 @@
 import { Exit } from "@r5n/cli-core";
 import type { AnalysisServices } from "../analysis/contracts";
 import type { LoadedConfig } from "../config/types";
-import type { Project, SourceFile } from "../domain/source-target";
+import type { FileMode, Project, SourceFile } from "../domain/source-target";
 import { isExcluded, matches } from "./project-files";
 
 export class ProjectAssembler {
   private readonly patterns: string[];
   private readonly files = new Map<string, SourceFile>();
+  private readonly fileModes = new Map<string, FileMode>();
   private readonly configuration = new Map<string, string>();
 
   constructor(
@@ -27,11 +28,14 @@ export class ProjectAssembler {
     );
   }
 
-  async add(path: string, source: string): Promise<void> {
+  async add(path: string, source: string, mode: FileMode = "100644"): Promise<void> {
     if (!this.accepts(path)) return;
     if (source.includes("\0")) throw new Exit(`Selected file is binary: ${path}`);
     if (this.analysis.needsFile(path)) this.configuration.set(path, source);
-    if (matches(path, this.patterns)) this.files.set(path, await this.analysis.parse(path, source));
+    if (matches(path, this.patterns)) {
+      this.files.set(path, await this.analysis.parse(path, source));
+      this.fileModes.set(path, mode);
+    }
   }
 
   build(): Project {
@@ -43,6 +47,7 @@ export class ProjectAssembler {
     return {
       root: this.loaded.root,
       files: this.files,
+      fileModes: this.fileModes,
       targets,
       analysis: this.analysis,
       configuration: this.configuration,

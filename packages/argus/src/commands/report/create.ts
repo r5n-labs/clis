@@ -52,6 +52,10 @@ export class ReportCreateCommand extends BaseCommand {
     validateOptions(ctx.args, createArgs, ctx.positionals.extra);
     this.validateOptions(ctx.args);
     const prepared = await this.prepareReport(ctx.args, ctx.interactive);
+    if (ctx.args.batch !== undefined) {
+      const parts = llmParts(prepared.report, reviewCandidates(prepared.report, ctx.args["include-verified"]));
+      if (ctx.args.batch > parts.length) throw new Exit(`There are ${parts.length} handoff parts`);
+    }
     this.saveSnapshot(prepared, this.templateSelection(ctx.args));
     if (ctx.args.llm) {
       this.printLlm(prepared, ctx.args);
@@ -75,6 +79,8 @@ export class ReportCreateCommand extends BaseCommand {
 
   private validateOptions(options: CreateArgs): void {
     const wantsHtml = options.html !== undefined;
+    if (wantsHtml && (typeof options.html !== "string" || (options.html !== "" && !options.html.trim())))
+      throw new Exit("--html requires a path, or use --html without a value");
     if (options.json && wantsHtml) throw new Exit("Choose either --json or --html");
     if (options.llm && (options.json || wantsHtml)) throw new Exit("Choose one of --llm, --json or --html");
     if (options.batch !== undefined && (!Number.isSafeInteger(options.batch) || options.batch < 1))

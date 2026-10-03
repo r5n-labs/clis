@@ -28,10 +28,22 @@ export type SourceFile = {
   references: string[];
   targets: SourceTarget[];
 };
+export type FileMode = "100644" | "100755";
+export type GitSnapshot = {
+  commit: string;
+  prefix: string;
+  changed: ReadonlySet<string>;
+  tracked: ReadonlyMap<string, string>;
+  untracked: ReadonlySet<string>;
+  skipWorktree: ReadonlySet<string>;
+  honourFileMode: boolean;
+};
 export type Project = {
   root: string;
   files: ReadonlyMap<string, SourceFile>;
+  fileModes: ReadonlyMap<string, FileMode>;
   targets: SourceTarget[];
   analysis: AnalysisServices;
   configuration: ReadonlyMap<string, string>;
+  git?: GitSnapshot;
 };

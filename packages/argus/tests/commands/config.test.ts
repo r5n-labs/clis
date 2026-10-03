@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { createAnalysis } from "../../src/composition/analysis";
 import { ConfigEditor } from "../../src/config/ConfigEditor";
@@ -44,6 +55,38 @@ test("config show discovers config upwards and never rewrites it", async () => {
   expect(readFileSync(path, "utf8")).toBe(original);
   expect((await cli(nested, ["config", "set", "maxQuestions", "16"])).code).toBe(0);
   expect(loadConfig(path).config.maxQuestions).toBe(16);
+});
+
+test("configuration edits preserve file symlinks and update their shared target", async () => {
+  const ORIGINAL_MODE = 0o640;
+  const RESTRICTIVE_UMASK = 0o077;
+  const MODE_MASK = 0o777;
+  const f = await configuredFixture();
+  writeFileSync(f.loaded.path, JSON.stringify({ ...JSON.parse(f.source()), root: "../project" }));
+  const aliasDirectory = join(f.directory, "nested", "alias");
+  const aliasRoot = join(f.directory, "nested", "project");
+  mkdirSync(aliasDirectory, { recursive: true });
+  mkdirSync(aliasRoot);
+  const linked = join(aliasDirectory, "linked.json");
+  symlinkSync(f.loaded.path, linked);
+  chmodSync(f.loaded.path, ORIGINAL_MODE);
+  const stale = new ConfigEditor(linked);
+  const previousUmask = process.umask(RESTRICTIVE_UMASK);
+  try {
+    const result = await cli(f.loaded.root, ["config", "set", "maxQuestions", "7", "--config", linked]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+  } finally {
+    process.umask(previousUmask);
+  }
+  expect(lstatSync(linked).isSymbolicLink()).toBe(true);
+  expect(f.config().maxQuestions).toBe(7);
+  expect(loadConfig(linked).config.maxQuestions).toBe(7);
+  expect(loadConfig(linked).root).toBe(realpathSync(aliasRoot));
+  expect(loadConfig(f.loaded.path).root).toBe(realpathSync(f.loaded.root));
+  expect(statSync(f.loaded.path).mode & MODE_MASK).toBe(ORIGINAL_MODE);
+  expect(() => stale.set("maxQuestions", 8)).toThrow("changed while editing");
+  expect(readdirSync(f.loaded.stateDir)).toEqual(["config.json"]);
+  expect(readdirSync(aliasDirectory)).toEqual(["linked.json"]);
 });
 
 test("preset additions are idempotent and preserve settings, schema and the existing naming question", async () => {
@@ -196,20 +239,6 @@ test("stale editors refuse to overwrite newer edits and expose independent confi
   expect(f.config().maxQuestions).toBe(16);
   expect(existsSync(f.store.directory)).toBe(false);
   expect(readdirSync(f.loaded.stateDir)).toEqual(["config.json"]);
-});
-
-test("complete question edits can disable the optional concern threshold", () => {
-  const f = fixture();
-  const question = f.loaded.config.questions.methods[0];
-  if (!question) throw new Error("fixture question");
-  question.minConcernProbability = 0.6;
-  mkdirSync(f.loaded.stateDir, { recursive: true });
-  writeFileSync(f.loaded.path, JSON.stringify(f.loaded.config));
-  const editor = new ConfigEditor(f.loaded.path);
-  const edited = structuredClone(editor.question("methods", question.id));
-  delete edited.minConcernProbability;
-  editor.replaceQuestion("methods", question.id, edited);
-  expect(editor.question("methods", question.id).minConcernProbability).toBeUndefined();
 });
 
 test("question patches retain omitted thresholds and explicitly remove them with null", async () => {

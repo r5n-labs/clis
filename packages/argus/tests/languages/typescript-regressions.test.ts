@@ -113,6 +113,7 @@ test.each([
   'import { test } from "vitest"; function run() { test("application", () => {}); for (;;) { var test = ordinary; break; } }',
   'function run() { test("application", () => {}); for (var test of values) {} }',
   'function run() { test("application", () => {}); try {} catch { var { test } = ordinary; } }',
+  'function run() { test("application", () => {}); switch (value) { default: var test = ordinary; } }',
 ])("nested var shadows runner names before declarations: %s", async (source) => {
   const adapter = new TypeScriptAdapter([
     new TestRunnerConvention("@jest/globals"),
@@ -128,11 +129,88 @@ test.each([
   'function nested() { var helper = () => "INNER_WRONG"; }',
   'class Nested { static { var helper = () => "INNER_WRONG"; } }',
   "for (let helper of values) {}",
+  'switch (value) { case 1: const helper = () => "INNER_WRONG"; helper(); break; }',
 ])("lexical and nested declaration boundaries preserve outer helpers: %s", async (body) => {
   const f = await analyse(
     `function helper() { return "OUTER_RIGHT"; } export function run() { ${body} return helper(); }`,
   );
   expect(f.context("run").source).toContain("OUTER_RIGHT");
+});
+
+test("switch discriminants retain the outer scope while all cases share lexical bindings", async () => {
+  const f = await analyse(
+    'function helper() { return "OUTER_RIGHT"; } export function run() { switch (helper()) { case 1: helper(); break; default: const helper = () => "CASE_LOCAL"; } }',
+  );
+  expect(f.context("run").source).toContain('function helper() { return "OUTER_RIGHT"; }');
+  const adapter = new TypeScriptAdapter([new TestRunnerConvention("vitest")]);
+  const source =
+    'import { test } from "vitest"; switch (test("discriminant", () => {})) { case 1: test("ordinary", () => {}); break; default: const test = application; } test("outside", () => {});';
+  const file = await adapter.parse("entry.test.ts", source);
+  expect(file.targets.filter((target) => target.group === "tests").map((target) => target.name)).toEqual([
+    "discriminant",
+    "outside",
+  ]);
+});
+
+test.each([
+  ["interface Box<T extends Bound = Fallback> { value: T }", "Box", false],
+  ["type Box<T extends Bound = Fallback> = { value: T };", "Box", false],
+  ["declare function callable<T extends Bound = Fallback>(value: T): T;", "typeof callable", false],
+  ["interface Box { method<T extends Bound = Fallback>(value: T): T }", "Box", false],
+  ["interface Box { <T extends Bound = Fallback>(value: T): T }", "Box", false],
+  ["interface Box { new <T extends Bound = Fallback>(value: T): T }", "Box", false],
+  ["type Box = <T extends Bound = Fallback>(value: T) => T;", "Box", false],
+  ["type Box = new <T extends Bound = Fallback>(value: T) => T;", "Box", false],
+  ["", "<T extends Bound = Fallback>(value: T) => T", false],
+  ["interface Box { method<T extends Bound = Fallback>(value: T): T; outer: T; }", "Box", true],
+  ["type Box<T extends Bound = Fallback> = { value: T; ctor: typeof T };", "Box", true],
+  ["interface Box<T extends Bound = Fallback> { value: T; ctor: typeof T }", "Box", true],
+  ["function callable<T extends Bound = Fallback>(value: T): typeof T { return T; }", "typeof callable", true],
+])("generic type scopes retain actual constraints and sibling imports: %s", async (declaration, parameter, outer) => {
+  const f = await analyse(
+    `import { T, Bound, Fallback } from "./types"; ${declaration} export function run(input: ${parameter}) { return input; }`,
+    {
+      "types.ts":
+        'export class T { marker = "OUTER_T"; } export interface Bound { bound: "BOUND_RIGHT" } export interface Fallback extends Bound { fallback: "FALLBACK_RIGHT" }',
+    },
+  );
+  const related = JSON.stringify(f.context("run").related);
+  expect(related).toContain("BOUND_RIGHT");
+  expect(related).toContain("FALLBACK_RIGHT");
+  expect(related.includes("OUTER_T")).toBe(outer);
+});
+
+test.each([
+  ["export class Box<T extends Bound = Fallback> extends Base<T> { value?: T; }", false],
+  [
+    "class Outer { static base = Base; static create() { return class Box<T extends Bound = Fallback> extends this.base<T> { value?: T; }; } }",
+    false,
+  ],
+  ["export class Box<Base extends Bound = Fallback, T extends Bound = Fallback> extends Base { value?: T; }", false],
+  [
+    "export class Box<Base extends Bound = Fallback, T extends Bound = Fallback> extends Base<Base> { value?: T; }",
+    false,
+  ],
+  [
+    "export class Box<makeBase extends Bound = Fallback, T extends Bound = Fallback> extends makeBase() { value?: T; }",
+    false,
+  ],
+  ["export class Box<T extends Bound = Fallback> extends Base<T> { [T.name]() { return this; } }", true],
+])("generic class heritage retains its type and receiver scopes: %s", async (source, outer) => {
+  const f = await analyse(`import { T, Base, makeBase, Bound, Fallback } from "./types"; ${source}`, {
+    "types.ts":
+      'export class T { marker = "OUTER_T"; } export class Base<U = unknown> { base = "BASE_RIGHT"; } export function makeBase() { return Base; } export interface Bound { bound: "BOUND_RIGHT" } export interface Fallback extends Bound { fallback: "FALLBACK_RIGHT" }',
+  });
+  const target = f.project.targets.find((entry) => entry.group === "classes" && entry.name === "Box");
+  if (!target) throw new Error("Missing class target");
+  const context = new ContextBuilder(f.project).build(target, QUESTION);
+  const related = JSON.stringify(context.related);
+  expect(related).toContain("BASE_RIGHT");
+  expect(related).toContain("BOUND_RIGHT");
+  expect(related).toContain("FALLBACK_RIGHT");
+  expect(related.includes("OUTER_T")).toBe(outer);
+  expect(JSON.stringify(context.unresolved ?? [])).not.toContain("this.base");
+  expect(JSON.stringify(context.unresolved ?? [])).not.toContain("makeBase()");
 });
 
 test.each(["function helper() { return helper(); }", "function* helper() { yield helper(); }"])(

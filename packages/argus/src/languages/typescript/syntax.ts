@@ -64,10 +64,11 @@ export function expression(node: Node | null): Expression {
   if (!node) return { kind: "unknown", text: "Missing expression" };
   switch (node.type) {
     case "identifier":
-    case "type_identifier":
     case "this":
     case "super":
       return { kind: "name", name: node.text };
+    case "type_identifier":
+      return { kind: "name", name: node.text, typePosition: true };
     case "member_expression":
     case "nested_type_identifier": {
       const receiver = node.childForFieldName("object") ?? node.childForFieldName("module");

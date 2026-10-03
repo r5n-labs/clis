@@ -18,6 +18,7 @@ export class ModuleIndex {
     for (const module of modules) {
       this.roots.set(module.scope, module);
       for (const unit of module.units) this.owners.set(unit, module);
+      if (module.execution) this.owners.set(module.execution, module);
     }
   }
 

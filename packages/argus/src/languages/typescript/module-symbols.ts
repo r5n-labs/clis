@@ -2,7 +2,7 @@ import type { Node } from "web-tree-sitter";
 import { bind, type ModuleSymbols, type Unit } from "./symbols";
 import { literal, patternNames } from "./syntax";
 
-type DeclarationFactory = (node: Node, name: string) => Unit;
+type DeclarationFactory = (node: Node, name: string, kind?: Unit["kind"]) => Unit;
 
 export function collectImports(root: Node, module: ModuleSymbols, create: DeclarationFactory): void {
   for (const node of root.namedChildren.filter((child) => child.type === "import_statement")) {
@@ -70,10 +70,11 @@ export function collectExports(root: Node, module: ModuleSymbols, create: Declar
     }
     if (node.children.some((child) => child.type === "default")) {
       const value = node.childForFieldName("value");
-      const unit = module.units.find((entry) => entry.start === node.startIndex);
       const name =
         declaration?.childForFieldName("name")?.text ?? (value?.type === "identifier" ? value.text : undefined);
-      module.exports.push(name ? { name: "default", local: name } : { name: "default", unit });
+      const unit =
+        module.units.find((entry) => entry.start === node.startIndex) ?? create(node, "default", "declaration");
+      module.exports.push({ name: "default", local: name, unit });
       continue;
     }
     if (!declaration) continue;

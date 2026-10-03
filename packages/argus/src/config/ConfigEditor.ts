@@ -1,4 +1,4 @@
-import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { Exit } from "@r5n/cli-core";
@@ -136,11 +136,14 @@ export class ConfigEditor {
     }
     if (readFileSync(this.path, "utf8") !== this.source)
       throw new Exit("Configuration changed while editing", "Run the command again to load the latest configuration");
-    const temporaryPath = `${this.path}.${crypto.randomUUID()}.tmp`;
+    const savePath = realpathSync(this.path);
+    const temporaryPath = `${savePath}.${crypto.randomUUID()}.tmp`;
     const source = `${JSON.stringify(document, null, JSON_INDENT)}\n`;
     try {
-      writeFileSync(temporaryPath, source, { flag: "wx", mode: statSync(this.path).mode });
-      renameSync(temporaryPath, this.path);
+      const mode = statSync(savePath).mode;
+      writeFileSync(temporaryPath, source, { flag: "wx", mode });
+      chmodSync(temporaryPath, mode);
+      renameSync(temporaryPath, savePath);
     } catch {
       throw new Exit(`Cannot save configuration: ${this.path}`, "Check file and directory permissions");
     } finally {

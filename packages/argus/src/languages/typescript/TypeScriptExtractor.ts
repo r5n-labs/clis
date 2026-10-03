@@ -36,6 +36,7 @@ const NAMED_DECLARATIONS = new Set([
   "abstract_class_declaration",
   "method_definition",
 ]);
+const FIRST_OCCURRENCE = 1;
 
 export class TypeScriptExtractor {
   private readonly module: ModuleSymbols;
@@ -43,6 +44,7 @@ export class TypeScriptExtractor {
   private readonly scopes = new Map<number, Scope>();
   private readonly callbacks = new Map<number, TestCallback>();
   private readonly names = new Map<string, number>();
+  private readonly ids = new Set<string>();
   private readonly objects = new Map<number, Unit>();
 
   constructor(
@@ -61,7 +63,8 @@ export class TypeScriptExtractor {
   }
 
   extract(root: Node): ModuleSymbols {
-    const create = (node: Node, name: string) => this.unit(node, name, "import", this.module.scope);
+    const create = (node: Node, name: string, kind: Unit["kind"] = "import") =>
+      this.unit(node, name, kind, this.module.scope);
     collectImports(root, this.module, create);
     this.reserveVariables(root, this.module.scope);
     this.visit(root, this.module.scope);
@@ -69,27 +72,32 @@ export class TypeScriptExtractor {
     this.markAssignments(root);
     for (const [unit, node] of this.nodes) this.collectUses(unit, node);
     for (const unit of this.module.units) this.collectTarget(unit);
-    this.module.targets.push(
-      this.target(
-        {
-          id: this.path,
-          name: basename(this.path),
-          kind: "declaration",
-          scope: this.module.scope,
-          source: this.source,
-          header: "",
-          comments: "",
-          documentation: "",
-          line: 1,
-          endLine: this.source.split("\n").length,
-          start: 0,
-          end: this.source.length,
-          uses: [],
-          bases: [],
-        },
-        "files",
-      ),
-    );
+    const execution: Unit = {
+      id: this.path,
+      name: basename(this.path),
+      kind: "declaration",
+      scope: this.module.scope,
+      source: this.source,
+      header: "",
+      comments: "",
+      documentation: "",
+      line: 1,
+      endLine: this.source.split("\n").length,
+      start: 0,
+      end: this.source.length,
+      uses: [],
+      bases: [],
+    };
+    for (const child of root.namedChildren) {
+      if (
+        child.type === "import_statement" ||
+        this.module.units.some((unit) => unit.start <= child.startIndex && unit.end >= child.endIndex)
+      )
+        continue;
+      this.collectUses(execution, child);
+    }
+    this.module.execution = execution;
+    this.module.targets.push(this.target(execution, "files"));
     return this.module;
   }
 
@@ -120,6 +128,11 @@ export class TypeScriptExtractor {
           unit: this.unit(node, name, "declaration", parent),
           overloadSignature: OVERLOAD_SIGNATURES.has(node.type),
         });
+      this.visitType(node, parent);
+      return;
+    }
+    if (node.childForFieldName("type_parameters")) {
+      this.visitType(node, parent);
       return;
     }
     if (node.type === "call_expression") {
@@ -135,7 +148,8 @@ export class TypeScriptExtractor {
     const scope: Scope =
       staticBlock ||
       moduleBoundary ||
-      (!declarationBody && ["statement_block", "for_statement", "for_in_statement", "catch_clause"].includes(node.type))
+      (!declarationBody &&
+        ["statement_block", "switch_body", "for_statement", "for_in_statement", "catch_clause"].includes(node.type))
         ? {
             name: moduleBoundary ? `${parent.name}.${node.childForFieldName("name")?.text}` : parent.name,
             parent,
@@ -150,6 +164,7 @@ export class TypeScriptExtractor {
       for (const name of patternNames(node.childForFieldName("left"))) bind(declaration, { name });
     }
     if (["program", "statement_block", "class_body"].includes(node.type)) this.reserveNames(node, scope);
+    if (node.type === "switch_body") for (const clause of node.namedChildren) this.reserveNames(clause, scope);
     if (node.type === "catch_clause")
       for (const name of patternNames(node.childForFieldName("parameter"))) bind(scope, { name });
     for (const child of node.namedChildren) this.visit(child, scope);
@@ -226,7 +241,8 @@ export class TypeScriptExtractor {
       heritage?.namedChildren.flatMap((clause) =>
         clause.namedChildren.filter((entry) => entry.type !== "type_arguments").map(expression),
       ) ?? [];
-    for (const child of node.namedChildren) this.visit(child, child.type === "class_body" ? scope : parent);
+    const header: Scope = { name: scope.name, parent, bindings: scope.bindings };
+    for (const child of node.namedChildren) this.visit(child, child.type === "class_body" ? scope : header);
   }
 
   private visitFunction(node: Node, parent: Scope): void {
@@ -346,8 +362,17 @@ export class TypeScriptExtractor {
   private bindTypeParameters(node: Node, scope: Scope): void {
     for (const parameter of node.childForFieldName("type_parameters")?.namedChildren ?? []) {
       const name = parameter.childForFieldName("name")?.text;
-      if (name) bind(scope, { name });
+      if (name) bind(scope, { name, typeParameter: true });
     }
+  }
+
+  private visitType(node: Node, parent: Scope): void {
+    const scope: Scope = node.childForFieldName("type_parameters")
+      ? { name: parent.name, parent, bindings: new Map() }
+      : parent;
+    this.bindTypeParameters(node, scope);
+    this.scopes.set(node.id, scope);
+    for (const child of node.namedChildren) this.visitType(child, scope);
   }
 
   private unit(node: Node, name: string, kind: Unit["kind"], scope: Scope): Unit {
@@ -361,15 +386,21 @@ export class TypeScriptExtractor {
       wrapper = wrapper.parent;
     if (wrapper.parent?.type === "export_statement") wrapper = wrapper.parent;
     const key = `${kind}:${scope.name}.${name}`;
-    const occurrence = (this.names.get(key) ?? 0) + 1;
+    let occurrence = (this.names.get(key) ?? 0) + FIRST_OCCURRENCE;
+    let uniqueName = occurrence === FIRST_OCCURRENCE ? name : `${name} #${occurrence}`;
+    while (this.ids.has(`${this.path}:${kind}:${scope.name}.${uniqueName}`)) {
+      occurrence++;
+      uniqueName = `${name} #${occurrence}`;
+    }
     this.names.set(key, occurrence);
-    const uniqueName = occurrence === 1 ? name : `${name} #${occurrence}`;
+    const id = `${this.path}:${kind}:${scope.name}.${uniqueName}`;
+    this.ids.add(id);
     const body = node.childForFieldName("body");
     const leading = leadingComments(wrapper);
     const trailing = trailingComments(wrapper);
     const end = trailing.at(-1) ?? wrapper;
     const unit: Unit = {
-      id: `${this.path}:${kind}:${scope.name}.${uniqueName}`,
+      id,
       name: uniqueName,
       kind,
       scope,

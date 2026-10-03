@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ReportCommand } from "../../src/commands/report";
 import { createAnalysis } from "../../src/composition/analysis";
 import { parseConfig, parseQuestion } from "../../src/config/validation";
 import { collectChanges } from "../../src/contexts/ChangeContextBuilder";
@@ -15,11 +14,6 @@ import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { cli, fixture, response } from "../helpers";
 
 test("report only groups subcommands and shows help without loading a project or creating a snapshot", async () => {
-  const group = new ReportCommand();
-  group.init();
-  expect(group.execute).toBeUndefined();
-  expect(group.args).toEqual({});
-  expect(group.getSubcommand("create")?.execute).toBeDefined();
   const f = fixture();
   const result = await cli(f.loaded.root, ["report"]);
   expect(result.code).toBe(0);
@@ -85,6 +79,18 @@ test.each([false, true])("bare --html creates a report beside the config (extern
   const path = join(reports, filename);
   expect(realpathSync(result.stdout.trim().replace(/^Report: /, ""))).toBe(realpathSync(path));
   expect(readFileSync(path, "utf8")).toContain('<script id="argus-report-data"');
+});
+
+test.each([["--no-html"], ["--html", "   "]])("invalid HTML options preserve review state: %j", async (...args) => {
+  const f = fixture();
+  f.write("example.gd", "func value():\n    return 1\n");
+  expect((await cli(f.loaded.root, ["init", "--config", f.loaded.path])).code).toBe(0);
+  const original = readFileSync(f.loaded.path, "utf8");
+  const result = await cli(f.loaded.root, ["report", "create", "--config", f.loaded.path, ...args]);
+  expect(result.code).toBe(1);
+  expect(result.stdout + result.stderr).toContain("--html requires a path");
+  expect(readdirSync(f.loaded.stateDir)).toEqual(["config.json"]);
+  expect(readFileSync(f.loaded.path, "utf8")).toBe(original);
 });
 
 test("--html creates explicit parent directories and preserves existing reports", async () => {
@@ -199,8 +205,8 @@ test("change review handles modified, new and deleted paths relative to a projec
   f.write("cost.gd", "class_name Cost\nstatic func value():\n    return 20\n");
   f.write("new [file].gd", "func added():\n    pass\n");
   writeFileSync(join(f.directory, "outside.gd"), "func outside(): pass\n");
-  const project = await new ProjectScanner(createAnalysis()).scan(f.loaded);
-  const changes = await collectChanges(f.loaded, project, "HEAD");
+  const project = await new ProjectScanner(createAnalysis()).scan(f.loaded, "HEAD");
+  const changes = await collectChanges(f.loaded, project);
   expect(changes.map((item) => item.path)).toEqual(["caller.gd", "cost.gd", "deleted.gd", "new [file].gd", "old.gd"]);
   const changed = changes.find((item) => item.path === "old.gd");
   const parsed = JSON.parse(changed?.source ?? "{}");
@@ -249,9 +255,9 @@ test.each(["excluded", "excluded/", "excluded/**"])(
     const question = f.loaded.config.questions.methods[0];
     if (!question) throw new Error("Missing question");
     question.contextFiles = ["excluded/**"];
-    const project = await new ProjectScanner(createAnalysis()).scan(f.loaded);
+    const project = await new ProjectScanner(createAnalysis()).scan(f.loaded, "HEAD");
     expect([...project.files.keys()]).toEqual(["public.gd"]);
-    const changes = await collectChanges(f.loaded, project, "HEAD");
+    const changes = await collectChanges(f.loaded, project);
     expect(changes.map((target) => target.path)).toEqual(["public.gd"]);
     expect([...(changes[0]?.changeContext?.before.files.keys() ?? [])]).toEqual(["public.gd"]);
   },

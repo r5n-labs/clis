@@ -88,6 +88,44 @@ test("follow-up limit zero disables extra billing while retaining the pending ex
   expect(calls).toBe(1);
 });
 
+test("initial questions sharing expanded evidence remain eligible when follow-ups are disabled", async () => {
+  const f = prepared();
+  const question = f.loaded.config.questions.methods[0];
+  if (!question) throw new Error("Missing fixture question");
+  f.loaded.config.questions.methods = [];
+  f.loaded.config.questions.classes = [{ ...question, id: "local", context: "class" }];
+  const requests: ApiPayload[] = [];
+  const session = new ReviewSession(
+    new ReviewRunner(f.store, {
+      async evaluate(payload) {
+        requests.push(payload);
+        return requests.length === 1 ? insufficient(payload) : response(payload);
+      },
+    }),
+  );
+  await session.run(await f.plan(), f.loaded.config, { limit: 0, followUpLimit: 0 }, () => {});
+  f.loaded.config.questions.classes.push({
+    ...question,
+    id: "references",
+    instructions: "Check the referenced implementation",
+    context: "references",
+  });
+  const resumed = await f.plan();
+  expect(resumed.items.map((item) => !!item.expanded)).toEqual([true, false]);
+  expect(resumed.items[0]?.context).toEqual(resumed.items[1]?.context);
+  await session.run(resumed, f.loaded.config, { limit: 0, followUpLimit: 0 }, () => {});
+  expect(requests).toHaveLength(2);
+  expect(Object.values(requests[1]?.questions ?? {}).map((entry) => entry.instructions)).toEqual([
+    expect.stringContaining("Check the referenced implementation"),
+  ]);
+  const saved = await f.plan();
+  expect(saved.items.find((item) => item.question.id === "references")?.evaluation?.answer.choice).toBe("matches");
+  expect(saved.items.filter((item) => !item.evaluation).map((item) => item.question.id)).toEqual(["local"]);
+  await session.run(saved, f.loaded.config, { limit: 0, followUpLimit: 1 }, () => {});
+  expect(requests).toHaveLength(3);
+  expect((await f.plan()).items.filter((item) => !item.evaluation)).toEqual([]);
+});
+
 test("no additional evidence means no follow-up and an explicit context note", async () => {
   const f = fixture();
   f.write("plain.gd", "func answer():\n    return mystery()\n");

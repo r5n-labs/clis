@@ -15,7 +15,7 @@ export class RequestBatcher {
     const groups = new Map<string, ReviewItem[]>();
     for (const item of items) {
       if (item.evaluation || item.blocked) continue;
-      const key = fingerprint(item.context);
+      const key = fingerprint({ context: item.context, expanded: !!item.expanded });
       const group = groups.get(key) ?? [];
       if (
         !group.some((existing) => existing.inputHash === item.inputHash && existing.questionHash === item.questionHash)

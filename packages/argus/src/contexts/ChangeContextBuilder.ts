@@ -2,69 +2,32 @@ import { Exit } from "@r5n/cli-core";
 import type { AnalysisServices } from "../analysis/contracts";
 import type { LoadedConfig } from "../config/types";
 import type { Project, SourceTarget } from "../domain/source-target";
+import { git } from "../services/git-snapshot";
 import { ProjectAssembler } from "../services/ProjectAssembler";
 import { isExcluded, matches } from "../services/project-files";
+import { changeDiff } from "./change-diff";
 
-async function git(root: string, args: string[]): Promise<string> {
-  const result = Bun.spawn(["git", ...args], {
-    cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-  });
-  const [out, err, code] = await Promise.all([
-    new Response(result.stdout).text(),
-    new Response(result.stderr).text(),
-    result.exited,
-  ]);
-  if (code !== 0) throw new Exit(`Cannot collect changes: ${err.trim()}`);
-  return out;
-}
-
-export async function collectChanges(loaded: LoadedConfig, project: Project, base: string): Promise<SourceTarget[]> {
-  const commit = (await git(loaded.root, ["rev-parse", "--verify", "--end-of-options", `${base}^{commit}`])).trim();
-  const prefix = (await git(loaded.root, ["rev-parse", "--show-prefix"])).trim();
-  const baseline = await baselineProject(loaded, commit, prefix, project.analysis);
-  const tracked = (
-    await git(loaded.root, [
-      "diff",
-      "--relative",
-      "--no-renames",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--name-only",
-      "-z",
-      commit,
-      "--",
-      ".",
-    ])
-  )
-    .split("\0")
-    .filter(Boolean);
-  const untracked = (await git(loaded.root, ["ls-files", "--others", "--exclude-standard", "-z"]))
-    .split("\0")
-    .filter(Boolean);
+export async function collectChanges(loaded: LoadedConfig, project: Project): Promise<SourceTarget[]> {
+  if (!project.git) throw new Exit("Cannot collect changes: scan the project with a Git base revision");
+  const { commit } = project.git;
+  const baseline = await baselineProject(loaded, commit, project.git.prefix, project.analysis);
   const targets: SourceTarget[] = [];
-  for (const path of [...new Set([...tracked, ...untracked])].sort()) {
+  for (const path of [...new Set([...project.git.changed, ...project.git.untracked])].sort()) {
     if (!matches(path, loaded.config.include) || isExcluded(path, loaded.config.exclude)) continue;
-    const file = project.files.get(path);
-    const isNew = untracked.includes(path);
-    if (isNew && !file) continue;
+    const file = project.git.tracked.has(path) || project.git.untracked.has(path) ? project.files.get(path) : undefined;
+    if (!file && project.git.skipWorktree.has(path)) continue;
+    const previous = baseline.files.get(path);
+    if (!previous && !file) continue;
+    const beforeMode = baseline.fileModes.get(path) ?? "100644";
+    const afterMode = project.fileModes.get(path) ?? "100644";
+    if (previous && file && previous.source === file.source && beforeMode === afterMode) continue;
     const after = file?.source ?? "";
-    const before = baseline.files.get(path)?.source ?? "";
-    const diff = isNew
-      ? `New file: ${path}\n${after}`
-      : await git(loaded.root, [
-          "diff",
-          "--relative",
-          "--no-ext-diff",
-          "--no-textconv",
-          "--no-renames",
-          "--unified=5",
-          commit,
-          "--",
-          `:(literal)${path}`,
-        ]);
+    const before = previous?.source ?? "";
+    const diff = await changeDiff(
+      path,
+      previous ? { source: before, mode: beforeMode } : undefined,
+      file ? { source: after, mode: afterMode } : undefined,
+    );
     const source = JSON.stringify({ base: commit, diff, before, after });
     targets.push({
       id: `changes:${path}`,
@@ -94,13 +57,13 @@ async function baselineProject(
   const tree = await git(loaded.root, ["ls-tree", "-r", "-z", "--full-tree", commit]);
   const assembler = new ProjectAssembler(loaded, analysis);
   for (const record of tree.split("\0")) {
-    const match = /^(100644|100755) blob ([a-f0-9]+)\t(.+)$/.exec(record);
+    const match = /^(100644|100755) blob ([a-f0-9]+)\t([\s\S]+)$/.exec(record);
     const fullPath = match?.[3];
     if (!fullPath?.startsWith(prefix)) continue;
     const path = fullPath.slice(prefix.length);
     if (!assembler.accepts(path)) continue;
     const source = await git(loaded.root, ["show", `${commit}:${fullPath}`]);
-    await assembler.add(path, source);
+    await assembler.add(path, source, match?.[1] === "100755" ? "100755" : "100644");
   }
   return assembler.build();
 }

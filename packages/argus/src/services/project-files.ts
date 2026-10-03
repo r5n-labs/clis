@@ -1,6 +1,9 @@
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { Exit } from "@r5n/cli-core";
+import type { FileMode } from "../domain/source-target";
+
+const OWNER_EXECUTABLE = 0o100;
 
 export function matches(path: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => new Bun.Glob(pattern).match(path));
@@ -25,15 +28,28 @@ export function* projectPaths(root: string, exclude: readonly string[], director
   }
 }
 
-export function readProjectFile(root: string, path: string): string {
-  return readProjectBytes(root, path).toString("utf8");
+export function readProjectFile(root: string, path: string): { source: string; mode: FileMode } {
+  const { bytes, mode } = readProjectContents(root, path);
+  return { source: bytes.toString("utf8"), mode };
 }
 
 export function readProjectBytes(root: string, path: string): Buffer {
+  return readProjectContents(root, path).bytes;
+}
+
+function readProjectContents(root: string, path: string): { bytes: Buffer; mode: FileMode } {
   const absolute = resolve(root, path);
   const resolved = realpathSync(absolute);
   const rel = relative(realpathSync(root), resolved);
   if (rel === ".." || rel.startsWith(`..${sep}`) || lstatSync(absolute).isSymbolicLink())
     throw new Exit(`Source escapes project or is a symlink: ${path}`);
-  return readFileSync(absolute);
+  const descriptor = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    return {
+      bytes: readFileSync(descriptor),
+      mode: fstatSync(descriptor).mode & OWNER_EXECUTABLE ? "100755" : "100644",
+    };
+  } finally {
+    closeSync(descriptor);
+  }
 }

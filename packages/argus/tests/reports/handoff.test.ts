@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ConfigEditor } from "../../src/config/ConfigEditor";
 import { parseQuestion } from "../../src/config/validation";
@@ -258,9 +258,17 @@ test("CLI exports all handoff parts by default and selects only an explicitly re
       f.report.results[batch - 1]?.reviewId,
     ]);
   }
+  const reviews = join(f.loaded.stateDir, "reviews");
+  const latest = join(reviews, "latest.json");
+  const original = readFileSync(latest, "utf8");
+  const files = readdirSync(reviews).sort();
+  f.write("review-note.txt", "Additional evidence for the next snapshot\n");
   const missing = await cli(f.loaded.root, [...args, "--batch", "3"]);
   expect(missing.code).toBe(1);
   expect(missing.stdout + missing.stderr).toContain("There are 2 handoff parts");
+  expect(readFileSync(latest, "utf8")).toBe(original);
+  expect(readdirSync(reviews).sort()).toEqual(files);
+  expect(missing.stderr).not.toContain("Verdict template:");
 });
 
 test.each(["0", "-1", "1.5"])("CLI rejects invalid handoff batch %s", async (batch) => {

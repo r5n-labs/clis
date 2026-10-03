@@ -33,7 +33,10 @@ export class ReferenceSelection {
         this.contracts(root, owner);
       }
       if (this.options.fixtures) this.fixtures(root.scope);
-    } else for (const unit of this.module.units) this.add(unit, 0, true);
+    } else {
+      for (const unit of this.module.units) this.add(unit, 0, true);
+      if (this.module.execution) this.add(this.module.execution, 0, true);
+    }
     for (let cursor = 0; cursor < this.pending.length; cursor++) {
       const unit = this.pending[cursor];
       if (unit) this.follow(unit);
@@ -107,6 +110,7 @@ export class ReferenceSelection {
       const path = this.index.owner(unit).path;
       if (
         unit === root ||
+        unit === this.module.execution ||
         rendered.some(
           (container) =>
             this.index.owner(container).path === path && unit.start >= container.start && unit.end <= container.end,

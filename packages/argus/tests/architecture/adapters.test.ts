@@ -107,8 +107,8 @@ test("Git baselines use the registered adapter and preserve independent dependen
   f.write("entry.ts", 'import { price } from "./price.ts";\nexport function total() { return price() * 2; }');
   f.write("price.ts", "export function price() { return 20; }");
   f.write(FIXTURE_CONFIG, "mode=current");
-  const project = await new ProjectScanner(analysis()).scan(f.loaded);
-  const changes = await collectChanges(f.loaded, project, "HEAD");
+  const project = await new ProjectScanner(analysis()).scan(f.loaded, "HEAD");
+  const changes = await collectChanges(f.loaded, project);
   const entry = changes.find((target) => target.path === "entry.ts");
   const question = f.loaded.config.questions.methods[0];
   if (!entry || !question) throw new Error("Missing fixture");

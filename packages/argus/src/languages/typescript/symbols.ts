@@ -2,7 +2,7 @@ import type { SourceTarget } from "../../domain/source-target";
 import type { TestRole } from "./testing";
 
 export type Expression =
-  | { kind: "name"; name: string }
+  | { kind: "name"; name: string; typePosition?: boolean }
   | { kind: "member"; receiver: Expression; name: string }
   | { kind: "call" | "new"; callee: Expression }
   | { kind: "unknown"; text: string };
@@ -19,6 +19,7 @@ export type Binding = {
   reserved?: boolean;
   member?: boolean;
   overloadSignature?: boolean;
+  typeParameter?: boolean;
 };
 export type Scope = {
   name: string;
@@ -56,6 +57,7 @@ export type ModuleSymbols = {
   path: string;
   scope: Scope;
   units: Unit[];
+  execution?: Unit;
   exports: ExportBinding[];
   stars: { module: string; unit: Unit }[];
   targets: SourceTarget[];
@@ -67,9 +69,13 @@ export function bind(scope: Scope, binding: Omit<Binding, "scope">): void {
   scope.bindings.set(binding.name, current);
 }
 
-export function lookup(scope: Scope, name: string): Binding[] | undefined {
-  const bindings = scope.bindings.get(name)?.filter((binding) => !binding.member);
-  return bindings?.length ? bindings : scope.parent ? lookup(scope.parent, name) : undefined;
+export function lookup(scope: Scope, name: string, typePosition = false): Binding[] | undefined {
+  const bindings = scope.bindings
+    .get(name)
+    ?.filter((binding) => !binding.member && (typePosition || !binding.typeParameter));
+  const parameters = typePosition ? bindings?.filter((binding) => binding.typeParameter) : undefined;
+  if (parameters?.length) return parameters;
+  return bindings?.length ? bindings : scope.parent ? lookup(scope.parent, name, typePosition) : undefined;
 }
 
 export function bindDeclaration(scope: Scope, binding: Omit<Binding, "scope" | "member">): void {

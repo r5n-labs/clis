@@ -214,13 +214,21 @@ test("test conventions are injectable and do not classify arbitrary application 
     );
 });
 
-test("duplicate test titles remain independently addressable", async () => {
-  const file = await new TypeScriptAdapter([new TestRunnerConvention("bun:test")]).parse(
-    "example.test.ts",
-    'import { test } from "bun:test"; test("same", () => {}); test("same", () => {});',
-  );
-  expect(file.targets.filter((target) => target.group === "tests")).toHaveLength(2);
-  expect(new Set(file.targets.map((target) => target.id)).size).toBe(file.targets.length);
+test.each([
+  ["same", "same", "same #2", "same #2"],
+  ["same #2", "same", "same", "same #2"],
+])("duplicate and literal suffix test titles remain independently addressable: %j", async (...titles) => {
+  const f = fixture();
+  const source = `import { test } from "bun:test"; ${titles.map((title) => `test(${JSON.stringify(title)}, () => {});`).join(" ")}`;
+  f.write("example.test.ts", source);
+  const scanner = new ProjectScanner(createAnalysis());
+  const project = await scanner.scan(f.loaded);
+  expect(project.targets.filter((target) => target.group === "tests")).toHaveLength(titles.length);
+  const ids = project.targets.map((target) => target.id);
+  expect(new Set(ids).size).toBe(project.targets.length);
+  expect((await scanner.scan(f.loaded)).targets.map((target) => target.id)).toEqual(ids);
+  f.write("example.test.ts", `\n\n${source}`);
+  expect((await scanner.scan(f.loaded)).targets.map((target) => target.id)).toEqual(ids);
 });
 
 test("selected dependency edits invalidate cached answers while unrelated implementation edits do not", async () => {

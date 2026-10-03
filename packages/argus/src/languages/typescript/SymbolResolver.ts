@@ -17,7 +17,7 @@ export class SymbolResolver {
       case "unknown":
         return undefined;
       case "name":
-        return this.resolveName(expression.name, scope, include, seen);
+        return this.resolveName(expression.name, scope, include, seen, expression.typePosition);
       case "member": {
         const receiver = this.resolve(expression.receiver, scope, include, seen);
         return receiver ? this.member(receiver, expression.name, include, seen) : undefined;
@@ -67,8 +67,9 @@ export class SymbolResolver {
     scope: Scope,
     include: ResolutionEvidence,
     seen: Set<unknown>,
+    typePosition = false,
   ): Resolved | undefined {
-    if (name !== "this" && name !== "super") return this.bindings(lookup(scope, name), include, seen);
+    if (name !== "this" && name !== "super") return this.bindings(lookup(scope, name, typePosition), include, seen);
     let current: Scope | undefined = scope;
     while (current) {
       if (current.thisBoundary) return this.bindings(current.bindings.get(name), include, seen);
