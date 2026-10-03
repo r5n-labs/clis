@@ -9,7 +9,6 @@ export {
   isAutoCleanupDue,
   isRunnerActive,
   newestVersion,
-  parseExternalsVersion,
   performCleanup,
   resolveCleanupConfig,
   selectPrunableLogFiles,
@@ -28,6 +27,7 @@ export {
   sortLogFilesNewestFirst,
   tailLines,
 } from "./log-files";
+export { parseExternalsVersion } from "./runner-version";
 export type { DownloadResult, LogFileType, RunnerInfo, RunnerLogFile, RunnerProvider, RunnerStatus } from "./types";
 
 export function createProvider(profile: Profile): RunnerProvider {

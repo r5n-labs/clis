@@ -69,6 +69,7 @@
         "@clack/prompts": "1.7.0",
         "@r5n/cli-core": "workspace:*",
         "@r5n/tools": "workspace:*",
+        "banditypes": "0.3.0",
       },
     },
     "packages/sisyphus": {

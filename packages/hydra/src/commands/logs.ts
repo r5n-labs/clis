@@ -35,7 +35,8 @@ export class LogsCommand extends BaseCommand {
     }
 
     const entry = await this.resolveEntry(ctx, entries);
-    const profile = ctx.config.get("profiles")[entry.profile];
+    const profiles = ctx.config.get("profiles");
+    const profile = Object.hasOwn(profiles, entry.profile) ? profiles[entry.profile] : undefined;
 
     if (!profile) {
       throw new Exit(`Profile "${entry.profile}" not found for runner "${entry.id}"`, "Run hydra init to set it up");

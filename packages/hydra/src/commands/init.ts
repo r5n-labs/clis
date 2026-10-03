@@ -5,6 +5,9 @@ import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
 import { parseGitHubUrl } from "../providers";
 import type { Profile } from "../types";
+import { parseRunnerCount, validateRunnerCount } from "../utils";
+
+const DEFAULT_RUNNER_COUNT = 1;
 
 const initPositionals = positionals({ url: { description: "GitHub repository or organization URL" } });
 
@@ -31,7 +34,7 @@ export class InitCommand extends BaseCommand {
 
     const isNewInit = !ctx.config.exists();
 
-    const profileExists = !isNewInit && ctx.config.get("profiles")[profileName];
+    const profileExists = !isNewInit && Object.hasOwn(ctx.config.get("profiles"), profileName);
     if (profileExists && !ctx.args.force) {
       if (!ctx.interactive) {
         throw new Exit(`Profile "${profileName}" already exists. Use --force to overwrite.`);
@@ -43,11 +46,9 @@ export class InitCommand extends BaseCommand {
       if (!overwrite) return;
     }
 
-    await this.ensureDirectories();
-
     const profile = ctx.interactive ? await this.runInitForm() : this.buildProfileFromArgs(ctx);
-    const profiles = isNewInit ? {} : { ...ctx.config.get("profiles") };
-    profiles[profileName] = profile;
+    await this.ensureDirectories();
+    const profiles = { ...(isNewInit ? {} : ctx.config.get("profiles")), [profileName]: profile };
 
     ctx.config.set("profiles", profiles);
     if (!ctx.config.get("defaultProfile")) {
@@ -103,15 +104,10 @@ export class InitCommand extends BaseCommand {
         name: () => text({ initialValue: "runner", message: "Base name for runners", placeholder: "runner" }),
         runners: () =>
           text({
-            initialValue: "1",
+            initialValue: String(DEFAULT_RUNNER_COUNT),
             message: "Number of runners",
             placeholder: "1",
-            validate: (v): string | undefined => {
-              if (!v) return "Must be a positive number";
-              const n = Number.parseInt(v, 10);
-              if (Number.isNaN(n) || n < 1) return "Must be a positive number";
-              return undefined;
-            },
+            validate: validateRunnerCount,
           }),
         labels: () =>
           text({ message: "Additional labels (comma-separated, optional)", placeholder: "self-hosted,macOS,ARM64" }),
@@ -127,7 +123,7 @@ export class InitCommand extends BaseCommand {
       directory: RUNNERS_DIR,
       labels: values.labels || undefined,
       name: values.name,
-      numberOfMachines: Number.parseInt(values.runners, 10) || 1,
+      numberOfMachines: parseRunnerCount(values.runners),
       os: this.detectOs(),
       overwrite: false,
       provider: "github",
@@ -142,13 +138,12 @@ export class InitCommand extends BaseCommand {
     }
 
     this.validateUrl(ctx.positionals.url);
-    this.validateRunnerCount(ctx.args.runners);
 
     return {
       directory: RUNNERS_DIR,
       labels: ctx.args.labels,
       name: ctx.args.name ?? "runner",
-      numberOfMachines: ctx.args.runners ?? 1,
+      numberOfMachines: parseRunnerCount(ctx.args.runners ?? DEFAULT_RUNNER_COUNT),
       os: this.detectOs(),
       overwrite: false,
       provider: "github",
@@ -165,12 +160,6 @@ export class InitCommand extends BaseCommand {
         error instanceof Error ? error.message : `Invalid GitHub URL: ${url}`,
         "Expected https://github.com/<owner>/<repo> or https://github.com/<org>",
       );
-    }
-  }
-
-  private validateRunnerCount(count?: number) {
-    if (count !== undefined && count < 1) {
-      throw new Exit("Runner count must be at least 1");
     }
   }
 

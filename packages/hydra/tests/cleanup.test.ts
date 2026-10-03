@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { mkdir, readdir, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,19 +8,20 @@ import {
   dirSize,
   isAutoCleanupDue,
   newestVersion,
-  parseExternalsVersion,
   performCleanup,
   resolveCleanupConfig,
   selectPrunableLogFiles,
   selectRemovableVersions,
   totalFreedBytes,
 } from "../src/providers/cleanup";
+import { parseExternalsVersion } from "../src/providers/runner-version";
 import type { RunnerLogFile } from "../src/providers/types";
 import type { RunnerEntry } from "../src/types";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const NOW = Date.parse("2026-07-01T00:00:00Z");
+const SYNTHETIC_PID = 123456789;
 
 const makeLogFile = (overrides: Partial<RunnerLogFile>): RunnerLogFile => ({
   mtime: new Date("2026-01-01T00:00:00Z"),
@@ -280,36 +281,96 @@ describe("performCleanup", () => {
     expect(await readdir(join(runningDir, "_work"))).toEqual(["repo"]);
   });
 
-  test("shared: removes orphaned versions, keeps referenced and newest, tolerates dangling links", async () => {
-    const sharedDir = join(root, "shared", "github");
-    for (const version of ["2.316.0", "2.317.0", "2.318.0"]) {
-      await mkdir(join(sharedDir, version), { recursive: true });
-      await writeFile(join(sharedDir, version, "runner.bin"), "bin");
-    }
+  test.each(["EPERM", "ESRCH", "EIO"])(
+    "work: handles %s without treating uncertainty as a stopped runner",
+    async (code) => {
+      const { dir, entry } = await makeRunner("mac-1");
+      const checkout = join(dir, "_work", "repo", "checkout.txt");
+      await mkdir(join(dir, "_work", "repo"), { recursive: true });
+      await writeFile(checkout, "retained checkout");
+      await writeFile(join(dir, ".pid"), String(SYNTHETIC_PID));
+      const originalKill = process.kill;
+      process.kill = (pid, signal) => {
+        if (pid !== SYNTHETIC_PID || signal !== 0) return originalKill(pid, signal);
+        throw Object.assign(new Error(code), { code });
+      };
 
-    const { dir: refDir, entry: refEntry } = await makeRunner("mac-1");
-    await symlink(join(sharedDir, "2.317.0", "externals"), join(refDir, "externals"));
+      try {
+        const operation = performCleanup({
+          dryRun: false,
+          entries: [entry],
+          now: NOW,
+          olderThanDays: 7,
+          targets: ["work"],
+        });
+        if (code === "EIO") {
+          await expect(operation).rejects.toThrow(code);
+        } else {
+          const report = await operation;
+          expect(report.work?.removed).toBe(code === "ESRCH" ? 1 : 0);
+          expect(report.work?.skipped).toEqual(code === "EPERM" ? [entry.id] : []);
+        }
+        if (code === "ESRCH") expect(existsSync(checkout)).toBe(false);
+        else expect(await readFile(checkout, "utf8")).toBe("retained checkout");
+      } finally {
+        process.kill = originalKill;
+      }
+    },
+  );
 
-    const { dir: danglingDir, entry: danglingEntry } = await makeRunner("mac-2");
-    await symlink(join(root, "shared", "github", "9.9.9", "externals"), join(danglingDir, "externals"));
+  test.each(["", "0", "1", "-1", "2junk", "2.5", "9007199254740992"])(
+    "work: never probes malformed PID %j",
+    async (pid) => {
+      const { dir, entry } = await makeRunner("mac-1");
+      await writeFile(join(dir, ".pid"), pid);
+      const originalKill = process.kill;
+      const probes: number[] = [];
+      process.kill = (candidate) => {
+        probes.push(candidate);
+        return true;
+      };
+      try {
+        await performCleanup({ dryRun: true, entries: [entry], now: NOW, olderThanDays: 7, targets: ["work"] });
+        expect(probes).toEqual([]);
+      } finally {
+        process.kill = originalKill;
+      }
+    },
+  );
 
-    const { entry: noLinkEntry } = await makeRunner("mac-3");
+  test.each(["", "github/fleet", "notgithub/fleet"])(
+    "shared: preserves referenced and newest versions beneath %j",
+    async (ancestor) => {
+      const sharedDir = join(root, ancestor, "shared", "github");
+      for (const version of ["2.316.0", "2.317.0", "2.318.0"]) {
+        await mkdir(join(sharedDir, version), { recursive: true });
+        await writeFile(join(sharedDir, version, "runner.bin"), "bin");
+      }
 
-    const report = await performCleanup({
-      dryRun: false,
-      entries: [refEntry, danglingEntry, noLinkEntry],
-      now: NOW,
-      olderThanDays: 7,
-      sharedDir,
-      targets: ["shared"],
-    });
+      const { dir: refDir, entry: refEntry } = await makeRunner("mac-1");
+      await symlink(join(sharedDir, "2.317.0", "externals"), join(refDir, "externals"));
 
-    expect(report.shared?.removed).toBe(1);
-    expect(report.shared?.freedBytes).toBe(3);
-    expect(existsSync(join(sharedDir, "2.316.0"))).toBe(false);
-    expect(existsSync(join(sharedDir, "2.317.0"))).toBe(true);
-    expect(existsSync(join(sharedDir, "2.318.0"))).toBe(true);
-  });
+      const { dir: danglingDir, entry: danglingEntry } = await makeRunner("mac-2");
+      await symlink(join(root, "shared", "github", "9.9.9", "externals"), join(danglingDir, "externals"));
+
+      const { entry: noLinkEntry } = await makeRunner("mac-3");
+
+      const report = await performCleanup({
+        dryRun: false,
+        entries: [refEntry, danglingEntry, noLinkEntry],
+        now: NOW,
+        olderThanDays: 7,
+        sharedDir,
+        targets: ["shared"],
+      });
+
+      expect(report.shared?.removed).toBe(1);
+      expect(report.shared?.freedBytes).toBe(3);
+      expect(existsSync(join(sharedDir, "2.316.0"))).toBe(false);
+      expect(existsSync(join(sharedDir, "2.317.0"))).toBe(true);
+      expect(existsSync(join(sharedDir, "2.318.0"))).toBe(true);
+    },
+  );
 
   test("shared: missing shared directory is a no-op", async () => {
     const report = await performCleanup({

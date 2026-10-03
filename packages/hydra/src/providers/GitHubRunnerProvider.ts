@@ -23,6 +23,7 @@ import type { Profile } from "../types";
 import type { GitHubTarget } from "./github-url";
 import { describeGitHubTarget, parseGitHubUrl } from "./github-url";
 import { DIAG_DIR, discoverLogFiles } from "./log-files";
+import { parseExternalsVersion } from "./runner-version";
 import type { DownloadResult, RunnerInfo, RunnerLogFile, RunnerProvider } from "./types";
 
 const RUNNER_REPO = "actions/runner";
@@ -386,8 +387,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
   private async detectVersion(runnerDir: string): Promise<string | null> {
     try {
       const target = await readlink(join(runnerDir, "externals"));
-      const match = target.match(/github\/([^/]+)/);
-      return match?.[1] ?? null;
+      return parseExternalsVersion(target);
     } catch {
       return null;
     }
