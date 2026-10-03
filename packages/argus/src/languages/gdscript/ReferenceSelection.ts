@@ -1,5 +1,6 @@
 import type { ReferenceOptions } from "../../analysis/contracts";
 import type { SourceTarget } from "../../domain/source-target";
+import { localBinding } from "./lexical-bindings";
 import { ReferenceEvidence } from "./ReferenceEvidence";
 import { ReferenceResolver } from "./ReferenceResolver";
 import type { Environment, IndexedClass, ReferenceIndex } from "./reference-index";
@@ -81,9 +82,14 @@ export class ReferenceSelection {
         contract: true,
       });
       if (!fixture?.method) continue;
-      this.includeMethod(fixture.owner, fixture.method, false);
+      const method = fixture.method;
+      this.includeMethod(fixture.owner, method, false);
       for (const binding of fixture.owner.symbols.bindings) {
-        if (binding.value.kind !== "path" || !fixture.method.uses.includes(binding.name)) continue;
+        if (
+          binding.value.kind !== "path" ||
+          !method.uses.some((use) => use.name === binding.name && !localBinding(use, method.bindings))
+        )
+          continue;
         const resolved = this.resolver.resolve(
           binding.value,
           { owner: fixture.owner },
@@ -143,16 +149,14 @@ export class ReferenceSelection {
 
   private followOperations(environment: Environment): void {
     this.origin = environment.owner;
-    const bindings: SourceExpression[] = (environment.method?.uses ?? [])
-      .filter(
-        (name) =>
-          !environment.method?.bindings.some((binding) => binding.name === name) &&
-          this.resolver.findMember(environment.owner, name, {
-            visited: new Set(),
-            origin: environment.owner.file.path,
-          }),
-      )
-      .map((name) => ({ kind: "name", name }));
+    const bindings: SourceExpression[] = (environment.method?.uses ?? []).filter(
+      (name) =>
+        !localBinding(name, environment.method?.bindings ?? []) &&
+        this.resolver.findMember(environment.owner, name.name, {
+          visited: new Set(),
+          origin: environment.owner.file.path,
+        }),
+    );
     const operations = [...(environment.method?.operations ?? environment.owner.symbols.operations), ...bindings];
     for (const operation of operations) {
       const value = this.resolver.resolve(operation, environment, {

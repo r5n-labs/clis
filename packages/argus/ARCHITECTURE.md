@@ -25,6 +25,8 @@ The registry rejects duplicate adapter IDs, overlapping file ownership, conflict
 
 Translation evidence consumes message identities and literal-usage capabilities. Gettext parsing belongs to the gettext adapter; resource record selection belongs to its format adapter. A different catalogue format can contribute the same semantic identity without reproducing gettext names or syntax. Future metadata normalisation must stay with the owning adapter and review policy; generic hashing must not strip language-specific text.
 
+The pinned gettext parser has a [tracked Bun patch](../../patches/gettext-parser@9.1.1.patch) for own-key duplicate detection and rejection of unfinished strings at end of input. Frozen installs apply the patch before Argus bundles it; the copied-executable smoke includes a message ID that depends on this correction.
+
 ## Enforcement
 
 `tests/architecture/boundaries.test.ts` checks static imports, type imports, re-exports and literal dynamic imports. Shared orchestration cannot import concrete language, format, framework or review implementations. Language and format implementations cannot import one another. Review contributors consume contracts rather than parsers. Frameworks can compose format readers and explicit runtime contracts, but cannot import a language's concrete analyser.

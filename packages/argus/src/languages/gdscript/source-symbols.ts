@@ -1,4 +1,5 @@
 import type { Node } from "web-tree-sitter";
+import { localBinding } from "./lexical-bindings";
 import { stringValue } from "./string-literals";
 import type { ClassSymbols, DeclarationSymbols, MethodSymbols, SourceBinding, SourceExpression } from "./symbols";
 
@@ -18,38 +19,49 @@ export function classSymbols({
 }): ClassSymbols {
   const methods = scope.namedChildren.filter((node) => METHODS.has(node.type));
   const bindings = scope.namedChildren.filter((node) => BINDINGS.has(node.type)).map(binding);
-  invalidateAssignments(
-    bindings,
-    methods.flatMap((method) => scopedNodes(method)),
-  );
+  invalidateAssignments(bindings, [], []);
+  const namedClass = scope.namedChildren.find((node) => node.type === "class_name_statement");
   const baseNode =
     definition?.childForFieldName("extends")?.namedChildren[0] ??
+    namedClass?.childForFieldName("extends")?.namedChildren[0] ??
     scope.namedChildren.find((node) => node.type === "extends_statement")?.namedChildren[0];
   return {
     declarations,
     owner,
-    globalName: scope.namedChildren.find((node) => node.type === "class_name_statement")?.childForFieldName("name")
-      ?.text,
+    globalName: namedClass?.childForFieldName("name")?.text,
     base: baseNode ? (baseNode.type === "string" ? resourcePath(baseNode) : expression(baseNode)) : undefined,
     bindings,
     operations: scope.namedChildren
       .filter((node) => !METHODS.has(node.type) && node.type !== "class_definition")
       .flatMap((node) => operations(scopedNodes(node))),
-    methods: methods.map(methodSymbols),
+    methods: methods.map((method) => methodSymbols(method, bindings)),
   };
 }
 
-function methodSymbols(node: Node): MethodSymbols {
+function methodSymbols(node: Node, members: SourceBinding[]): MethodSymbols {
   const nodes = scopedNodes(node);
+  const body = node.childForFieldName("body") ?? node;
   const parameters = node.childForFieldName("parameters")?.namedChildren ?? [];
+  const bindingNames = new Set([
+    ...parameters.map((parameter) => (parameter.type === "identifier" ? parameter.id : parameter.namedChildren[0]?.id)),
+    ...nodes.filter((entry) => entry.type === "for_statement").map((entry) => entry.childForFieldName("left")?.id),
+    ...nodes.filter((entry) => entry.type === "pattern_binding").map((entry) => entry.namedChildren[0]?.id),
+  ]);
   const bindings = [
     ...parameters.map((parameter): SourceBinding => {
       const name =
         parameter.type === "identifier" ? parameter.text : (parameter.namedChildren[0]?.text ?? parameter.text);
       const type = parameter.childForFieldName("type");
-      return { name, value: type ? expression(type) : unknown(name), typed: Boolean(type) };
+      return {
+        name,
+        value: type ? expression(type) : unknown(name),
+        typed: Boolean(type),
+        scope: bindingScope(body, body.startIndex),
+      };
     }),
-    ...nodes.filter((entry) => BINDINGS.has(entry.type)).map(binding),
+    ...nodes
+      .filter((entry) => BINDINGS.has(entry.type))
+      .map((entry) => ({ ...binding(entry), scope: bindingScope(enclosingBody(entry), entry.endIndex) })),
     ...nodes
       .filter((entry) => entry.type === "for_statement")
       .map(
@@ -57,6 +69,7 @@ function methodSymbols(node: Node): MethodSymbols {
           name: entry.childForFieldName("left")?.text ?? "",
           value: unknown(entry.text),
           typed: false,
+          scope: bindingScope(entry.childForFieldName("body") ?? entry),
         }),
       ),
     ...nodes
@@ -66,22 +79,42 @@ function methodSymbols(node: Node): MethodSymbols {
           name: entry.namedChildren[0]?.text ?? "",
           value: unknown(entry.text),
           typed: false,
+          scope: bindingScope(patternSection(entry), entry.endIndex),
         }),
       ),
   ];
-  invalidateAssignments(bindings, nodes);
+  invalidateAssignments(bindings, nodes, bindings);
+  invalidateAssignments(members, nodes, bindings);
   const returnType = node.childForFieldName("return_type");
   return {
     name: node.type === "constructor_definition" ? "_init" : (node.childForFieldName("name")?.text ?? ""),
     bindings,
     operations: operations(nodes),
-    uses: [...new Set(nodes.filter((entry) => entry.type === "identifier").map((entry) => entry.text))],
+    uses: nodes
+      .filter((entry) => entry.type === "identifier" && !bindingNames.has(entry.id))
+      .map((entry) => ({ kind: "name", name: entry.text, position: entry.startIndex })),
     returnType: returnType ? expression(returnType) : undefined,
   };
 }
 
+function bindingScope(node: Node, available = node.startIndex) {
+  return { start: node.startIndex, end: node.endIndex, available };
+}
+
+function enclosingBody(node: Node): Node {
+  let parent = node.parent;
+  while (parent && parent.type !== "body") parent = parent.parent;
+  return parent ?? node;
+}
+
+function patternSection(node: Node): Node {
+  let parent = node.parent;
+  while (parent && parent.type !== "pattern_section") parent = parent.parent;
+  return parent ?? node;
+}
+
 function operations(nodes: Node[]): SourceExpression[] {
-  return nodes.filter((entry) => ["call", "attribute", "lambda"].includes(entry.type)).map(expression);
+  return nodes.filter((entry) => ["call", "attribute", "lambda", "get_node"].includes(entry.type)).map(expression);
 }
 
 function binding(node: Node): SourceBinding {
@@ -98,13 +131,23 @@ function binding(node: Node): SourceBinding {
   };
 }
 
-function invalidateAssignments(bindings: SourceBinding[], nodes: Node[]): void {
+function invalidateAssignments(bindings: SourceBinding[], nodes: Node[], locals: SourceBinding[]): void {
   for (const entry of bindings) {
-    const duplicates = bindings.filter((other) => other.name === entry.name).length > 1;
+    const duplicates =
+      bindings.filter(
+        (other) =>
+          other.name === entry.name &&
+          other.scope?.start === entry.scope?.start &&
+          other.scope?.end === entry.scope?.end,
+      ).length > 1;
     const assigned = nodes.some((node) => {
       if (node.type !== "assignment" && node.type !== "augmented_assignment") return false;
-      const left = node.childForFieldName("left")?.text;
-      return left === entry.name || left === `self.${entry.name}`;
+      const left = node.childForFieldName("left");
+      if (!left) return false;
+      if (left.text === `self.${entry.name}`) return !entry.scope;
+      if (left.type !== "identifier" || left.text !== entry.name) return false;
+      const local = localBinding({ kind: "name", name: left.text, position: left.startIndex }, locals);
+      return entry.scope ? local === entry : !local;
     });
     if (duplicates || (!entry.typed && assigned)) entry.value = unknown(`Ambiguous binding: ${entry.name}`);
   }
@@ -135,7 +178,7 @@ function expression(node: Node): SourceExpression {
   switch (node.type) {
     case "identifier":
     case "name":
-      return { kind: "name", name: node.text };
+      return { kind: "name", name: node.text, position: node.startIndex };
     case "type":
     case "parenthesized_expression": {
       const child = node.namedChildren[0];
@@ -159,6 +202,19 @@ function expression(node: Node): SourceExpression {
     }
     case "attribute":
       return attributeExpression(node);
+    case "get_node": {
+      const literal = node.children.find((child) => child.type === "value");
+      const path = literal ? stringValue(literal) : node.text.slice(1);
+      return {
+        kind: "call",
+        callee: {
+          kind: "member",
+          receiver: { kind: "name", name: "self", position: node.startIndex },
+          name: "get_node",
+        },
+        arguments: [{ kind: "value", text: `${node.text.startsWith("%") ? "%" : ""}${path}` }],
+      };
+    }
     case "call": {
       const callee = node.namedChildren[0];
       const argument = node.childForFieldName("arguments")?.namedChildren[0];

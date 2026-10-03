@@ -26,7 +26,24 @@ test.each([
   'msgid "Same"\nmsgstr "One"\nmsgid "Same"\nmsgstr "Two"',
   'msgid "Missing translation"',
   'msgid "Broken quote\nmsgstr "Value"',
+  'msgid "Value"\nmsgstr "Unterminated',
+  'msgid "Value"\nmsgstr "Unterminated\\',
+  'msgid "Value"\nmsgstr "Complete"\n"Unterminated',
   'msgid "Value"\nmsgstr "Text"\ntrailing_garbage',
 ])("invalid gettext is rejected during target extraction: %s", (source) => {
   expect(() => translationTargets("broken.po", source)).toThrow("gettext");
 });
+
+test.each(["constructor", "toString", "__proto__"])(
+  "gettext accepts own message ID %s and rejects its duplicate",
+  (id) => {
+    const entry = `msgid ${JSON.stringify(id)}\nmsgstr "Value"\n`;
+    expect(translationTargets("valid.po", entry)[0]?.translation).toEqual({ id, context: "" });
+    expect(() => translationTargets("duplicate.po", entry.repeat(2))).toThrow("gettext");
+    const contextual = `msgctxt "constructor"\n${entry}`;
+    expect(translationTargets("contexts.po", entry + contextual).map((target) => target.translation)).toEqual([
+      { id, context: "" },
+      { id, context: "constructor" },
+    ]);
+  },
+);

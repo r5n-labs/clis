@@ -113,6 +113,48 @@ test("scene instances resolve attached scripts and supplied wiring retains signa
   expect(context.related.find((e) => e.path === "counter.tscn")?.source).toContain('signal="ready"');
 });
 
+test.each(['self.get_node("Child")', 'get_node("Child")', 'get_node_or_null("Child")', "$Child", '$"Child"', "%Child"])(
+  "literal node lookup retains child implementations and invalidation: %s",
+  async (receiver) => {
+    const f = fixture();
+    f.loaded.config.questions.methods = [{ ...local, context: "references" }];
+    f.write("target.gd", `extends Node\nfunc value():\n    return ${receiver}.value()\n`);
+    f.write(
+      "scene.tscn",
+      '[gd_scene format=3]\n[ext_resource type="Script" path="res://target.gd" id="1"]\n[ext_resource type="Script" path="res://child.gd" id="2"]\n[node name="Root" type="Node"]\nscript = ExtResource("1")\n[node name="Child" parent="." type="Node"]\nunique_name_in_owner = true\nscript = ExtResource("2")\n',
+    );
+    const child = 'func value():\n    return "before"\n';
+    f.write("child.gd", child);
+    const before = (await f.plan()).items.find((entry) => entry.target.path === "target.gd");
+    expect(before?.context.related.find((entry) => entry.path === "child.gd")?.source).toContain('return "before"');
+    f.write("child.gd", child.replace('"before"', '"after"'));
+    const after = (await f.plan()).items.find((entry) => entry.target.path === "target.gd");
+    expect(after?.inputHash).not.toBe(before?.inputHash);
+  },
+);
+
+test.each([
+  'func value(get_node):\n    return get_node("Child").value()\n',
+  "func value(path):\n    return get_node(path).value()\n",
+  'func get_node(path):\n    return null\nfunc value():\n    return get_node("Child").value()\n',
+  'func get_node(path):\n    return null\nfunc value():\n    return self.get_node("Child").value()\n',
+])("node lookup preserves callable shadowing and dynamic-path uncertainty: %s", async (source) => {
+  const result = await review(
+    {
+      "target.gd": `extends Node\n${source}`,
+      "child.gd": "func value():\n    return 42\n",
+      "scene.tscn":
+        '[gd_scene format=3]\n[ext_resource type="Script" path="res://target.gd" id="1"]\n[ext_resource type="Script" path="res://child.gd" id="2"]\n[node name="Root" type="Node"]\nscript = ExtResource("1")\n[node name="Child" parent="." type="Node"]\nscript = ExtResource("2")\n',
+    },
+    { name: "value", references: true },
+  );
+  expect(result.related.find((entry) => entry.path === "child.gd")).toBeUndefined();
+  expect(result.unresolved?.flatMap((entry) => entry.expressions).some((value) => value.endsWith(".value()"))).toBe(
+    true,
+  );
+  if (source.startsWith("func get_node")) expect(result.source).toContain("func get_node(path)");
+});
+
 test("translation context supplies selected resource records, owning description and parallel catalogue", async () => {
   const f = fixture("all");
   f.write(

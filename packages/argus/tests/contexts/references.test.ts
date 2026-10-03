@@ -286,14 +286,22 @@ test("used typed field initialisers retain constructor dependencies", async () =
   expect(result.context.related[0]?.source).toContain("func value");
 });
 
-test("match bindings shadow global classes without guessing receiver types", async () => {
-  const result = await context({
-    "test.gd": "func test_value(input):\n    match input:\n        var Counter:\n            Counter.value()\n",
-    "counter.gd": "class_name Counter\nstatic func value():\n    return 1\n",
-  });
-  expect(result.context.related).toHaveLength(0);
-  expect(result.context.unresolved?.flatMap((entry) => entry.expressions)).toContain("Counter.value()");
-});
+test.each(["var Counter:\n            Counter.value()", "var Counter when Counter.value():\n            pass"])(
+  "match bindings shadow globals in their guard and body: %s",
+  async (branch) => {
+    const f = fixture();
+    f.loaded.config.questions.methods = [];
+    f.loaded.config.questions.tests = [QUESTION];
+    f.write("test.gd", `func test_value(input):\n    match input:\n        ${branch}\n`);
+    const counter = 'class_name Counter\nstatic func value():\n    return "before"\n';
+    f.write("counter.gd", counter);
+    const before = (await f.plan()).items[0];
+    expect(before?.context.related).toHaveLength(0);
+    expect(before?.context.unresolved?.flatMap((entry) => entry.expressions)).toContain("Counter.value()");
+    f.write("counter.gd", counter.replace('"before"', '"after"'));
+    expect((await f.plan()).items[0]?.inputHash).toBe(before?.inputHash);
+  },
+);
 
 test("typed constant preload aliases resolve their actual script", async () => {
   const result = await context({
@@ -312,4 +320,29 @@ test("unresolved field initialisers are disclosed even when their declared type 
   });
   expect(result.context.related[0]?.source).toContain("func value");
   expect(result.context.unresolved?.flatMap((entry) => entry.expressions)).toContain("get_unknown_counter()");
+});
+
+test.each([
+  "var receiver: Counter\nfunc test_value(condition):\n    if condition:\n        var receiver: Other\n        receiver.value()\n    return receiver.value()\n",
+  "var receiver: Counter\nfunc test_value():\n    receiver.value()\n    var receiver: Other\n    return receiver.value()\n",
+  "func test_value(condition):\n    if condition:\n        var Counter: Other\n        Counter.value()\n    return Counter.value()\n",
+  "func test_value(items):\n    for Counter in items:\n        Counter.value()\n    return Counter.value()\n",
+  "func test_value(input):\n    match input:\n        var Counter:\n            Counter.value()\n    return Counter.value()\n",
+  "func test_value(input):\n    match input:\n        var Counter when false:\n            pass\n        _ when Counter.value():\n            pass\n",
+  "var receiver: Counter\nfunc test_value():\n    var alias = receiver\n    var receiver: Other\n    receiver.value()\n    return alias.value()\n",
+  "var receiver = Counter.new()\nfunc test_value(condition):\n    if condition:\n        var receiver = Other.new()\n        receiver = mystery()\n        receiver.value()\n    return receiver.value()\n",
+])("reference selection preserves outer bindings beyond local scope: %s", async (source) => {
+  const f = fixture();
+  f.loaded.config.questions.methods = [];
+  f.loaded.config.questions.tests = [QUESTION];
+  f.write("test.gd", source);
+  f.write("other.gd", 'class_name Other\nstatic func value():\n    return "other"\n');
+  const counter = 'class_name Counter\nstatic func value():\n    return "before"\n';
+  f.write("counter.gd", counter);
+  const before = (await f.plan()).items[0];
+  expect(before?.context.related.find((entry) => entry.path === "counter.gd")?.source).toContain('return "before"');
+  if (source.includes(": Other"))
+    expect(before?.context.related.find((entry) => entry.path === "other.gd")?.source).toContain('return "other"');
+  f.write("counter.gd", counter.replace('"before"', '"after"'));
+  expect((await f.plan()).items[0]?.inputHash).not.toBe(before?.inputHash);
 });

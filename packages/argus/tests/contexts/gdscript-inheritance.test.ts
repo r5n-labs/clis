@@ -93,3 +93,32 @@ test.each(MODES)("%s context preserves external depth limits for inherited initi
   }
   expect(context.related.find((entry) => entry.path === "further.gd")).toBeUndefined();
 });
+
+test.each(MODES)("%s context resolves inherited fields after block-local shadowing", async (mode) => {
+  const f = inheritedFixture(
+    mode,
+    "func enabled(condition):\n    if condition:\n        var flag = false\n        print(flag)\n    return flag\n",
+  );
+  f.write("base.gd", "class_name Base\nvar flag = true\n");
+  const before = await f.item();
+  expect(before.context.related.find((entry) => entry.path === "base.gd")?.source).toContain("var flag = true");
+  f.write("base.gd", "class_name Base\nvar flag = false\n");
+  expect((await f.item()).inputHash).not.toBe(before.inputHash);
+});
+
+test.each([
+  "class_name Derived extends Base",
+  'class_name Derived extends "res://base.gd"',
+  "class_name Derived\nextends Base",
+  'class_name Derived\nextends "res://base.gd"',
+])("combined and separate class headers retain inherited evidence: %s", async (header) => {
+  for (const mode of MODES) {
+    const f = inheritedFixture(mode);
+    f.write("derived.gd", `${header}\nfunc enabled():\n    return flag\n`);
+    f.write("base.gd", "class_name Base\nvar flag = true\n");
+    const before = await f.item();
+    expect(before.context.related.find((entry) => entry.path === "base.gd")?.source).toContain("var flag = true");
+    f.write("base.gd", "class_name Base\nvar flag = false\n");
+    expect((await f.item()).inputHash).not.toBe(before.inputHash);
+  }
+});

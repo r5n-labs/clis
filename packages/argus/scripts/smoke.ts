@@ -37,7 +37,7 @@ try {
     "player.gd": "extends Node\nclass_name Player\nfunc score() -> int:\n\treturn 7\n",
     "settings.tres": '[gd_resource type="Resource" format=3]\n\n[resource]\nresource_name = &"Example"\n',
     "messages.po":
-      'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\nmsgid "Ready"\nmsgstr "Ready"\n',
+      'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\nmsgid "constructor"\nmsgstr "Ready"\n',
   };
   for (const [name, source] of Object.entries(fixtures)) writeFileSync(join(root, name), source);
   assert.match(await command(["--version"]), /\d+\.\d+\.\d+/);

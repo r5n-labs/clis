@@ -31,5 +31,6 @@
     "type-check": "bun --elide-lines=0 --filter '*' type-check"
   },
   "version": "0.0.0",
-  "workspaces": { "packages": ["packages/*", "tools"] }
+  "workspaces": { "packages": ["packages/*", "tools"] },
+  "patchedDependencies": { "gettext-parser@9.1.1": "patches/gettext-parser@9.1.1.patch" }
 }

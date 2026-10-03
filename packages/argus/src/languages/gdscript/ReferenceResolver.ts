@@ -1,6 +1,7 @@
+import { localBinding } from "./lexical-bindings";
 import type { ReferenceEvidence } from "./ReferenceEvidence";
 import type { Environment, IndexedClass, Lookup, Member, ReferenceIndex, ResolvedValue } from "./reference-index";
-import type { MethodSymbols, SourceExpression } from "./symbols";
+import type { MethodSymbols, SourceExpression, SourceName } from "./symbols";
 
 const DEFAULT_REFERENCE_DEPTH = 1;
 
@@ -33,7 +34,7 @@ export class ReferenceResolver {
       case "path":
         return this.resolvePath(expression.path, lookup);
       case "name":
-        return this.resolveName(expression.name, environment, next);
+        return this.resolveName(expression, environment, next);
       case "member": {
         const receiver = this.resolve(expression.receiver, environment, next);
         if (receiver?.kind === "scene" && expression.name === "instantiate") {
@@ -50,10 +51,11 @@ export class ReferenceResolver {
     }
   }
 
-  private resolveName(name: string, environment: Environment, lookup: Lookup): ResolvedValue | undefined {
+  private resolveName(expression: SourceName, environment: Environment, lookup: Lookup): ResolvedValue | undefined {
+    const { name } = expression;
     if (name === "self") return { kind: "class", owner: environment.owner };
     if (name === "super") return this.baseClass(environment.owner, lookup);
-    const local = environment.method?.bindings.find((binding) => binding.name === name);
+    const local = localBinding(expression, environment.method?.bindings ?? []);
     if (local) return this.resolve(local.value, environment, lookup);
     const member = this.findMember(environment.owner, name, lookup);
     if (member) return this.resolveFoundMember(member, environment.owner, lookup);
@@ -126,18 +128,18 @@ export class ReferenceResolver {
     environment: Environment,
     lookup: Lookup,
   ): ResolvedValue | undefined {
-    if (call.callee.kind === "member" && ["get_node", "get_node_or_null"].includes(call.callee.name)) {
-      const receiver = this.resolve(call.callee.receiver, environment, lookup);
+    const callable = this.resolve(call.callee, environment, lookup);
+    if (!callable) {
+      const receiver = this.nodeReceiver(call.callee, environment, lookup);
       const argument = call.arguments?.[0];
-      if (receiver?.kind === "class" && argument?.kind === "value" && argument.text) {
-        const node = this.index.runtime.node(receiver.owner.file.path, argument.text);
+      if (receiver && argument?.kind === "value" && argument.text) {
+        const node = this.index.runtime.node(receiver.file.path, argument.text);
         if (node) {
           for (const entry of node.evidence) this.evidence.addData(entry.path, entry.source);
           return this.resolvePath(node.reference, lookup);
         }
       }
     }
-    const callable = this.resolve(call.callee, environment, lookup);
     if (callable?.kind === "constructor") {
       const initialiser = this.findMember(callable.owner, "_init", lookup);
       if (initialiser?.method) this.traversal.includeMethod(initialiser.owner, initialiser.method);
@@ -147,6 +149,22 @@ export class ReferenceResolver {
     this.traversal.includeMethod(callable.owner, callable.method);
     if (!callable.method.returnType) return { kind: "data" };
     return this.resolve(callable.method.returnType, { owner: callable.owner }, lookup) ?? { kind: "data" };
+  }
+
+  private nodeReceiver(
+    expression: SourceExpression,
+    environment: Environment,
+    lookup: Lookup,
+  ): IndexedClass | undefined {
+    if (expression.kind !== "name" && expression.kind !== "member") return undefined;
+    if (!["get_node", "get_node_or_null"].includes(expression.name)) return undefined;
+    if (expression.kind === "name" && localBinding(expression, environment.method?.bindings ?? [])) return undefined;
+    const receiver =
+      expression.kind === "name"
+        ? { kind: "class" as const, owner: environment.owner }
+        : this.resolve(expression.receiver, environment, lookup);
+    if (receiver?.kind !== "class" || this.findMember(receiver.owner, expression.name, lookup)) return undefined;
+    return receiver.owner;
   }
 
   private resolvePath(reference: string, lookup: Lookup): ResolvedValue | undefined {

@@ -1,5 +1,6 @@
 import type { ReferenceOptions } from "../../analysis/contracts";
 import type { SourceTarget } from "../../domain/source-target";
+import { localBinding } from "./lexical-bindings";
 import type { IndexedClass } from "./reference-index";
 import type { DeclarationSymbols, MethodSymbols, SourceExpression } from "./symbols";
 
@@ -164,7 +165,9 @@ export class ReferenceEvidence {
   private declarations(owner: IndexedClass, methods = this.selected.get(owner)): string[] {
     const used = new Set([
       ...(this.usedBindings.get(owner) ?? []),
-      ...[...(methods?.values() ?? [])].flatMap((method) => method.uses),
+      ...[...(methods?.values() ?? [])].flatMap((method) =>
+        method.uses.filter((use) => !localBinding(use, method.bindings)).map((use) => use.name),
+      ),
     ]);
     const declarations = owner.symbols.declarations;
     const selected = new Set<DeclarationSymbols>();
