@@ -26,5 +26,5 @@
   },
   "type": "module",
   "types": "src/cli.ts",
-  "version": "0.10.0"
+  "version": "0.11.0"
 }

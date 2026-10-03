@@ -1,5 +1,20 @@
 # @r5n/hydra
 
+## ✨ 0.11.0 (2026-10-03)
+
+### 🪨 Features
+
+- [`6559a38`](https://github.com/r5n-labs/clis/commit/6559a38) feat(argus): support Cloudflare models and refresh CLI guides (#44)
+  <details>
+  <summary>Details</summary>
+
+  Allow Argus to use Cloudflare Clef and Clef Flash through a shared evaluator, with provider-aware limits, canonical model identities and saved-response recovery.
+  
+  Make the CLI entry points easier to read with concise READMEs, linked reference guides and recognisable mythological logos for Sisyphus, Hydra, Atlas and Argus.
+  
+  Install the repository-local test-audit skill, repair recovery coverage to exercise real interrupted runs and remove a duplicate validation case.
+  </details>
+
 ## ✨ 0.10.0 (2026-10-03)
 
 ### 🪨 Features

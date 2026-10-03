@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-10-03 - @r5n/argus@0.3.0, @r5n/atlas@0.6.0, @r5n/hydra@0.11.0, @r5n/sisyphus@0.12.0
+
+**Packages**
+- ✨ `@r5n/argus` 0.2.0 → 0.3.0
+- ✨ `@r5n/atlas` 0.5.0 → 0.6.0
+- ✨ `@r5n/hydra` 0.10.0 → 0.11.0
+- ✨ `@r5n/sisyphus` 0.11.0 → 0.12.0
+
+### 🪨 Features
+**Packages:** `@r5n/argus` · `@r5n/atlas` · `@r5n/hydra` · `@r5n/sisyphus`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`6559a38`](https://github.com/r5n-labs/clis/commit/6559a38) feat(argus): support Cloudflare models and refresh CLI guides (#44)
+  <details>
+  <summary>Details</summary>
+
+  Allow Argus to use Cloudflare Clef and Clef Flash through a shared evaluator, with provider-aware limits, canonical model identities and saved-response recovery.
+  
+  Make the CLI entry points easier to read with concise READMEs, linked reference guides and recognisable mythological logos for Sisyphus, Hydra, Atlas and Argus.
+  
+  Install the repository-local test-audit skill, repair recovery coverage to exercise real interrupted runs and remove a duplicate validation case.
+  </details>
+
+</details>
+
 ## 2026-10-03 - @r5n/argus@0.2.0, @r5n/atlas@0.5.0, @r5n/cli-core@0.5.0, @r5n/hydra@0.10.0, @r5n/sisyphus@0.11.0, @r5n/tools@0.3.0
 
 **Packages**
