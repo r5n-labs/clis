@@ -2,6 +2,19 @@
 
 [Argus](../README.md) / Development
 
+## Run from source
+
+Clone the monorepo and install its dependencies:
+
+```sh
+git clone https://github.com/r5n-labs/clis.git
+cd clis
+bun install
+bun argus --help
+```
+
+Use `bun argus` in place of the installed `argus` binary when developing in this checkout.
+
 ## Build and check
 
 Run from the monorepo root:

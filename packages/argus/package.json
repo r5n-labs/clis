@@ -20,7 +20,8 @@
   "license": "Apache-2.0",
   "main": "dist/cli.js",
   "name": "@r5n/argus",
-  "private": true,
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "repository": { "type": "git", "url": "git+https://github.com/r5n-labs/clis.git" },
   "scripts": {
     "benchmark": "bun --bun benchmarks/run.ts",
     "build": "rm -rf dist && bun build.ts",

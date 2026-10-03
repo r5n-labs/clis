@@ -37,8 +37,8 @@ packages/
   core/      @r5n/cli-core  private framework: AbstractCLI, commands, args, prompts, ConfigManager, Exit
   sisyphus/  @r5n/sisyphus  published: monorepo versioning and releases via "stones" (bins: sis, sisyphus)
   hydra/     @r5n/hydra     published: self-hosted GitHub Actions runner fleet manager
-  atlas/     @r5n/atlas     private (unreleased): profile-based env composition (init, profiles, run, export)
-  argus/     @r5n/argus     private (unreleased): incremental syntax-aware reviews with decision models
+  atlas/     @r5n/atlas     published: profile-based env composition (init, profiles, run, export)
+  argus/     @r5n/argus     published: incremental syntax-aware reviews with decision models
 tools/       @r5n/tools     private: bunPackageBuilder, publish scripts, shared tsconfig/biome, CI composite action
 ```
 
@@ -149,6 +149,6 @@ Sisyphus releases this repo itself:
 - Conventional commits become stones: `bun sis version --fromCommits -y` (stones live in `.sisyphus/stones/`; `bun sis check --json` lists them).
 - Pushing pending stones to `develop` triggers `.github/workflows/release.yml`: it rolls with `bun sis roll --json --yes` (or `--resume --json` when `.git/sisyphus/release/active.json` exists), prints the JSON report, exposes `published` and `publishedPackages` as job outputs and exits with the roll's status. The workflow skips its own `release(🎉):` commits.
 - npm auth is trusted publishing (OIDC): `id-token: write`, npm 11 bootstrapped in the workflow, `NPM_CONFIG_PROVENANCE=false` because the self-hosted runner cannot sign provenance.
-- `private: true` packages (core, tools, atlas, argus) get version bumps and tags but are never published.
+- `private: true` packages (core, tools) get version bumps and tags but are never published.
 - `.sisyphus/config.json` declares the release build (`bun run build`, outputs `packages/*/dist/**`); undeclared gitignored files block `roll --npm` and `package:dryRun`, so run those from a pristine `git worktree add` when the checkout carries `dist/`, `.DS_Store` or `CLAUDE.md`.
 - Manual per-package publishing goes through `package:publish` / `package:dryRun`, which use `tools/scripts/publish-package.ts` to resolve `workspace:` and `catalog:` protocols, pack an immutable artifact and restore `package.json` even on failure. The pure manifest logic is in `tools/scripts/publish-manifest.ts` (tested).
