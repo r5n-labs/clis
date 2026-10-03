@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseNpmPackOutput } from "./package-artifact";
+import { parseNpmPackOutput } from "./npm-pack-output";
 
 const roots: string[] = [];
 const registries: ReturnType<typeof Bun.serve>[] = [];

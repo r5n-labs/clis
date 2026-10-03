@@ -8,13 +8,13 @@ const DRY_RUN_FLAG = "--dry-run";
 const FAILURE_EXIT_CODE = 1;
 const USAGE = `Usage: bun ./publish-package.ts ./packages/hydra [${DRY_RUN_FLAG}]`;
 
-export type PublishArguments = { dryRun: boolean; packageDir: string };
+type PublishArguments = { dryRun: boolean; packageDir: string };
 
 function failArgumentParsing(message: string): never {
   throw new Error(`${message}. ${USAGE}`);
 }
 
-export function parseArguments(argv: readonly string[]): PublishArguments {
+function parseArguments(argv: readonly string[]): PublishArguments {
   let dryRun = false;
   let packageDir: string | undefined;
 

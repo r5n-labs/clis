@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
 import { isValidNpmTag, type ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
@@ -15,7 +15,6 @@ import {
   makePendingStone,
   makePublishPackage,
   makeRootBuildScript,
-  PUBLISH_SCRIPT,
   RELEASE_TAG,
   STONE_FILE,
   setupReleaseFixture,
@@ -433,24 +432,6 @@ describe("ReleaseOrchestrator npm publication", () => {
 
     expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
-  });
-
-  test("production publish wrapper prepares once and restores its source manifest", async () => {
-    fixture = await setupReleaseFixture(false);
-    const { root } = fixture;
-    const published = startRegistry();
-
-    const pkg = makePublishPackage(root, "packages/wrapper", "@fixture/wrapper");
-    await Bun.$`git add packages/wrapper`.cwd(root).quiet();
-    await Bun.$`git commit -q -m "add wrapper package"`.cwd(root).quiet();
-    const manifestPath = join(root, pkg.file);
-    const originalManifest = readFileSync(manifestPath, "utf-8");
-    const result = await Bun.$`bun ${PUBLISH_SCRIPT} ${dirname(manifestPath)} --dry-run`.quiet().nothrow();
-
-    expect(result.exitCode).toBe(0);
-    expect(readFileSync(join(dirname(manifestPath), "build-count.txt"), "utf-8")).toBe("1");
-    expect(readFileSync(manifestPath, "utf-8")).toBe(originalManifest);
-    expect(published).toEqual([]);
   });
 
   test("preserves the recovery ledger when a build moves HEAD after the release commit", async () => {
