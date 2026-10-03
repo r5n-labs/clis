@@ -1,4 +1,5 @@
 import { Exit } from "@r5n/cli-core";
+import { array, boolean, fail, object, string } from "banditypes";
 import { DEFAULT_BRANCH, UNKNOWN_AUTHOR } from "../constants";
 import {
   type CreateLabelOptions,
@@ -25,12 +26,15 @@ type GitLabMrResponse = {
   labels: string[];
 };
 
-type GitLabChangesResponse = { changes: { new_path: string }[] };
-
 type GitLabReleaseResponse = { tag_name: string; name: string; description: string | null };
 
 const DEFAULT_API_URL = "https://gitlab.com/api/v4";
 const HTTP_NOT_FOUND = 404;
+const filePathSchema = string().map((path) => (path.length > 0 ? path : fail()));
+const gitlabChangesSchema = object({
+  changes: array(object({ new_path: filePathSchema, old_path: filePathSchema })),
+  overflow: boolean(),
+});
 
 export class GitLabProvider extends GitProvider {
   readonly name = "gitlab" as const;
@@ -141,12 +145,19 @@ export class GitLabProvider extends GitProvider {
 
   async getPrFiles(number: number): Promise<string[]> {
     try {
-      const data = await this.api<GitLabChangesResponse>(
-        `/projects/${this.projectPath}/merge_requests/${number}/changes`,
+      const data = gitlabChangesSchema(
+        await this.api<unknown>(`/projects/${this.projectPath}/merge_requests/${number}/changes`),
       );
-      return data.changes?.map((c) => c.new_path) ?? [];
-    } catch {
-      return [];
+      if (data.overflow) {
+        throw new Exit(
+          `GitLab file list is incomplete for MR !${number}`,
+          "Create the stone from a complete local checkout; GitLab reported truncated changes",
+        );
+      }
+      return [...new Set(data.changes.flatMap((change) => [change.old_path, change.new_path]))];
+    } catch (error) {
+      if (error instanceof Exit) throw error;
+      throw new Exit(`Failed to fetch MR !${number} files`, "Check GitLab access and retry the analysis");
     }
   }
 

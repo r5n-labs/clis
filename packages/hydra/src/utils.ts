@@ -1,7 +1,28 @@
 import type { ConfigManager } from "@r5n/cli-core";
 import { Exit, select } from "@r5n/cli-core";
+import { fail, number } from "banditypes";
 import { DEFAULT_PROFILE } from "./constants";
 import type { HydraConfig, Profile } from "./types";
+
+const RUNNER_COUNT_ERROR = "Runner count must be a positive safe integer";
+const runnerCountSchema = number().map((count) => (Number.isSafeInteger(count) && count > 0 ? count : fail()));
+
+export function parseRunnerCount(value: unknown): number {
+  try {
+    return runnerCountSchema(typeof value === "string" ? Number(value) : value);
+  } catch {
+    throw new Exit(RUNNER_COUNT_ERROR);
+  }
+}
+
+export function validateRunnerCount(value: string | undefined): string | undefined {
+  try {
+    parseRunnerCount(value);
+    return undefined;
+  } catch {
+    return RUNNER_COUNT_ERROR;
+  }
+}
 
 export function resolveRunnerIds(input: string[], available: string[]): string[] {
   if (input.length === 0) return available;
@@ -26,7 +47,7 @@ export function resolveProfile(
   }
 
   const name = positionalProfile ?? config.get("defaultProfile") ?? DEFAULT_PROFILE;
-  const profile = profiles[name];
+  const profile = Object.hasOwn(profiles, name) ? profiles[name] : undefined;
 
   if (!profile) {
     throw new Exit(`Profile "${name}" not found`);

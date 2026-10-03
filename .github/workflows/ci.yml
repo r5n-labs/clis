@@ -117,6 +117,8 @@ jobs:
           # Verify Atlas
           ./packages/atlas/dist/cli.js --version
 
+          ./packages/argus/dist/cli.js --version
+
   integration:
     name: Integration Tests
     needs: build
@@ -159,6 +161,9 @@ jobs:
           chmod +x packages/atlas/dist/cli.js
           ./packages/atlas/dist/cli.js --help
           ./packages/atlas/dist/cli.js --version
+
+      - name: Test Argus bundled CLI
+        run: bun packages/argus/scripts/smoke.ts
 
   release-check:
     name: Release Check

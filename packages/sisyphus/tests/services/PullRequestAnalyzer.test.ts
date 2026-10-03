@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { writeGitHubPrShim } from "../helpers/pull-request";
 import { createWorkspaceFixture } from "../helpers/workspace";
 
 const roots: string[] = [];
-const EXECUTABLE_MODE = 0o755;
 const CORE_PATH = resolve(import.meta.dir, "../../../core/index.ts");
 const CONSTANTS_PATH = resolve(import.meta.dir, "../../src/constants.ts");
 const ANALYZER_PATH = resolve(import.meta.dir, "../../src/services/PullRequestAnalyzer.ts");
@@ -40,7 +40,7 @@ async function fixture() {
   }
   const response = {
     commits,
-    files: ["packages/foo/index.ts", "packages/bar/index.ts"],
+    files: ["packages/foo/index.ts", "packages/bar/index.ts"].map((filename) => ({ filename, status: "modified" })),
     pr: {
       number: 7,
       title: "feat: update both packages",
@@ -55,26 +55,9 @@ async function fixture() {
     },
   };
   const bin = join(root, "bin");
-  mkdirSync(bin);
+  writeGitHubPrShim(bin);
   writeFileSync(join(root, "response.json"), JSON.stringify(response));
   writeFileSync(join(root, "provider-calls"), "");
-  writeFileSync(
-    join(bin, "gh"),
-    `#!/usr/bin/env bun
-import { appendFileSync, readFileSync } from "node:fs";
-const args = process.argv.slice(2);
-const response = JSON.parse(readFileSync(process.env.SIS_TEST_RESPONSE, "utf8"));
-appendFileSync(process.env.SIS_TEST_CALLS, args.join(" ") + "\\n");
-if (args[0] === "auth") process.exit(0);
-if (args[0] === "pr") {
-  const pr = response.pr;
-  console.log(JSON.stringify({ number: pr.number, title: pr.title, body: pr.body, url: pr.html_url, state: "MERGED", headRefName: pr.head.ref, baseRefName: pr.base.ref, mergeCommit: { oid: pr.merge_commit_sha }, author: pr.user, labels: [] }));
-} else if (args[1].endsWith("/commits")) console.log(response.commits.join("\\n"));
-else if (args[1].endsWith("/files")) console.log(response.files.join("\\n"));
-else console.log(JSON.stringify(response.pr));
-`,
-    { mode: EXECUTABLE_MODE },
-  );
   return { bin, response, root };
 }
 

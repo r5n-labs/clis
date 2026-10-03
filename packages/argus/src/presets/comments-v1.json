@@ -1,0 +1,13 @@
+{
+  "id": "comment-accuracy",
+  "type": "choice",
+  "context": "class",
+  "hasComments": true,
+  "instructions": "Do the target method's comments accurately describe its actual behaviour? Judge factual claims, including guards and side effects; ignore writing style and missing comments.",
+  "criteria": {
+    "accurate": "The factual claims agree with the implementation.",
+    "contradicted": "At least one factual claim conflicts with the code.",
+    "insufficient_context": "The supplied implementation does not establish whether the claims hold."
+  },
+  "flag": ["contradicted"]
+}

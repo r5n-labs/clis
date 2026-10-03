@@ -1,31 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { BUMP_ORDER, BumpType } from "../../src/domain/BumpType";
+import { BumpType } from "../../src/domain/BumpType";
 import type { PackageJson } from "../../src/domain/Package";
 import { Package } from "../../src/domain/Package";
 import { Stone } from "../../src/domain/Stone";
 
 const makePackage = (overrides?: Partial<PackageJson>, file = "packages/core/package.json"): Package =>
   Package.fromJson({ name: "@app/core", version: "1.2.3", ...overrides }, file);
-
-function applyStone(packages: Package[], stone: Stone): Package[] {
-  const result: Package[] = [];
-
-  for (const pkg of packages) {
-    let applied = false;
-    for (const bump of BUMP_ORDER) {
-      if (stone.getPackages(bump).includes(pkg.name)) {
-        result.push(pkg.withBump(bump, stone.tag));
-        applied = true;
-        break;
-      }
-    }
-    if (!applied) {
-      result.push(pkg);
-    }
-  }
-
-  return result;
-}
 
 describe("Package.fromJson()", () => {
   test("creates package with name, version, and file", () => {
@@ -212,55 +192,39 @@ describe("package.label getter", () => {
   });
 });
 
-describe("applyStone pattern — applying bumps from stone to matching packages", () => {
-  test("applies bumps from stone to matching packages", () => {
-    const packages = [
-      makePackage({ name: "@app/core", version: "1.0.0" }),
-      makePackage({ name: "@app/utils", version: "2.0.0" }),
-    ];
-
-    const stone = Stone.create({ major: ["@app/core"], message: "release", minor: ["@app/utils"] });
-
-    const result = applyStone(packages, stone);
-
-    expect(result[0]).toMatchObject({ bump: BumpType.Major, newVersion: "2.0.0" });
-    expect(result[1]).toMatchObject({ bump: BumpType.Minor, newVersion: "2.1.0" });
-  });
-
-  test("respects BUMP_ORDER priority — major applied before minor for same package", () => {
-    const stone = Stone.create({
-      major: ["@app/core"],
-      message: "release",
-      minor: ["@app/core"], // also listed in minor
-    });
-
-    const packages = [makePackage({ name: "@app/core", version: "1.0.0" })];
-    const result = applyStone(packages, stone);
-
-    expect(result[0]).toMatchObject({ bump: BumpType.Major, newVersion: "2.0.0" });
-  });
-
-  test("ignores packages not in the stone", () => {
-    const packages = [
-      makePackage({ name: "@app/core", version: "1.0.0" }),
-      makePackage({ name: "@app/unrelated", version: "3.0.0" }),
-    ];
-
-    const stone = Stone.create({ message: "release", patch: ["@app/core"] });
-
-    const result = applyStone(packages, stone);
-
-    expect(result[0]).toMatchObject({ bump: BumpType.Patch, newVersion: "1.0.1" });
-    expect(result[1]).toMatchObject({ bump: undefined, newVersion: undefined });
-  });
-});
-
-describe("Package.applyStone() prerelease channels", () => {
+describe("Package.applyStone()", () => {
   const packages = (entries: PackageJson[]) =>
     new Map(entries.map((entry) => [entry.name, Package.fromJson(entry, `packages/${entry.name}/package.json`)]));
 
   const versionsOnly = (versions: Record<string, string>) =>
     packages(Object.entries(versions).map(([name, version]) => ({ name, version })));
+
+  test("returns only selected known packages with their requested bumps", () => {
+    const stone = Stone.create({ major: ["@app/core", "@app/missing"], message: "release", minor: ["@app/utils"] });
+    const applied = Package.applyStone(
+      stone,
+      versionsOnly({ "@app/core": "1.0.0", "@app/unrelated": "3.0.0", "@app/utils": "2.0.0" }),
+    );
+
+    expect(applied.map(({ name, bump, newVersion }) => ({ bump, name, newVersion }))).toEqual([
+      { bump: BumpType.Major, name: "@app/core", newVersion: "2.0.0" },
+      { bump: BumpType.Minor, name: "@app/utils", newVersion: "2.1.0" },
+    ]);
+  });
+
+  test("applies the highest requested bump once per package", () => {
+    const stone = Stone.create({
+      major: ["@app/core", "@app/core"],
+      message: "release",
+      minor: ["@app/core"],
+      patch: ["@app/core"],
+    });
+    const applied = Package.applyStone(stone, versionsOnly({ "@app/core": "1.0.0" }));
+
+    expect(applied.map(({ name, bump, newVersion }) => ({ bump, name, newVersion }))).toEqual([
+      { bump: BumpType.Major, name: "@app/core", newVersion: "2.0.0" },
+    ]);
+  });
 
   test("dependents leave the channel when the release itself graduates", () => {
     const stone = Stone.create({ dependency: ["@app/cli"], message: "ship", patch: ["@app/core"] });

@@ -21,15 +21,19 @@ type RouterEnv<TConfig extends object> = {
   formatHelp: (cmd: AbstractCommand<TConfig>, prefix?: string) => string;
 };
 
-type RouterOptions = { isRoot?: boolean; onExit?: () => void };
+type RouterOptions = { isRoot?: boolean; onExit?: () => void; selections?: Map<string, string> };
 
 export class CommandRouter<TConfig extends object = object> {
+  private readonly selections: Map<string, string>;
+
   constructor(
     private command: AbstractCommand<TConfig>,
     private env: RouterEnv<TConfig>,
     private prefix?: string,
     private options: RouterOptions = {},
-  ) {}
+  ) {
+    this.selections = options.selections ?? new Map();
+  }
 
   private get commandPath(): string {
     return this.prefix ? `${this.prefix} ${this.command.name}` : this.command.name;
@@ -136,7 +140,10 @@ export class CommandRouter<TConfig extends object = object> {
       }
 
       const subcommand = this.command.getSubcommand(choice);
-      if (subcommand) await this.executeSubcommand(subcommand);
+      if (subcommand) {
+        this.selections.set(this.commandPath, choice);
+        await this.executeSubcommand(subcommand);
+      }
     }
   }
 
@@ -154,7 +161,7 @@ export class CommandRouter<TConfig extends object = object> {
 
   private async executeSubcommand(subcommand: AbstractCommand<TConfig>): Promise<void> {
     try {
-      const subRouter = new CommandRouter(subcommand, this.env, this.commandPath);
+      const subRouter = new CommandRouter(subcommand, this.env, this.commandPath, { selections: this.selections });
       await subRouter.route([], true);
     } catch (error) {
       if (error instanceof Cancel) return;
@@ -176,6 +183,7 @@ export class CommandRouter<TConfig extends object = object> {
 
     return select({
       message: isRoot ? (this.env.cli.promptMessage ?? "Select:") : `${this.command.name}:`,
+      initialValue: this.selections.get(this.commandPath),
       options: [
         ...this.command.getSubcommands().map((cmd) => ({ hint: cmd.description, label: cmd.name, value: cmd.name })),
         exitOption,

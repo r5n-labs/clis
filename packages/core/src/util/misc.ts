@@ -11,25 +11,20 @@ export function handleUnknownItem(type: string, name: string, available: string[
 }
 
 export function deepMerge<T>(target: any, source: any): T {
-  const isObject = (obj: any) => obj && typeof obj === "object";
+  if (Array.isArray(source)) return [...source] as T;
+  if (!isRecord(target) || !isRecord(source)) return source;
 
-  if (!isObject(target) || !isObject(source)) {
-    return source;
-  }
+  return Object.fromEntries([
+    ...Object.entries(target),
+    ...Object.entries(source).map(([key, value]) => [
+      key,
+      deepMerge(Object.hasOwn(target, key) ? target[key] : undefined, value),
+    ]),
+  ]) as T;
+}
 
-  const result = { ...target };
-  for (const key of Object.keys(source)) {
-    const targetValue = result[key];
-    const sourceValue = source[key];
-
-    if (Array.isArray(targetValue) && Array.isArray(sourceValue)) {
-      result[key] = [...sourceValue];
-    } else if (isObject(targetValue) && isObject(sourceValue)) {
-      result[key] = deepMerge(targetValue, sourceValue);
-    } else {
-      result[key] = sourceValue;
-    }
-  }
-
-  return result;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }

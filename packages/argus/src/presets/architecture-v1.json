@@ -1,0 +1,12 @@
+{
+  "id": "architecture-ownership",
+  "type": "choice",
+  "context": "references",
+  "instructions": "Does this class place domain behaviour in the component that owns it? Scene roots should coordinate; child components should own movement, combat and other domain behaviour. Prefer composition and explicit contracts. Judge only concrete ownership violations evidenced by the supplied code and any supplied project rules.",
+  "criteria": {
+    "cohesive": "Responsibilities belong to this class or it coordinates its collaborators.",
+    "misplaced_behaviour": "Concrete domain behaviour is implemented by a coordinator or unrelated owner.",
+    "insufficient_context": "The ownership contract or collaborating components are missing."
+  },
+  "flag": ["misplaced_behaviour"]
+}

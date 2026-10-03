@@ -29,4 +29,5 @@ export {
 } from "./src/prompts";
 export { color } from "./src/util/color";
 export { deepMerge } from "./src/util/index";
+export { updateJson } from "./src/util/json-format";
 export { validateKnownArgs } from "./src/util/mri-utils";

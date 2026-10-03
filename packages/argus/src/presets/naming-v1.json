@@ -1,0 +1,13 @@
+{
+  "id": "naming-accuracy",
+  "type": "choice",
+  "context": "class",
+  "instructions": "Evaluate how well the named GDScript method matches its actual implementation. Judge semantic accuracy, not personal naming style. Leading underscores, British spelling and conventional Godot lifecycle callbacks are valid. Allow test framework hooks and intentional base-contract stubs. A test name should describe what its assertions exercise. Do not assume comments prove behaviour or guess what unresolved external methods do.",
+  "criteria": {
+    "matches": "The name accurately conveys the primary behaviour or return value in its class context. It need not list every implementation detail or guard.",
+    "too_vague": "The name is compatible with the behaviour but fails to communicate its specific purpose, even with its class context. No concrete contradiction is present.",
+    "misleading": "The implementation materially contradicts the behaviour, return value, or side-effect expectations conveyed by the name.",
+    "insufficient_context": "The supplied source does not establish enough of the behaviour or naming contract to judge, for example an unresolved external implementation or ambiguous override contract."
+  },
+  "flag": ["misleading", "too_vague"]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "translation-quality",
+  "type": "choice",
+  "context": "target",
+  "instructions": "Does the gettext translation preserve the source meaning, placeholders and gameplay terminology? Judge grammatical correctness and suitability for UI text, including Polish inflection where relevant. Use msgctxt and any supplied UI context. Empty or fuzzy translations need review; do not invent missing UI context.",
+  "criteria": {
+    "accurate": "Meaning and placeholders are preserved with natural grammar.",
+    "needs_review": "The translation is missing, fuzzy, incorrect or loses meaning or placeholders.",
+    "insufficient_context": "The source meaning cannot be established without additional context."
+  },
+  "flag": ["needs_review"]
+}

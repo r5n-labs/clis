@@ -1,7 +1,6 @@
 import { color, Exit, log, spinner, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
-import type { Profile } from "../types";
 import { maybeAutoCleanup } from "./cleanup";
 
 type UpdateCtx = Ctx;
@@ -24,7 +23,7 @@ export class UpdateCommand extends BaseCommand {
     let updated = 0;
 
     for (const [profileName, profileEntries] of byProfile) {
-      const profile = profiles[profileName] as Profile | undefined;
+      const profile = Object.hasOwn(profiles, profileName) ? profiles[profileName] : undefined;
       if (!profile) continue;
 
       const provider = createProvider(profile);

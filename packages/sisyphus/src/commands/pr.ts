@@ -2,7 +2,7 @@ import { args, color, confirm, Exit, log, multiselect, note, select } from "@r5n
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN } from "../constants";
 import type { CommitInfo, Package, StoneData } from "../domain";
-import { BumpType, isBumpType, nonEmpty } from "../domain";
+import { BumpType, nonEmpty } from "../domain";
 import type { DependentsOptions, PullRequestInfo } from "../services";
 import {
   collectDependents,
@@ -15,7 +15,7 @@ import {
 
 const DESCRIPTION_PREVIEW_LENGTH = 100;
 
-export function intersectCommitPackages(
+function intersectCommitPackages(
   commits: readonly CommitInfo[] | undefined,
   selected: readonly string[],
 ): readonly CommitInfo[] | undefined {
@@ -162,8 +162,8 @@ export class PrCommand extends BaseCommand {
   }
 
   private async determineBumpType(ctx: PrCtx, suggested: BumpType | null, labels: string[]): Promise<BumpType> {
-    if (ctx.args.bump) {
-      if (!isBumpType(ctx.args.bump)) {
+    if (ctx.args.bump !== undefined) {
+      if (ctx.args.bump !== BumpType.Major && ctx.args.bump !== BumpType.Minor && ctx.args.bump !== BumpType.Patch) {
         throw new Exit(`Invalid bump type: ${ctx.args.bump}`, "Use major, minor, or patch");
       }
       return ctx.args.bump;

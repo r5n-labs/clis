@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseNpmPackOutput, preparePackageArtifact } from "./package-artifact";
+import { preparePackageArtifact } from "./package-artifact";
 
 const roots: string[] = [];
 const EXECUTABLE_MODE = 0o755;
@@ -301,28 +301,5 @@ describe("preparePackageArtifact", () => {
     );
 
     expect(existsSync(fixture.artifactPath)).toBe(false);
-  });
-});
-
-describe("parseNpmPackOutput", () => {
-  const entry = {
-    filename: "probe-pkg-1.0.0.tgz",
-    files: [{ path: "index.js" }],
-    name: "@probe/pkg",
-    version: "1.0.0",
-  };
-
-  test("reads the array document emitted by npm 11", () => {
-    expect(parseNpmPackOutput(JSON.stringify([entry]))).toEqual(entry);
-  });
-
-  test("reads the package-keyed document emitted by npm 12", () => {
-    expect(parseNpmPackOutput(JSON.stringify({ "@probe/pkg": entry }))).toEqual(entry);
-  });
-
-  test("returns undefined for empty or scalar documents", () => {
-    expect(parseNpmPackOutput("[]")).toBeUndefined();
-    expect(parseNpmPackOutput("{}")).toBeUndefined();
-    expect(parseNpmPackOutput("null")).toBeUndefined();
   });
 });

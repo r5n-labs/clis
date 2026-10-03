@@ -2,6 +2,7 @@ import { lstat, readlink, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { $ } from "bun";
 import { resolveNpmAccess } from "./npm-access";
+import { parseNpmPackOutput } from "./npm-pack-output";
 import { inferNpmPrereleaseTag } from "./npm-tag";
 
 type PublishArtifactOptions = { cwd?: string; dryRun?: boolean };
@@ -25,19 +26,6 @@ const TAR_SIZE_LENGTH = 12;
 const TAR_PREFIX_OFFSET = 345;
 const TAR_PREFIX_LENGTH = 155;
 const PACKED_MANIFEST_PATH = "package/package.json";
-
-export type NpmPackEntry = { files?: unknown; filename?: unknown; name?: unknown; version?: unknown };
-
-export function parseNpmPackOutput(stdout: string): NpmPackEntry | undefined {
-  const parsed: unknown = JSON.parse(stdout);
-  const entries: unknown[] = Array.isArray(parsed)
-    ? parsed
-    : typeof parsed === "object" && parsed !== null
-      ? Object.values(parsed)
-      : [];
-  const [entry] = entries;
-  return typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as NpmPackEntry) : undefined;
-}
 
 export async function preparePackageArtifact(packageDir: string, artifactPath: string): Promise<void> {
   const pkgDir = await realpath(resolve(packageDir));

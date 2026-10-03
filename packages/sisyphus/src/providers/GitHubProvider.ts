@@ -1,4 +1,5 @@
 import { Exit } from "@r5n/cli-core";
+import { array, fail, object, optional, string } from "banditypes";
 import { DEFAULT_BRANCH, UNKNOWN_AUTHOR } from "../constants";
 import {
   type CreateLabelOptions,
@@ -43,6 +44,15 @@ type GitHubCliPrResponse = {
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const DECIMAL_RADIX = 10;
+const GITHUB_FILE_LIMIT = 3000;
+const filePathSchema = string().map((path) => (path.length > 0 ? path : fail()));
+const githubFilePagesSchema = array(
+  array(
+    object({ filename: filePathSchema, previous_filename: filePathSchema.or(optional()), status: string() }).map(
+      (file) => (file.status === "renamed" && file.previous_filename === undefined ? fail() : file),
+    ),
+  ),
+);
 
 function isGitHubReleaseResponse(value: unknown): value is GitHubReleaseResponse {
   if (typeof value !== "object" || value === null) return false;
@@ -161,10 +171,26 @@ export class GitHubProvider extends GitProvider {
 
   async getPrFiles(number: number): Promise<string[]> {
     try {
-      const result = await Bun.$`gh api ${this.apiPath}/pulls/${number}/files --jq '.[].filename'`.quiet();
-      return result.stdout.toString().trim().split("\n").filter(Boolean);
-    } catch {
-      return [];
+      const result = await Bun.$`gh api ${this.apiPath}/pulls/${number}/files --paginate --slurp`.quiet();
+      const files = githubFilePagesSchema(JSON.parse(result.stdout.toString())).flat();
+      if (files.length >= GITHUB_FILE_LIMIT) {
+        throw new Exit(
+          `PR #${number} reaches the GitHub file limit`,
+          "The complete changed file list cannot be established; create the stone from a complete local checkout",
+        );
+      }
+      return [
+        ...new Set(
+          files.flatMap((file) =>
+            file.status === "renamed" && file.previous_filename !== undefined
+              ? [file.previous_filename, file.filename]
+              : [file.filename],
+          ),
+        ),
+      ];
+    } catch (error) {
+      if (error instanceof Exit) throw error;
+      throw new Exit(`Failed to fetch PR #${number} files`, "Check GitHub access and retry the analysis");
     }
   }
 

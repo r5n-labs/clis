@@ -193,6 +193,34 @@ describe("PublishManifest", () => {
   });
 
   describe("renderPublishManifest", () => {
+    test.each([
+      ["catalog:", 'Catalog "default" has no entry for "constructor"'],
+      ["catalog:constructor", 'Catalog "constructor" has no entry for "constructor"'],
+      ["workspace:^1.0.0", 'Workspace package "constructor"'],
+    ])("rejects an inherited missing dependency before rendering %s", (specifier, message) => {
+      const original = JSON.stringify({ name: "fixture", dependencies: { constructor: specifier } });
+
+      expect(() => renderPublishManifest(original, extractCatalogs({}), {})).toThrow(message);
+    });
+
+    test("preserves declared prototype-named catalogue and workspace dependencies", () => {
+      const ownCatalogs = extractCatalogs(JSON.parse('{"catalogs":{"__proto__":{"constructor":"2.0.0"}}}'));
+      const ownWorkspaces = workspaceVersionsFromPackages([
+        new Package({ file: "packages/constructor/package.json", name: "constructor", version: "2.0.0" }),
+      ]);
+      const original = JSON.stringify({
+        name: "fixture",
+        dependencies: { constructor: "catalog:__proto__" },
+        peerDependencies: { constructor: "workspace:^" },
+      });
+
+      expect(JSON.parse(renderPublishManifest(original, ownCatalogs, ownWorkspaces))).toEqual({
+        name: "fixture",
+        dependencies: { constructor: "2.0.0" },
+        peerDependencies: { constructor: "^2.0.0" },
+      });
+    });
+
     test("resolves specifiers and drops devDependencies in the rendered text", () => {
       const original = `${JSON.stringify(
         {

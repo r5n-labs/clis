@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, readlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { fail, number } from "banditypes";
 import {
   DEFAULT_CLEANUP_AUTO,
   DEFAULT_CLEANUP_INTERVAL_HOURS,
@@ -10,6 +11,7 @@ import {
 } from "../constants";
 import type { CleanupConfig, CleanupTarget, RunnerEntry } from "../types";
 import { DIAG_DIR, discoverLogFiles, sortLogFilesNewestFirst } from "./log-files";
+import { parseExternalsVersion } from "./runner-version";
 import type { LogFileType, RunnerLogFile } from "./types";
 
 export const WORK_DIR = "_work";
@@ -17,11 +19,12 @@ export const WORK_DIR = "_work";
 const EXTERNALS_LINK = "externals";
 const PID_FILE = ".pid";
 const SHARED_GITHUB_SUBDIR = "github";
-const EXTERNALS_VERSION_PATTERN = /github\/([^/]+)/;
 const LOG_FILE_TYPES: LogFileType[] = ["runner", "worker"];
 const HOURS_PER_DAY = 24;
 const MS_PER_HOUR = 3_600_000;
 const DECIMAL_RADIX = 10;
+const FIRST_PROCESS_ID = 1;
+const runnerPidSchema = number().map((pid) => (Number.isSafeInteger(pid) && pid > FIRST_PROCESS_ID ? pid : fail()));
 
 export type CleanupOutcome = { freedBytes: number; removed: number; skipped: string[] };
 
@@ -82,24 +85,32 @@ export function selectRemovableVersions(installed: string[], referenced: Iterabl
   return installed.filter((version) => version !== newest && !refs.has(version));
 }
 
-export function parseExternalsVersion(target: string): string | null {
-  return target.match(EXTERNALS_VERSION_PATTERN)?.[1] ?? null;
-}
-
 export function totalFreedBytes(report: CleanupReport): number {
   return Object.values(report).reduce((sum, outcome) => sum + outcome.freedBytes, 0);
 }
 
 export async function isRunnerActive(runnerDir: string): Promise<boolean> {
+  let content: string;
   try {
-    const content = await readFile(join(runnerDir, PID_FILE), "utf-8");
-    const pid = Number.parseInt(content.trim(), DECIMAL_RADIX);
-    if (Number.isNaN(pid)) return false;
-
-    process.kill(pid, 0);
-    return true;
+    content = await readFile(join(runnerDir, PID_FILE), "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  let pid: number;
+  try {
+    pid = runnerPidSchema(Number(content.trim()));
   } catch {
     return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    throw error;
   }
 }
 

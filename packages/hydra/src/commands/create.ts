@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { color, Exit, log, positionals, spinner, text, validateKnownArgs } from "@r5n/cli-core";
+import { color, log, positionals, spinner, text, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { createProvider } from "../providers";
 import type { RunnerEntry } from "../types";
-import { resolveProfile, selectProfile } from "../utils";
+import { parseRunnerCount, resolveProfile, selectProfile, validateRunnerCount } from "../utils";
 
 const createPositionals = positionals({
   profile: { description: "Profile to use" },
@@ -26,13 +26,7 @@ export class CreateCommand extends BaseCommand {
 
     const count = ctx.interactive
       ? await this.promptCount(profile.numberOfMachines)
-      : ctx.positionals.count
-        ? Number.parseInt(ctx.positionals.count, 10)
-        : profile.numberOfMachines;
-
-    if (!count || count < 1) {
-      throw new Exit("Runner count must be at least 1");
-    }
+      : parseRunnerCount(ctx.positionals.count ?? profile.numberOfMachines);
 
     const entries: RunnerEntry[] = ctx.config.get("runners") ?? [];
     const existing = entries.filter((e) => e.profile === profileName);
@@ -90,12 +84,8 @@ export class CreateCommand extends BaseCommand {
     const value = await text({
       initialValue: String(defaultCount),
       message: "Number of runners to create",
-      validate: (v): string | undefined => {
-        const n = Number.parseInt(v ?? "", 10);
-        if (Number.isNaN(n) || n < 1) return "Must be a positive number";
-        return undefined;
-      },
+      validate: validateRunnerCount,
     });
-    return Number.parseInt(value, 10);
+    return parseRunnerCount(value);
   }
 }

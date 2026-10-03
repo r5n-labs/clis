@@ -1,4 +1,15 @@
-import { args, color, confirm, Exit, log, multiselect, note, positionals, text } from "@r5n/cli-core";
+import {
+  args,
+  color,
+  confirm,
+  Exit,
+  log,
+  multiselect,
+  note,
+  positionals,
+  text,
+  validateKnownArgs,
+} from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../../base-command";
 import { CLI_BIN } from "../../constants";
 import { Stone } from "../../domain";
@@ -21,6 +32,7 @@ export class StoneMergeCommand extends BaseCommand {
   prompts = true;
 
   async execute(ctx: MergeCtx) {
+    validateKnownArgs(ctx.args, mergeArgs, "Run 'sis stone merge --help' for supported options");
     const manager = new StoneManager(ctx.config);
 
     const stones = await this.resolveStones(ctx, manager);

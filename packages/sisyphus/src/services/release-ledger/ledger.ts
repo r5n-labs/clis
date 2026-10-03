@@ -211,7 +211,7 @@ export class ReleaseLedger {
   }
 
   get data(): ReleaseLedgerData {
-    return structuredClone(this.value);
+    return parseLedgerData(this.value, this.paths);
   }
 
   get id(): string {
@@ -479,29 +479,41 @@ export class ReleaseLedger {
 
   async complete(): Promise<string> {
     this.assertActive("complete");
-    let next = structuredClone(this.value);
 
-    if (next.phase !== "completed") {
+    if (this.value.phase !== "completed") {
+      const next = structuredClone(this.value);
       assertCompletionReady(next);
       next.phase = "completed";
       await this.persist(next);
-      next = this.value;
     }
 
-    await ensureHistoryDirectory(this.paths);
-    const historyPath = getHistoryPath(this.paths, next.id);
-    if (await pathExists(historyPath)) {
-      throw new ReleaseLedgerError(
-        `Cannot complete release ${next.id}: history ledger already exists at ${historyPath}`,
-      );
-    }
-
+    const historyPath = getHistoryPath(this.paths, this.value.id);
+    const lock = await acquireLedgerWriteLock(this.releaseDirectory);
     try {
+      const activeStat = await lstat(this.activePath);
+      if (!activeStat.isFile() || activeStat.isSymbolicLink()) {
+        throw new ReleaseLedgerError(`Invalid active release ledger at ${this.activePath}: expected a regular file`);
+      }
+      const current = parseLedgerData(JSON.parse(await readFile(this.activePath, "utf-8")), this.paths);
+      if (current.id !== this.value.id || current.updatedAt !== this.value.updatedAt || current.phase !== "completed") {
+        throw new ReleaseLedgerError("Active release ledger changed in another process");
+      }
+      await ensureHistoryDirectory(this.paths);
+      if (await pathExists(historyPath)) {
+        throw new ReleaseLedgerError(
+          `Cannot complete release ${current.id}: history ledger already exists at ${historyPath}`,
+        );
+      }
       await rename(this.activePath, historyPath);
       await syncPath(this.paths.historyDirectory);
       await syncPath(this.releaseDirectory);
     } catch (error) {
-      throw new ReleaseLedgerError(`Failed to move completed release ${next.id} to history: ${errorDetail(error)}`);
+      if (error instanceof ReleaseLedgerError) throw error;
+      throw new ReleaseLedgerError(
+        `Failed to move completed release ${this.value.id} to history: ${errorDetail(error)}`,
+      );
+    } finally {
+      await releaseLedgerWriteLock(lock);
     }
 
     this.active = false;

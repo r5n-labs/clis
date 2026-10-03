@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseNpmPackOutput } from "../../src/services/release/npm-pack";
+import { parseNpmPackOutput } from "./npm-pack-output";
 
 const ENTRY = { filename: "probe-pkg-1.0.0.tgz", files: [{ path: "index.js" }], name: "@probe/pkg", version: "1.0.0" };
 

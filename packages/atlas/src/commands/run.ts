@@ -19,8 +19,6 @@ const runPositionals = positionals({ command: { description: "Command to run", r
 
 type RunCtx = Ctx<typeof runArgs, typeof runPositionals>;
 
-type BuildRunEnvironmentOptions = { cwd?: string; env?: Record<string, string | undefined>; profiles?: string[] };
-
 export class RunCommand extends BaseCommand {
   name = "run";
   description = "Run a command with resolved Atlas env";
@@ -42,7 +40,7 @@ export class RunCommand extends BaseCommand {
     if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
       throw new Exit(`Working directory is not a directory: ${cwd}`, "Usage: atlas run --cwd <dir> -- <command...>");
     }
-    const env = buildRunEnvironment({ cwd, env: process.env, profiles });
+    const env = buildRunEnvironment(cwd, profiles);
 
     const proc = spawnCommand(command, cwd, env);
     const forwardSigint = (): void => proc.kill("SIGINT");
@@ -84,12 +82,11 @@ function spawnCommand(command: string[], cwd: string, env: Record<string, string
   }
 }
 
-export function buildRunEnvironment(options: BuildRunEnvironmentOptions = {}): Record<string, string> {
-  const cwd = options.cwd ?? process.cwd();
+function buildRunEnvironment(cwd: string, profiles?: string[]): Record<string, string> {
   const loaded = loadAtlasConfig({ cwd });
-  const resolved = resolveAtlasEnv(loaded, { env: options.env, profiles: options.profiles });
+  const resolved = resolveAtlasEnv(loaded, { profiles });
   const baseEnv = Object.fromEntries(
-    Object.entries(options.env ?? process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
 
   return { ...baseEnv, ...resolved.env };

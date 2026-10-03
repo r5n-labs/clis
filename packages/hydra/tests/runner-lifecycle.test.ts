@@ -99,7 +99,7 @@ function addRunner(f: ReturnType<typeof fixture>, id: string, profileName = "def
   return directory;
 }
 
-async function run(f: ReturnType<typeof fixture>, args: string[], env: Record<string, string> = {}) {
+async function run(f: ReturnType<typeof fixture>, args: readonly string[], env: Record<string, string> = {}) {
   const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
     cwd: f.root,
     env: { ...process.env, HYDRA_TEST_ROOT: f.root, PATH: `${f.bin}:${process.env.PATH}`, ...env },
@@ -119,6 +119,86 @@ afterEach(() => {
 });
 
 describe("runner lifecycle", () => {
+  test.each(["github/fleet", "notgithub/fleet"])(
+    "reads the terminal version beneath %s even for a dangling link",
+    async (ancestor) => {
+      const f = fixture();
+      const directory = join(f.profile.directory, "runner-1");
+      mkdirSync(directory, { recursive: true });
+      symlinkSync(
+        join(f.root, ancestor, ".hydra/shared/github", OLD_VERSION, "externals"),
+        join(directory, "externals"),
+      );
+
+      expect(await new GitHubRunnerProvider(f.profile).currentVersion("runner-1")).toBe(OLD_VERSION);
+    },
+  );
+
+  test.each([
+    { argv: ["init", "https://github.com/owner/repo", "--profile", "new", "--runners=2.5"] },
+    { argv: ["init", "https://github.com/owner/repo", "--profile", "new", "--runners=9007199254740992"] },
+    { argv: ["create", "default", "2junk"] },
+    { argv: ["create", "default", "2.5"] },
+    { argv: ["create", "default", ""] },
+    { argv: ["create", "default", "9007199254740992"] },
+    { argv: ["create"], storedCount: 2.5 },
+    { argv: ["create"], storedCount: 9007199254740992 },
+  ])("rejects invalid runner counts before configuration or provider effects: %j", async ({ argv, storedCount }) => {
+    const f = fixture();
+    if (storedCount !== undefined) f.profile.numberOfMachines = storedCount;
+    const original = JSON.stringify(f.config);
+    writeFileSync(f.configPath, original);
+    script(join(f.bin, "gh"), '#!/bin/sh\ntouch "$HYDRA_TEST_ROOT/provider-called"\nexit 1\n');
+
+    const result = await run(f, argv);
+
+    expect(result.exitCode).not.toBe(SUCCESS);
+    expect(result.output).toContain("Runner count must be a positive safe integer");
+    expect(readFileSync(f.configPath, "utf8")).toBe(original);
+    expect(existsSync(join(f.root, "provider-called"))).toBe(false);
+    expect(existsSync(join(f.root, ".hydra/shared"))).toBe(false);
+    expect(existsSync(join(f.root, ".hydra/runners"))).toBe(false);
+    expect(existsSync(f.profile.directory)).toBe(false);
+  });
+
+  test.each([
+    { name: "__proto__", fresh: true },
+    { name: "__proto__", fresh: false },
+    { name: "constructor", fresh: false },
+    { name: "toString", fresh: false },
+  ])("roundtrips an own profile name through real init/default/remove: %j", async ({ name, fresh }) => {
+    const f = fixture();
+    if (fresh) rmSync(f.configPath);
+    const argv = ["init", "https://github.com/owner/repo", "--profile", name];
+
+    expect((await run(f, argv)).exitCode).toBe(SUCCESS);
+    const initial = JSON.parse(readFileSync(f.configPath, "utf8")) as HydraConfig;
+    expect(Object.hasOwn(initial.profiles, name)).toBe(true);
+    expect(initial.profiles[name]?.url).toBe("https://github.com/owner/repo");
+    expect((await run(f, argv)).output).toContain("already exists");
+    expect((await run(f, [...argv, "--force"])).exitCode).toBe(SUCCESS);
+    expect((await run(f, ["profile", "default", name])).exitCode).toBe(SUCCESS);
+    expect(JSON.parse(readFileSync(f.configPath, "utf8")).defaultProfile).toBe(name);
+    expect((await run(f, ["profile", "remove", name])).exitCode).toBe(SUCCESS);
+    const final = JSON.parse(readFileSync(f.configPath, "utf8")) as HydraConfig;
+    expect(Object.hasOwn(final.profiles, name)).toBe(false);
+    expect(final.defaultProfile).toBe(fresh ? undefined : "default");
+  });
+
+  test.each(["__proto__", "constructor", "toString"])(
+    "rejects inherited absent profile %s without changing config",
+    async (name) => {
+      const f = fixture();
+      const original = readFileSync(f.configPath, "utf8");
+
+      const result = await run(f, ["profile", "default", name]);
+
+      expect(result.exitCode).not.toBe(SUCCESS);
+      expect(result.output).toContain(`Profile "${name}" not found`);
+      expect(readFileSync(f.configPath, "utf8")).toBe(original);
+    },
+  );
+
   test("preserves completed registrations and retries a failed batch without stale directories", async () => {
     const f = fixture();
     addDownload(f.root);

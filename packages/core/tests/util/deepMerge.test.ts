@@ -14,8 +14,13 @@ describe("deepMerge", () => {
     expect(deepMerge<{ a: { b: number; c: number } }>({ a: { b: 1 } }, { a: { c: 2 } })).toEqual({ a: { b: 1, c: 2 } });
   });
 
-  test("arrays are replaced entirely, not concatenated", () => {
-    expect(deepMerge<{ a: number[] }>({ a: [1, 2] }, { a: [3] })).toEqual({ a: [3] });
+  test.each([
+    [{ a: [1, 2] }, { a: [3] }, { a: [3] }],
+    [{ a: { retained: true } }, { a: [3] }, { a: [3] }],
+    [{ a: [1, 2] }, { a: { named: true } }, { a: { named: true } }],
+    [[1, 2], [3], [3]],
+  ])("replaces arrays and mismatched container types: %j", (target, source, expected) => {
+    expect(deepMerge<unknown>(target, source)).toEqual(expected);
   });
 
   test("non-object source returns source", () => {
@@ -46,12 +51,19 @@ describe("deepMerge", () => {
     expect(deepMerge<typeof expected>(target, source)).toEqual(expected);
   });
 
-  test("prototype pollution via constructor key does not pollute Object.prototype", () => {
-    const malicious = JSON.parse('{"constructor":{"prototype":{"polluted":true}}}');
-    const result = deepMerge({}, malicious);
+  test.each([
+    ["__proto__", { polluted: true }],
+    ["constructor", { prototype: { polluted: true } }],
+    ["toString", { polluted: true }],
+  ] as const)("preserves %s as own data without changing prototypes", (key, value) => {
+    const source = JSON.parse(JSON.stringify({ [key]: value }));
+    const result = deepMerge<Record<string, unknown>>({}, source);
 
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-    expect(result).toHaveProperty("constructor");
+    expect(result.polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(Object.hasOwn(result, key)).toBe(true);
+    expect(result[key]).toEqual(value);
   });
 
   test("mixed types: source number overwrites target object", () => {

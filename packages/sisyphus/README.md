@@ -96,7 +96,7 @@ sisyphus roll --resume
 - `-p, --push` — push commits and tags (default from `release.push`)
 - `-r, --createRelease` — create a release on the git provider (default from `release.createRelease`)
 - `--noCommit` — skip the release commit (also disables tags, push, and provider release)
-- `--preview` — write changelogs, show them, then offer to revert
+- `--preview` — write changelogs, list their paths, then offer to revert; `--yes`, `--json` and non-interactive runs automatically restore the original files
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
 - `-j, --json` — print a machine-readable release report on stdout instead of the interactive output; the report carries a required `warnings` string array listing ignore exclusions, cycle-order caveats, and channel problems
 - `--resume` — reconcile and continue the active incomplete release
@@ -115,7 +115,9 @@ Npm publication requires a release commit, so it cannot be combined with `--noCo
 
 ### `sisyphus pr`
 
-Create a stone from a pull request (GitHub via the `gh` CLI, which must be installed and authenticated). Reads title, body, labels, commits, and changed files; the bump type comes from labels via `pr.labelMapping`, the title, `-b/--bump`, or a prompt. PRs matching `pr.skip` (labels, authors, title patterns) are ignored.
+Create a stone from a pull or merge request (GitHub via authenticated `gh`; GitLab via `GITLAB_TOKEN` or `glab`). Reads title, body, labels, commits, and changed files; the bump type comes from labels via `pr.labelMapping`, the title, `-b/--bump`, or a prompt. Explicit `--bump` accepts `major`, `minor`, or `patch`. PRs matching `pr.skip` (labels, authors, title patterns) are ignored.
+
+Provider file analysis preserves both sides of renames. It stops before writing a stone when it cannot establish a complete file list, including GitHub's [3,000-file response limit](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files) and [GitLab overflow responses](https://docs.gitlab.com/api/merge_requests/#retrieve-merge-request-changes).
 
 ```bash
 sisyphus pr -u https://github.com/org/repo/pull/123 -y
@@ -123,13 +125,13 @@ sisyphus pr -u https://github.com/org/repo/pull/123 -y
 
 ### `sisyphus migrate`
 
-Convert an existing `.changeset/` directory to stones and map supported changeset config (`ignore`, `commit`, `access`, `changelog`) onto the Sisyphus config. `-d, --dryRun`, `-y, --yes`.
+Convert an existing `.changeset/` directory to stones and map supported changeset config (`ignore`, `commit`, `access`, `changelog`) onto the Sisyphus config. `-d, --dryRun` previews without writing; non-interactive migration requires `-y, --yes`.
 
 ### `sisyphus actions`
 
 CI integration. `actions init` detects your provider (GitHub Actions or GitLab CI) and installs workflow templates: a create-stone workflow that turns merged PRs into stones and maintains a release PR, and a release workflow that publishes when the release PR merges (`--all`, `--createStone`, `--release`, `-d`, `-y`). `actions release-pr` creates or updates the `sisyphus/release` branch and PR from pending stones, archives the stones to `.sisyphus/released/<timestamp>/`, and records `currentRelease` in the config for a later `roll --publishOnly`.
 
-Run `actions release-pr` from a clean working tree; commit or stash local changes first. It returns to the original branch after preparing or previewing the release PR.
+Run `actions release-pr` from a clean working tree; commit or stash local changes first. It restores the original branch or detached checkout after preparing or previewing the release PR. `--dryRun` previews the fetched base without creating or resetting the local release branch.
 
 The generated GitLab workflows require `GITLAB_TOKEN` with API access and repository write permission; `SIS_PUSH_TOKEN` can supply a separate repository write credential. They configure a credential-free origin URL and a credential helper for both stone and release-branch pushes. Automatic MR detection expects GitLab's standard merge commit title and `See merge request <project>!<number>` footer. Use merge commits for release merge requests; squash, rebase and custom commit messages require adapting the rules or running the release job manually.
 

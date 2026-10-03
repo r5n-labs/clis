@@ -25,9 +25,12 @@
     "hydra:dbg": "bun --inspect-brk packages/hydra/src/cli.ts",
     "atlas": "bun --bun packages/atlas/src/cli.ts",
     "atlas:dbg": "bun --inspect-brk packages/atlas/src/cli.ts",
+    "argus": "bun --bun packages/argus/src/cli.ts",
+    "argus:dbg": "bun --inspect-brk packages/argus/src/cli.ts",
     "test": "bun test",
     "type-check": "bun --elide-lines=0 --filter '*' type-check"
   },
   "version": "0.0.0",
-  "workspaces": { "packages": ["packages/*", "tools"] }
+  "workspaces": { "packages": ["packages/*", "tools"] },
+  "patchedDependencies": { "gettext-parser@9.1.1": "patches/gettext-parser@9.1.1.patch" }
 }

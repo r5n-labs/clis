@@ -2,6 +2,7 @@ import { cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { Exit } from "@r5n/cli-core";
+import { parseNpmPackOutput } from "@r5n/tools/scripts/npm-pack-output";
 import type { Package } from "../../domain";
 import { canonicalizeJson, isEscapingPath } from "../ReleaseSource";
 import { type BuildOutputMatcher, EMPTY_BUILD_OUTPUT_MATCHER } from "./build-output-matcher";
@@ -16,19 +17,6 @@ const TAR_PREFIX_OFFSET = 345;
 const TAR_PREFIX_LENGTH = 155;
 const PACKED_MANIFEST_PATH = "package/package.json";
 const MAX_REPORTED_IGNORED_INPUTS = 20;
-
-export type NpmPackEntry = { files?: unknown; filename?: unknown; name?: unknown; version?: unknown };
-
-export function parseNpmPackOutput(stdout: string): NpmPackEntry | undefined {
-  const parsed: unknown = JSON.parse(stdout);
-  const entries: unknown[] = Array.isArray(parsed)
-    ? parsed
-    : typeof parsed === "object" && parsed !== null
-      ? Object.values(parsed)
-      : [];
-  const [entry] = entries;
-  return typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as NpmPackEntry) : undefined;
-}
 
 export async function packNpmArtifact(packageDirectory: string, artifactPath: string): Promise<PackedPackageIdentity> {
   const artifactDirectory = dirname(artifactPath);

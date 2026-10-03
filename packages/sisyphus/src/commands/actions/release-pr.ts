@@ -16,6 +16,7 @@ import {
   stripIgnoredFromStones,
   WorkspaceScanner,
 } from "../../services";
+import { getChangelogFiles } from "../../services/release/commit-meta";
 import type { PackageRelease } from "../../types";
 
 const RELEASE_BRANCH = "sisyphus/release";
@@ -45,7 +46,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
   }
 
   async execute(ctx: ReleasePrCtx) {
-    const originalRef = await this.checkoutReleaseBranch();
+    const originalRef = await this.checkoutReleaseBranch(ctx.args.dryRun);
 
     try {
       const { stones, packages } = await this.collectReleaseData(ctx);
@@ -75,7 +76,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
     }
   }
 
-  private async checkoutReleaseBranch(): Promise<string> {
+  private async checkoutReleaseBranch(dryRun: boolean): Promise<string> {
     const status = await Bun.$`git status --porcelain=v1 --untracked-files=all`.quiet();
     if (status.stdout.length > 0) {
       throw new Exit(
@@ -90,7 +91,8 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const baseBranch = await provider.getDefaultBranch();
 
     await Bun.$`git fetch origin ${baseBranch}`;
-    await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
+    if (dryRun) await Bun.$`git checkout --detach origin/${baseBranch}`;
+    else await Bun.$`git checkout -B ${RELEASE_BRANCH} origin/${baseBranch}`;
 
     return originalRef;
   }
@@ -137,22 +139,27 @@ export class ActionsReleasePrCommand extends BaseCommand {
     const s = spinner();
     s.start("Applying release changes...");
 
-    const sourceFiles = [
-      ...(await this.updatePackages(packages)),
-      ...(await this.generateChangelogs(ctx, stones, packages)),
-    ];
-    const timestamp = await this.archiveStones(ctx, stones);
-    await this.stageFiles(sourceFiles);
-    await this.recordCurrentRelease(ctx, stones, packages, timestamp);
-    await this.stageFiles([ctx.config.get("sisyphusDir")]);
+    try {
+      const sourceFiles = [
+        ...(await this.updatePackages(packages)),
+        ...(await this.generateChangelogs(ctx, stones, packages)),
+      ];
+      const timestamp = await this.archiveStones(ctx, stones);
+      await this.stageFiles(sourceFiles);
+      await this.recordCurrentRelease(ctx, stones, packages, timestamp);
+      await this.stageFiles([ctx.config.get("sisyphusDir")]);
 
-    const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
-    if (hasChanges.exitCode !== 0) {
-      await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
+      const hasChanges = await Bun.$`git diff --cached --quiet`.nothrow();
+      if (hasChanges.exitCode !== 0) {
+        await Bun.$`git commit -m ${`${PR_TITLE_PREFIX} prepare release`}`;
+      }
+
+      await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
+      s.stop("Release branch ready");
+    } catch (error) {
+      s.error("Release preparation failed");
+      throw error;
     }
-
-    await Bun.$`git push origin ${RELEASE_BRANCH} --force`;
-    s.stop("Release branch ready");
   }
 
   private async createOrUpdatePr(title: string, body: string) {
@@ -283,7 +290,7 @@ export class ActionsReleasePrCommand extends BaseCommand {
 
     const generator = new ChangelogGenerator(changelogConfig);
     await generator.generate(stones, packages);
-    return [changelogConfig.filename, `**/${changelogConfig.filename}`];
+    return getChangelogFiles(changelogConfig, packages);
   }
 
   private async archiveStones(ctx: ReleasePrCtx, stones: Stone[]): Promise<string> {

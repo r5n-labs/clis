@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { record, unknown } from "banditypes";
+import { instance } from "banditypes";
 import { deepMerge } from "./util";
 import { updateJson } from "./util/json-format";
 
 const JSON_INDENT = 2;
-const configSchema = record(unknown());
+const configSchema = instance(Object);
 
 export class ConfigManager<T extends object> {
   private config: T;
@@ -29,7 +29,7 @@ export class ConfigManager<T extends object> {
   }
 
   public set<K extends keyof T>(key: K, value: T[K]): void {
-    this.config[key] = value;
+    this.config = { ...this.config, [key]: value };
     this.save();
   }
 

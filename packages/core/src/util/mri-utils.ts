@@ -2,7 +2,7 @@ import mri from "mri";
 import type { ArgDefinition, ArgValue, PositionalDefinition } from "../command";
 import { Exit } from "../exit";
 
-export type MriOptions = {
+type MriOptions = {
   alias: Record<string, string>;
   boolean: string[];
   string: string[];
@@ -16,12 +16,13 @@ export type GlobalParseResult = { command: string | undefined; flags: ParsedArgs
 export type CommandParseResult = { args: ParsedArgs; rawPositionals: string[] };
 
 const SHORT_FLAG_LENGTH = 1;
+const LONG_FLAG_PREFIX_LENGTH = 2;
 
 export function toKebabCase(str: string): string {
   return str.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
 }
 
-export function buildMriOptions(argDefs: Record<string, ArgDefinition>): MriOptions {
+function buildMriOptions(argDefs: Record<string, ArgDefinition>): MriOptions {
   const opts: MriOptions = { alias: {}, boolean: [], default: {}, string: [] };
 
   for (const [key, def] of Object.entries(argDefs)) {
@@ -60,7 +61,7 @@ export function validateKnownArgs(
   if (unknown !== undefined) throw new Exit(`Unknown option: ${resolveFlagToken(unknown, argDefs)}`, hint);
 }
 
-export function convertNumbers(args: Record<string, ArgValue>, argDefs: Record<string, ArgDefinition>): ParsedArgs {
+function convertNumbers(args: Record<string, ArgValue>, argDefs: Record<string, ArgDefinition>): ParsedArgs {
   for (const [key, value] of Object.entries(args)) {
     if (Array.isArray(value)) {
       throw new Exit(`${resolveFlagToken(key, argDefs)} can only be provided once`);
@@ -92,6 +93,7 @@ export function convertNumbers(args: Record<string, ArgValue>, argDefs: Record<s
 
 export function parseGlobalArgs(argv: string[], globalArgs: Record<string, ArgDefinition>): GlobalParseResult {
   const opts = buildMriOptions(globalArgs);
+  validateOccurrences(argv, opts, globalArgs, true);
   const parsed = mri(argv, opts);
 
   const command = parsed._[0] as string | undefined;
@@ -111,12 +113,41 @@ export function parseGlobalArgs(argv: string[], globalArgs: Record<string, ArgDe
 
 export function parseCommandArgs(argv: string[], argDefs: Record<string, ArgDefinition> = {}): CommandParseResult {
   const opts = buildMriOptions(argDefs);
-  const parsed = mri(normaliseNegatedAliases(argv, opts), opts);
+  const normalised = normaliseNegatedAliases(argv, opts);
+  validateOccurrences(normalised, opts, argDefs);
+  const parsed = mri(normalised, opts);
 
   const { _: rawPositionals, ...stringArgs } = parsed;
   const args = convertNumbers(stringArgs as Record<string, ArgValue>, argDefs);
 
   return { args, rawPositionals: rawPositionals as string[] };
+}
+
+function validateOccurrences(
+  argv: string[],
+  options: MriOptions,
+  definitions: Record<string, ArgDefinition>,
+  knownOnly = false,
+): void {
+  const seen = new Set<string>();
+  for (const token of argv) {
+    if (token === "--") break;
+    const prefix = token.match(/^-+/)?.[0];
+    if (!prefix) continue;
+    const body = token.slice(prefix.length);
+    const name = body.split("=", SHORT_FLAG_LENGTH)[0] ?? "";
+    const names = body.startsWith("no-")
+      ? [body.slice("no-".length)]
+      : prefix.length === LONG_FLAG_PREFIX_LENGTH
+        ? [name]
+        : [...name];
+    for (const spelling of names) {
+      const canonical = Object.hasOwn(options.alias, spelling) ? (options.alias[spelling] ?? spelling) : spelling;
+      if (knownOnly && !Object.hasOwn(definitions, canonical)) continue;
+      if (seen.has(canonical)) throw new Exit(`${resolveFlagToken(canonical, definitions)} can only be provided once`);
+      seen.add(canonical);
+    }
+  }
 }
 
 function normaliseNegatedAliases(argv: string[], opts: MriOptions): string[] {

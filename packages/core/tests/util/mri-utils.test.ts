@@ -2,51 +2,29 @@ import { describe, expect, test } from "bun:test";
 import type { ArgDefinition } from "../../src/command/args";
 import type { PositionalDefinition } from "../../src/command/positionals";
 import { Exit } from "../../src/exit";
-import {
-  buildMriOptions,
-  convertNumbers,
-  mapPositionals,
-  parseCommandArgs,
-  parseGlobalArgs,
-  validatePositionals,
-} from "../../src/util/mri-utils";
+import { mapPositionals, parseCommandArgs, parseGlobalArgs, validatePositionals } from "../../src/util/mri-utils";
 
-describe("buildMriOptions", () => {
-  test("boolean args go to boolean array", () => {
-    const defs: Record<string, ArgDefinition> = { debug: { type: "boolean" }, verbose: { type: "boolean" } };
-
-    expect(buildMriOptions(defs)).toMatchObject({ boolean: ["debug", "verbose"], string: [] });
-  });
-
-  test("string and number args go to string array", () => {
-    const defs: Record<string, ArgDefinition> = { count: { type: "number" }, name: { type: "string" } };
-
-    expect(buildMriOptions(defs)).toMatchObject({ boolean: [], string: ["count", "name"] });
-  });
-
-  test("aliases registered correctly", () => {
-    const defs: Record<string, ArgDefinition> = {
-      output: { alias: "o", type: "string" },
-      verbose: { alias: "v", type: "boolean" },
+describe("parseCommandArgs", () => {
+  test.each([
+    { argv: [], expected: { count: 10, dryRun: false } },
+    {
+      argv: ["-o", "build", "-d", "-c", "42", "--already-kebab", "plain"],
+      expected: { count: 42, dryRun: true, outputDir: "build", "already-kebab": "plain" },
+    },
+    { argv: ["--output-dir=build", "--dry-run"], expected: { count: 10, dryRun: true, outputDir: "build" } },
+    { argv: ["--outputDir=build", "--dryRun=false"], expected: { count: 10, dryRun: false, outputDir: "build" } },
+  ])("parses typed values, aliases and defaults: %j", ({ argv, expected }) => {
+    const definitions: Record<string, ArgDefinition> = {
+      "already-kebab": { type: "string" },
+      count: { alias: "c", default: 10, type: "number" },
+      dryRun: { alias: "d", default: false, type: "boolean" },
+      outputDir: { alias: "o", type: "string" },
     };
-
-    expect(buildMriOptions(defs).alias).toMatchObject({ o: "output", v: "verbose" });
+    expect(parseCommandArgs([...argv], definitions).args).toMatchObject(expected);
   });
 
-  test("camelCase auto-generates kebab-case alias", () => {
-    const defs: Record<string, ArgDefinition> = { dryRun: { type: "boolean" }, outputDir: { type: "string" } };
-
-    expect(buildMriOptions(defs).alias).toMatchObject({ "dry-run": "dryRun", "output-dir": "outputDir" });
-  });
-
-  test("defaults populated", () => {
-    const defs: Record<string, ArgDefinition> = {
-      count: { default: 10, type: "number" },
-      name: { type: "string" },
-      verbose: { default: false, type: "boolean" },
-    };
-    const opts = buildMriOptions(defs);
-    expect(opts.default).toEqual({ count: 10, verbose: false });
+  test("leaves an unprovided numeric option without a default absent", () => {
+    expect(parseCommandArgs([], { count: { type: "number" } }).args.count).toBeUndefined();
   });
 });
 
@@ -73,7 +51,36 @@ describe("declared no-* boolean aliases", () => {
   });
 });
 
-describe("convertNumbers", () => {
+describe("argument validation", () => {
+  test.each([
+    { argv: ["--no-npm", "--no-npm"] },
+    { argv: ["--npm", "--no-npm"] },
+    { argv: ["--no-npm", "--npm"] },
+    { argv: ["--npm", "-n"] },
+    { argv: ["-n", "--npm"] },
+    { argv: ["-n", "--no-npm"] },
+    { argv: ["--no-n", "--npm=false"] },
+    { argv: ["-nn"] },
+  ])("rejects repeated positive, negative and aliased options: %j", ({ argv }) => {
+    const defs: Record<string, ArgDefinition> = { npm: { alias: "n", default: true, type: "boolean" } };
+    expect(() => parseCommandArgs([...argv], defs)).toThrow("--npm can only be provided once");
+  });
+
+  test("rejects a repeated camelCase option across its automatic alias", () => {
+    const defs: Record<string, ArgDefinition> = { dryRun: { default: false, type: "boolean" } };
+    expect(() => parseCommandArgs(["--dry-run", "--dryRun"], defs)).toThrow("--dry-run can only be provided once");
+  });
+
+  test("keeps inline values, defaults and child flags outside occurrence validation", () => {
+    const defs: Record<string, ArgDefinition> = {
+      npm: { alias: "n", default: true, type: "boolean" },
+      output: { type: "string" },
+    };
+    const parsed = parseCommandArgs(["--output=--npm", "--npm=false", "--", "--npm", "-n"], defs);
+    expect(parsed.args).toMatchObject({ npm: false, output: "--npm" });
+    expect(parsed.rawPositionals).toEqual(["--npm", "-n"]);
+  });
+
   test.each([
     { argv: ["--retention-days"] },
     { argv: ["--retention-days="] },
@@ -81,6 +88,7 @@ describe("convertNumbers", () => {
     { argv: ["--retention-days", "Infinity"] },
     { argv: ["--retention-days=-Infinity"] },
     { argv: ["--retention-days", "1e999"] },
+    { argv: ["--retention-days", "abc"] },
     { argv: ["--no-retention-days"] },
     { argv: ["--retention-days", "-1"] },
     { argv: ["-d"] },
@@ -98,29 +106,6 @@ describe("convertNumbers", () => {
   ])("preserves finite numeric values and defaults: %j", ({ argv, expected }) => {
     const defs: Record<string, ArgDefinition> = { retentionDays: { alias: "d", default: 30, type: "number" } };
     expect(parseCommandArgs([...argv], defs).args.retentionDays).toBe(expected);
-  });
-
-  test("converts string '42' to number 42", () => {
-    const defs: Record<string, ArgDefinition> = { count: { type: "number" } };
-    const result = convertNumbers({ count: "42" }, defs);
-    expect(result.count).toBe(42);
-  });
-
-  test("throws on invalid number (NaN)", () => {
-    const defs: Record<string, ArgDefinition> = { count: { type: "number" } };
-    expect(() => convertNumbers({ count: "abc" }, defs)).toThrow('Invalid number for --count: "abc"');
-  });
-
-  test("skips boolean and string types", () => {
-    const defs: Record<string, ArgDefinition> = { name: { type: "string" }, verbose: { type: "boolean" } };
-
-    expect(convertNumbers({ name: "hello", verbose: true }, defs)).toMatchObject({ name: "hello", verbose: true });
-  });
-
-  test("skips undefined values", () => {
-    const defs: Record<string, ArgDefinition> = { count: { type: "number" } };
-    const result = convertNumbers({} as Record<string, string | boolean>, defs);
-    expect(result.count).toBeUndefined();
   });
 
   test("throws Exit when a long flag is repeated", () => {
@@ -142,11 +127,9 @@ describe("convertNumbers", () => {
     expect(() => parseCommandArgs(["-d", "-d"], defs)).toThrow("--dry-run can only be provided once");
   });
 
-  test("resolves alias keys handed straight to convertNumbers", () => {
+  test("rejects repeated string aliases using the canonical diagnostic", () => {
     const defs: Record<string, ArgDefinition> = { output: { alias: "o", type: "string" } };
-    const repeated = { o: ["a", "b"] } as unknown as Record<string, string | boolean>;
-
-    expect(() => convertNumbers(repeated, defs)).toThrow("--output can only be provided once");
+    expect(() => parseCommandArgs(["-o", "a", "--output", "b"], defs)).toThrow("--output can only be provided once");
   });
 
   test("undefined short flag keeps a single dash", () => {
@@ -161,6 +144,15 @@ describe("parseGlobalArgs", () => {
 
   test("repeated global flag reports the canonical long flag", () => {
     expect(() => parseGlobalArgs(["-h", "-h"], globals)).toThrow("--help can only be provided once");
+  });
+
+  test.each([
+    { argv: ["--help", "-h"] },
+    { argv: ["-h", "--no-help"] },
+    { argv: ["--no-help", "--no-help"] },
+    { argv: ["-hh"] },
+  ])("rejects repeated global spellings: %j", ({ argv }) => {
+    expect(() => parseGlobalArgs([...argv], globals)).toThrow("--help can only be provided once");
   });
 
   test("repeated command flags are left to the command parse", () => {
@@ -242,19 +234,5 @@ describe("validatePositionals", () => {
     const defs: Record<string, PositionalDefinition> = { optional: { required: false } };
     const result = validatePositionals({ optional: undefined }, defs);
     expect(result).toBeNull();
-  });
-});
-
-describe("toKebabCase (via buildMriOptions)", () => {
-  test("camelCase generates kebab-case alias", () => {
-    const defs: Record<string, ArgDefinition> = { myLongOption: { type: "string" } };
-    const opts = buildMriOptions(defs);
-    expect(opts.alias["my-long-option"]).toBe("myLongOption");
-  });
-
-  test("already kebab-case does not produce duplicate alias", () => {
-    const defs: Record<string, ArgDefinition> = { "already-kebab": { type: "string" } };
-    const opts = buildMriOptions(defs);
-    expect(opts.alias["already-kebab"]).toBeUndefined();
   });
 });

@@ -125,6 +125,27 @@ describe("Commit.withBody", () => {
 
     expect(original.withBody(undefined).body).toBeUndefined();
   });
+
+  test("recomputes footer-only breaking status when the body is replaced", () => {
+    const original = Commit.parse(HASH, "fix: change API", AUTHOR);
+    const breaking = original.withBody("Details\n\nBREAKING CHANGE: remove the old API").withFiles(["src/api.ts"]);
+
+    expect(breaking).toMatchObject({ breaking: true, files: ["src/api.ts"] });
+    expect(original.breaking).toBe(false);
+    expect(breaking.withBody(undefined)).toMatchObject({ body: undefined, breaking: false });
+    expect(breaking.withBody("Compatible replacement").breaking).toBe(false);
+    expect(Commit.parse(HASH, "fix!: change API", AUTHOR).withBody(undefined).breaking).toBe(true);
+  });
+
+  test.each([
+    "The words BREAKING CHANGE: in prose are not a footer",
+    "breaking change: lowercase marker",
+    "BREAKING CHANGE:",
+    "BREAKING CHANGE:   ",
+    "BREAKING-CHANGE:no separator",
+  ])("does not treat %j as a breaking footer", (body) => {
+    expect(Commit.parse(HASH, "fix: retain API", AUTHOR).withBody(body).breaking).toBe(false);
+  });
 });
 
 describe("Commit.toInfo", () => {

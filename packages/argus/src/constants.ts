@@ -1,0 +1,13 @@
+export const CONFIG_VERSION = 1;
+export const CACHE_VERSION = 1;
+export const CONTEXT_VERSION = 1;
+export const ARGUS_DIR = ".argus";
+export const DEFAULT_MODEL = "jev-1.13.0";
+export const API_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+export const MAX_QUESTIONS = 32;
+export const MAX_REQUEST_BYTES = 100_000;
+export const REQUEST_TIMEOUT_MS = 60_000;
+export const JSON_INDENT = 2;
+export const ONE_BASED_LINE = 1;
+export const GROUPS = ["methods", "classes", "files", "tests", "resources", "translations", "changes"] as const;
+export const CONTEXT_MODES = ["target", "class", "references", "file"] as const;
