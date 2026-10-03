@@ -1,27 +1,30 @@
 import { Exit } from "@r5n/cli-core";
-import { API_ENDPOINT, REQUEST_TIMEOUT_MS } from "../../constants";
+import { REQUEST_TIMEOUT_MS } from "../../constants";
 import type { ApiPayload } from "../../domain/review-plan";
-import { RequestScheduler } from "./RequestScheduler";
-import { DEFAULT_RETRIES, httpFailure, MAX_RETRIES, RequestFailure, type RetryNotice, retryDelay } from "./retries";
+import type { Evaluator } from "../Evaluator";
+import { RequestScheduler } from "../RequestScheduler";
+import { DEFAULT_RETRIES, httpFailure, MAX_RETRIES, RequestFailure, type RetryNotice, retryDelay } from "../retries";
+import { serialisePayload } from "./payload";
 import type { ApiResponse } from "./schemas";
 import { parseResponse } from "./schemas";
 
-type ClientOptions = { retries?: number; scheduler?: RequestScheduler; onRetry?: (notice: RetryNotice) => void };
+export type ClientOptions = { retries?: number; scheduler?: RequestScheduler; onRetry?: (notice: RetryNotice) => void };
+type Provider = {
+  name: string;
+  key: string;
+  endpoint: (payload: ApiPayload) => string;
+  unwrap: (value: unknown, payload: ApiPayload) => unknown;
+};
 
-export interface Evaluator {
-  evaluate(payload: ApiPayload): Promise<ApiResponse>;
-}
-
-export class JevClient implements Evaluator {
+export class SystemOneClient implements Evaluator {
   private readonly scheduler: RequestScheduler;
   private readonly retries: number;
 
   constructor(
-    private readonly key: string,
+    private readonly provider: Provider,
     private readonly transport: typeof fetch = fetch,
     private readonly options: ClientOptions = {},
   ) {
-    if (!key || /\s/.test(key)) throw new Exit("Set TYPESAFE_API_KEY to a valid API key");
     this.scheduler = options.scheduler ?? new RequestScheduler();
     this.retries = options.retries ?? DEFAULT_RETRIES;
     if (!Number.isSafeInteger(this.retries) || this.retries < 0 || this.retries > MAX_RETRIES)
@@ -29,12 +32,13 @@ export class JevClient implements Evaluator {
   }
 
   async evaluate(payload: ApiPayload): Promise<ApiResponse> {
-    const body = JSON.stringify(payload);
+    const body = serialisePayload(payload);
+    const endpoint = this.provider.endpoint(payload);
     const bytes = Buffer.byteLength(body);
     for (let attempt = 0; ; attempt++) {
       await this.scheduler.acquire(bytes);
       try {
-        return await this.request(payload, body);
+        return await this.request(payload, body, endpoint);
       } catch (error) {
         if (!(error instanceof RequestFailure)) throw error;
         if (!error.retryable || attempt >= this.retries)
@@ -49,21 +53,21 @@ export class JevClient implements Evaluator {
     }
   }
 
-  private async request(payload: ApiPayload, body: string): Promise<ApiResponse> {
+  private async request(payload: ApiPayload, body: string, endpoint: string): Promise<ApiResponse> {
     let response: Response;
     try {
-      response = await this.transport(API_ENDPOINT, {
+      response = await this.transport(endpoint, {
         method: "POST",
         redirect: "error",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        headers: { Authorization: `Bearer ${this.key}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${this.provider.key}`, "Content-Type": "application/json" },
         body,
       });
     } catch {
-      throw new RequestFailure("Jev request failed or timed out", true);
+      throw new RequestFailure(`${this.provider.name} request failed or timed out`, true);
     }
     if (!response.ok) {
-      const failure = httpFailure(response, this.scheduler.now());
+      const failure = httpFailure(response, this.scheduler.now(), this.provider.name);
       try {
         await response.body?.cancel();
       } catch {
@@ -72,9 +76,10 @@ export class JevClient implements Evaluator {
       throw failure;
     }
     try {
-      return parseResponse(await response.json(), payload);
-    } catch {
-      throw new RequestFailure("Jev returned an invalid response", true);
+      return parseResponse(this.provider.unwrap(await response.json(), payload), payload);
+    } catch (error) {
+      if (error instanceof RequestFailure) throw error;
+      throw new RequestFailure(`${this.provider.name} returned an invalid response`, true);
     }
   }
 }

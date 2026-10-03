@@ -6,6 +6,7 @@ import type { ContextMode, Question } from "../domain/question";
 import { REVIEW_QUEUES, type ReviewQueue } from "../domain/review-queue";
 import { withReviewQueues } from "../presets/review-queues";
 import { upgradeBundledQuestion } from "../presets/upgrades";
+import { resolveModel } from "../providers/models";
 import type { ArgusConfig } from "./types";
 
 export function record(value: unknown, label: string): Record<string, unknown> {
@@ -122,13 +123,13 @@ export function parseConfig(value: unknown): ArgusConfig {
   ]);
   const questions = closed(raw.questions, "questions", GROUPS);
   if (raw.$schema !== undefined) textValue(raw.$schema);
-  return object<ArgusConfig>({
+  const config = object<ArgusConfig>({
     version: (v) => {
       if (v !== CONFIG_VERSION) throw new Exit(`Expected config version ${CONFIG_VERSION}`);
       return v;
     },
     root: textValue,
-    model: (v) => textValue(v ?? DEFAULT_MODEL),
+    model: (v) => resolveModel(textValue(v ?? DEFAULT_MODEL)).id,
     include: (v) => strings(v ?? DEFAULT_INCLUDE),
     exclude: (v) => strings(v ?? DEFAULT_EXCLUDE),
     maxQuestions: (v) => positiveInteger(v ?? MAX_QUESTIONS),
@@ -145,4 +146,9 @@ export function parseConfig(value: unknown): ArgusConfig {
         }),
       ) as ArgusConfig["questions"],
   })(raw);
+  const model = resolveModel(config.model);
+  for (const question of Object.values(config.questions).flat())
+    if (Object.keys(question.criteria).length > model.maxChoices)
+      throw new Exit(`Question ${question.id} exceeds ${model.id}'s limit of ${model.maxChoices} choices`);
+  return config;
 }

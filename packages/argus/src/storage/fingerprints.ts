@@ -3,6 +3,7 @@ import { CONTEXT_VERSION } from "../constants";
 import type { Question } from "../domain/question";
 import type { ReviewContext } from "../domain/review-plan";
 import type { SourceTarget } from "../domain/source-target";
+import { resolveModel } from "../providers/models";
 
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -26,7 +27,7 @@ export function fingerprint(value: unknown): string {
 export function questionFingerprint(question: Question, model: string): string {
   return fingerprint({
     version: CONTEXT_VERSION,
-    model,
+    model: resolveModel(model).id,
     type: question.type,
     instructions: question.instructions,
     criteria: question.criteria,

@@ -13,7 +13,7 @@ class ArgusCLI extends AbstractCLI {
       name: "Argus",
       version,
       clearOnStart: false,
-      description: "Incremental, syntax-aware code reviews with Jev",
+      description: "Incremental, syntax-aware code reviews with decision models",
     });
   }
 

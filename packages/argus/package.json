@@ -1,6 +1,6 @@
 {
   "bin": { "argus": "dist/cli.js" },
-  "description": "Argus CLI - Incremental, syntax-aware code reviews with Jev",
+  "description": "Argus CLI - Incremental, syntax-aware code reviews with decision models",
   "devDependencies": {
     "@r5n/cli-core": "workspace:*",
     "@r5n/tools": "workspace:*",

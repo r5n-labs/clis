@@ -1,5 +1,5 @@
 import { clearLine, cursorTo } from "node:readline";
-import type { RetryNotice } from "../providers/jev/retries";
+import type { RetryNotice } from "../providers/retries";
 
 const BAR_WIDTH = 24;
 const DEFAULT_COLUMNS = 80;

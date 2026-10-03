@@ -6,7 +6,7 @@ import { createAnalysis } from "../src/composition/analysis";
 import type { LoadedConfig } from "../src/config/types";
 import type { ApiPayload } from "../src/domain/review-plan";
 import { defaultConfig } from "../src/presets";
-import type { ApiResponse } from "../src/providers/jev/schemas";
+import type { ApiResponse } from "../src/providers/systemone/schemas";
 import { ProjectScanner } from "../src/services/ProjectScanner";
 import { ReviewPlanner } from "../src/services/ReviewPlanner";
 import { EvaluationStore } from "../src/storage/EvaluationStore";
@@ -19,7 +19,13 @@ export async function cli(cwd: string, args: string[]) {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...Bun.env, TYPESAFE_API_KEY: "" },
+    env: {
+      ...Bun.env,
+      TYPESAFE_API_KEY: "",
+      CLOUDFLARE_ACCOUNT_ID: "",
+      CLOUDFLARE_API_TOKEN: "",
+      CLOUDFLARE_AUTH_TOKEN: "",
+    },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),

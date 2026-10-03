@@ -104,36 +104,43 @@ test("questions sharing context are batched after cached questions are removed",
   );
 });
 
-test("request limits accept exact question and UTF-8 byte boundaries and split one byte over", async () => {
-  const f = fixture();
-  f.write("example.gd", 'func greeting():\n    return "Cześć 👋"\n');
-  const naming = f.loaded.config.questions.methods[0];
-  if (!naming) throw new Error("Missing naming preset");
-  f.loaded.config.questions.methods.push({ ...naming, id: "other", instructions: "Another question" });
-  const plan = await f.plan();
-  const batcher = new RequestBatcher();
-  const batch = batcher.batches(plan, f.loaded.config)[0];
-  if (!batch) throw new Error("Missing request");
-  const serialised = JSON.stringify(batch.payload);
-  const exactBytes = Buffer.byteLength(serialised);
-  expect(exactBytes).toBeGreaterThan(serialised.length);
-  const limits = { ...f.loaded.config, maxQuestions: 2, maxRequestBytes: exactBytes };
-  expect(batcher.batches(plan, limits).map((entry) => entry.payload)).toEqual([batch.payload]);
-  const split = batcher.batches(plan, { ...limits, maxRequestBytes: exactBytes - 1 });
-  expect(split.map((entry) => entry.items.length)).toEqual([1, 1]);
-  expect(split.flatMap((entry) => entry.items)).toEqual(batch.items);
-  for (const entry of split) expect(Buffer.byteLength(JSON.stringify(entry.payload))).toBeLessThan(exactBytes);
-  expect(batcher.batches(plan, { ...limits, maxQuestions: 1 }).map((entry) => entry.items.length)).toEqual([1, 1]);
-  const single = split[0];
-  if (!single) throw new Error("Missing single-question request");
-  const singlePlan = { ...plan, items: single.items };
-  const singleBytes = Buffer.byteLength(JSON.stringify(single.payload));
-  expect(batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes })[0]?.payload).toEqual(single.payload);
-  expect(() => batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes - 1 })).toThrow(
-    "Context too large",
-  );
-  expect(existsSync(f.store.directory)).toBe(false);
-});
+test.each(["jev-1.13.0", "clef"])(
+  "%s request limits accept exact question and UTF-8 byte boundaries and split one byte over",
+  async (model) => {
+    const f = fixture();
+    f.loaded.config.model = model;
+    f.write("example.gd", 'func greeting():\n    return "Cześć 👋"\n');
+    const naming = f.loaded.config.questions.methods[0];
+    if (!naming) throw new Error("Missing naming preset");
+    f.loaded.config.questions.methods.push({ ...naming, id: "other", instructions: "Another question" });
+    const plan = await f.plan();
+    const batcher = new RequestBatcher();
+    const batch = batcher.batches(plan, f.loaded.config)[0];
+    if (!batch) throw new Error("Missing request");
+    const serialised = JSON.stringify({ ...batch.payload, model });
+    const exactBytes = Buffer.byteLength(serialised);
+    expect(exactBytes).toBeGreaterThan(serialised.length);
+    const limits = { ...f.loaded.config, maxQuestions: 2, maxRequestBytes: exactBytes };
+    expect(batcher.batches(plan, limits).map((entry) => entry.payload)).toEqual([batch.payload]);
+    const split = batcher.batches(plan, { ...limits, maxRequestBytes: exactBytes - 1 });
+    expect(split.map((entry) => entry.items.length)).toEqual([1, 1]);
+    expect(split.flatMap((entry) => entry.items)).toEqual(batch.items);
+    for (const entry of split)
+      expect(Buffer.byteLength(JSON.stringify({ ...entry.payload, model }))).toBeLessThan(exactBytes);
+    expect(batcher.batches(plan, { ...limits, maxQuestions: 1 }).map((entry) => entry.items.length)).toEqual([1, 1]);
+    const single = split[0];
+    if (!single) throw new Error("Missing single-question request");
+    const singlePlan = { ...plan, items: single.items };
+    const singleBytes = Buffer.byteLength(JSON.stringify({ ...single.payload, model }));
+    expect(batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes })[0]?.payload).toEqual(
+      single.payload,
+    );
+    expect(() => batcher.batches(singlePlan, { ...limits, maxRequestBytes: singleBytes - 1 })).toThrow(
+      "Context too large",
+    );
+    expect(existsSync(f.store.directory)).toBe(false);
+  },
+);
 
 test("partial failures preserve completed work and lock prevents concurrent billing", async () => {
   const f = fixture();
@@ -156,30 +163,41 @@ test("partial failures preserve completed work and lock prevents concurrent bill
   expect(new RequestBatcher().batches(resumed, f.loaded.config)).toHaveLength(1);
 });
 
-test("a saved response is recovered without billing again after an evaluation write fails", async () => {
-  const f = fixture();
-  f.write("example.gd", "func value():\n    return 1\n");
-  class FailingStore extends EvaluationStore {
-    override save(): void {
-      throw new Error("disk full");
+test.each([
+  ["jev-1.13.0", "jev-1.13.0"],
+  ["clef", "@cf/cloudflare/clef"],
+])(
+  "a saved %s response is recovered as %s without billing again after an evaluation write fails",
+  async (model, alias) => {
+    const f = fixture();
+    f.loaded.config.model = model;
+    f.write("example.gd", "func value():\n    return 1\n");
+    class FailingStore extends EvaluationStore {
+      override save(): void {
+        throw new Error("disk full");
+      }
     }
-  }
-  let calls = 0;
-  const client = {
-    async evaluate(payload: Parameters<typeof response>[0]) {
-      calls++;
-      return response(payload);
-    },
-  };
-  const plan = await f.plan();
-  const batches = new RequestBatcher().batches(plan, f.loaded.config);
-  await expect(new ReviewRunner(new FailingStore(f.store.directory), client).run(plan, batches)).rejects.toThrow(
-    "disk full",
-  );
-  await new ReviewRunner(f.store, client).run(plan, batches);
-  expect(calls).toBe(1);
-  expect(plan.items[0]?.evaluation).toBeDefined();
-});
+    let calls = 0;
+    const client = {
+      async evaluate(payload: Parameters<typeof response>[0]) {
+        calls++;
+        return response(payload);
+      },
+    };
+    const plan = await f.plan();
+    const batches = new RequestBatcher().batches(plan, f.loaded.config);
+    await expect(new ReviewRunner(new FailingStore(f.store.directory), client).run(plan, batches)).rejects.toThrow(
+      "disk full",
+    );
+    f.loaded.config.model = alias;
+    const resumed = { ...plan, model: alias };
+    const resumedBatches = new RequestBatcher().batches(resumed, f.loaded.config);
+    expect(resumedBatches.map((batch) => batch.id)).toEqual(batches.map((batch) => batch.id));
+    await new ReviewRunner(f.store, client).run(resumed, resumedBatches);
+    expect(calls).toBe(1);
+    expect(resumed.items[0]?.evaluation).toBeDefined();
+  },
+);
 
 test("model changes invalidate answers and source symlinks are not followed", async () => {
   const f = fixture();

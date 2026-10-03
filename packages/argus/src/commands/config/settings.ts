@@ -29,7 +29,7 @@ export async function promptSetting(config: ArgusConfig, key?: Setting): Promise
     case "root":
       return { key: field, value: await promptText("Project root (relative to the config file)", config.root) };
     case "model":
-      return { key: field, value: await promptText("Jev model", config.model) };
+      return { key: field, value: await promptText("Review model (Jev, clef or clef-flash)", config.model) };
     case "include":
     case "exclude":
       return { key: field, value: await promptList(`${field} file patterns`, config[field]) };

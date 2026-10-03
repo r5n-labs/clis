@@ -25,7 +25,7 @@ export async function promptQuestion(existing?: Question): Promise<Question> {
     : parseQuestion({
         id: await promptText("Question ID"),
         type: "choice",
-        instructions: await promptText("What should Jev evaluate?"),
+        instructions: await promptText("What should the model evaluate?"),
         criteria: await promptCriteria({}),
       });
   while (true) {

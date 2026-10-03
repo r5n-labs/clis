@@ -8,7 +8,12 @@
     "$schema": { "type": "string" },
     "version": { "const": 1 },
     "root": { "type": "string", "minLength": 1, "description": "Project root, relative to this config file" },
-    "model": { "type": "string", "minLength": 1, "default": "jev-1.13.0" },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "default": "jev-1.13.0",
+      "description": "TypeSafe model ID, or clef / clef-flash on Cloudflare Workers AI. Cloudflare's canonical @cf/cloudflare/... IDs are also accepted."
+    },
     "include": { "$ref": "#/$defs/strings" },
     "exclude": { "$ref": "#/$defs/strings" },
     "maxQuestions": { "type": "integer", "minimum": 1, "default": 32 },

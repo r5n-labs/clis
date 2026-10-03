@@ -4,8 +4,9 @@ import { parseArgs } from "node:util";
 import { readJson } from "../src/config/loader";
 import { DEFAULT_MODEL } from "../src/constants";
 import { presetQuestions } from "../src/presets";
-import { JevClient } from "../src/providers/jev/JevClient";
-import { parseResponse } from "../src/providers/jev/schemas";
+import { createEvaluator } from "../src/providers/create-evaluator";
+import { resolveModel } from "../src/providers/models";
+import { parseResponse } from "../src/providers/systemone/schemas";
 import { writeJson } from "../src/storage/EvaluationStore";
 import { fingerprint } from "../src/storage/fingerprints";
 import { CASES } from "./cases";
@@ -23,13 +24,14 @@ const { values } = parseArgs({
 if (!values.output)
   throw new Error("Pass --output <isolated benchmark directory>; --live explicitly enables paid API requests");
 const output = resolve(values.output);
-const client = values.live ? new JevClient(process.env.TYPESAFE_API_KEY?.trim() ?? "") : undefined;
+const model = resolveModel(values.model ?? DEFAULT_MODEL).id;
+const client = values.live ? createEvaluator(model) : undefined;
 const rows = [];
 for (const example of CASES) {
   const question = presetQuestions([example.preset])[0]?.question;
   if (!question) throw new Error(`Unknown preset ${example.preset}`);
   const payload = {
-    model: values.model ?? DEFAULT_MODEL,
+    model,
     state: example.context,
     questions: {
       q0: {

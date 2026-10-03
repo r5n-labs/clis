@@ -1,6 +1,6 @@
-# Analysis boundaries
+# Argus architecture
 
-Argus keeps review orchestration independent of programming languages, file formats and frameworks. The shared pipeline accepts an `AnalysisServices` implementation. Production registration lives in `src/composition/analysis.ts`; the shipped include/exclude profile is separate data in `src/composition/scan-profile.ts`.
+Argus keeps review orchestration independent of programming languages, file formats, frameworks and model providers. The source-analysis pipeline accepts an `AnalysisServices` implementation. Production registration lives in `src/composition/analysis.ts`; the shipped include/exclude profile is separate data in `src/composition/scan-profile.ts`.
 
 | Owner | Responsibility | Extension contract |
 | --- | --- | --- |
@@ -41,10 +41,20 @@ The TypeScript adapter uses pinned, patched TypeScript and TSX grammars checked 
 
 Run `bun test packages/argus/tests`, `bun --filter @r5n/argus type-check` and `bun biome check packages/argus` after extending these contracts. If a real language feature needs a new capability, extend the contract and its tests before adding special cases to orchestration.
 
+## Model providers
+
+Review execution consumes the `Evaluator` contract. Model selection, credentials, HTTP envelopes and response validation belong to `providers/`; source adapters and review questions do not depend on a particular model. The run command and benchmark use the same model selection path.
+
+The current adapters support TypeSafe's System One API and Cloudflare's Clef family, which share typed choice questions and probability answers. The shared transport owns retries, pacing and timeouts. Cloudflare's REST envelope is unwrapped before the common answer validator checks question IDs, choices, probabilities and usage. A different response protocol needs an adapter that returns the same validated evaluation contract.
+
+`providers/models.ts` resolves configured selectors to a provider, canonical model identity, wire selector and request limits. Existing TypeSafe model identifiers keep their cache identities. Clef's short and full selectors share a canonical identity, so switching spelling reuses answers while switching models requires new evaluations. Request recovery uses the same identity. Provider limits apply during planning and batching, keeping offline previews consistent with execution.
+
+To add a compatible decision model, extend model resolution and the owning provider's mapping. To add a provider, implement its transport adaptation and register it in the evaluator factory. Keep credentials outside saved configuration, preserve exact supplied source, and verify the real request/response contract with synthetic credentials. General chat models need an explicit decision adapter; accepting arbitrary text as a probability answer would violate the review contract.
+
 ## Review verification
 
 `verification/ReviewSnapshotStore` captures project file hashes before export, saves the report and resolves completed templates against that snapshot. It uses the shared project-file traversal and exclusion rules; it does not parse source or depend on a language adapter. The pure template generator is shared by CLI handoffs and browser copy controls. Filesystem access and submission validation remain outside the browser bundle. `VerificationStore` validates current review identities and evidence before persisting verdicts; version-1 imports and resolved version-2 templates share that path.
 
-`reports/SharedEvidence` separates exact source fragments from context metadata. Referenced contexts have `sourceId` and related `evidenceId` fields; they are a distinct type from the complete contexts sent to Jev. New saved snapshots store identical path/source fragments once. The snapshot reader checks hashes, restores complete contexts and validates the report at the file boundary; previous inline snapshots remain readable.
+`reports/SharedEvidence` separates exact source fragments from context metadata. Referenced contexts have `sourceId` and related `evidenceId` fields; they are a distinct type from the complete contexts sent to the model. New saved snapshots store identical path/source fragments once. The snapshot reader checks hashes, restores complete contexts and validates the report at the file boundary; previous inline snapshots remain readable.
 
 `reports/ReviewCatalogue` supplies the compact index, individual check/evidence retrieval and self-contained batches. Retrieval commands use the saved report without scanning current source or overlaying newer verdicts, keeping batch membership stable. Creating a new snapshot applies current verification records. Queue routing uses question `reviewQueues` metadata; no language, project, question-name or translation rules belong in the catalogue. Queue metadata does not participate in evaluation fingerprints, context budgets or review identity. Preset queue defaults live with the presets.

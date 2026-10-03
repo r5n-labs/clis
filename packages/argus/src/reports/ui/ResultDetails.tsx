@@ -52,7 +52,8 @@ export function ResultDetails({ item, context, report }: { item: Result; context
                 ))}
             </div>
             <p className="detail-note">
-              Jev returns classifications and probabilities. This answer does not include a written explanation.
+              The review model returns classifications and probabilities. This answer does not include a written
+              explanation.
             </p>
           </section>
           <section>

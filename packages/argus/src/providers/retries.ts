@@ -17,12 +17,12 @@ export class RequestFailure extends Error {
   }
 }
 
-export function httpFailure(response: Response, now: number): RequestFailure {
+export function httpFailure(response: Response, now: number, provider: string): RequestFailure {
   const header = response.headers.get("retry-after");
   const seconds = header?.trim() ? Number(header) : Number.NaN;
   const delay = Number.isFinite(seconds) ? seconds * INITIAL_DELAY_MS : Date.parse(header ?? "") - now;
   return new RequestFailure(
-    `TypeSafe HTTP ${response.status}`,
+    `${provider} HTTP ${response.status}`,
     RETRYABLE_STATUSES.has(response.status),
     Number.isFinite(delay) ? Math.max(0, delay) : 0,
   );

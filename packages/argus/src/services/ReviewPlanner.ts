@@ -3,6 +3,8 @@ import { ContextBuilder } from "../contexts/ContextBuilder";
 import type { ApiQuestion } from "../domain/question";
 import type { ReviewItem, ReviewPlan } from "../domain/review-plan";
 import type { Project } from "../domain/source-target";
+import { resolveModel } from "../providers/models";
+import { serialisePayload } from "../providers/systemone/payload";
 import type { EvaluationStore } from "../storage/EvaluationStore";
 import { fingerprint, inputFingerprint, questionFingerprint } from "../storage/fingerprints";
 import { matches } from "./project-files";
@@ -10,7 +12,13 @@ import { matches } from "./project-files";
 export class ReviewPlanner {
   constructor(private readonly store: EvaluationStore) {}
 
-  plan(project: Project, config: ArgusConfig): ReviewPlan {
+  plan(project: Project, settings: ArgusConfig): ReviewPlan {
+    const model = resolveModel(settings.model);
+    const config = {
+      ...settings,
+      model: model.id,
+      maxRequestBytes: Math.min(settings.maxRequestBytes, model.maxRequestBytes),
+    };
     this.store.recover();
     const builder = new ContextBuilder(project, config.maxRequestBytes);
     const items: ReviewItem[] = [];
@@ -30,7 +38,7 @@ export class ReviewPlanner {
         };
         item.evaluation = this.store.find(item);
         const requestBytes = Buffer.byteLength(
-          JSON.stringify({ model: config.model, state: context, questions: { q0: apiQuestion } }),
+          serialisePayload({ model: config.model, state: context, questions: { q0: apiQuestion } }),
         );
         if (!item.evaluation && requestBytes > config.maxRequestBytes)
           item.blocked = `Context requires ${requestBytes} bytes; request limit is ${config.maxRequestBytes}`;
@@ -59,7 +67,7 @@ export class ReviewPlanner {
         continue;
       }
       const bytes = Buffer.byteLength(
-        JSON.stringify({ model: config.model, state: context, questions: { q0: item.apiQuestion } }),
+        serialisePayload({ model: config.model, state: context, questions: { q0: item.apiQuestion } }),
       );
       if (bytes > config.maxRequestBytes) {
         item.contextNote = `Expanded context requires ${bytes} bytes; limit is ${config.maxRequestBytes}. The initial insufficient-context answer is retained without a follow-up request.`;
