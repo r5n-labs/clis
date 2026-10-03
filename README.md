@@ -70,11 +70,10 @@ Commands, typed args, interactive prompts, config persistence, and error handlin
 
 ## Development
 
-Requires Bun. The `tools/` directory is a git submodule.
+Requires Bun. The tracked `tools/` workspace contains shared development tooling.
 
 ```bash
 git clone git@github.com:r5n-labs/clis.git && cd clis
-git submodule update --init --recursive
 bun install
 
 bun test              # all tests
