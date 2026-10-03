@@ -1,5 +1,18 @@
 # @r5n/atlas
 
+## 🐛 0.6.1 (2026-10-03)
+
+### 🪨 Chores
+
+- [`7f3d092`](https://github.com/r5n-labs/clis/commit/7f3d092) chore: enable public Argus and Atlas releases (#45)
+  <details>
+  <summary>Details</summary>
+
+  Remove the private flags from Argus and Atlas so Sisyphus can publish both bundled CLIs. Declare Argus's public registry and repository metadata, and include the complete repository licence in Atlas's archive.
+  
+  Document global installation and installed commands, with npm-compatible guide links and separate source development instructions.
+  </details>
+
 ## ✨ 0.6.0 (2026-10-03)
 
 ### 🪨 Features
