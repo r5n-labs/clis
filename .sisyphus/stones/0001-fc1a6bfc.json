@@ -1,0 +1,15 @@
+{
+  "commits": [
+    {
+      "body": "Remove the private flags from Argus and Atlas so Sisyphus can publish both bundled CLIs. Declare Argus's public registry and repository metadata, and include the complete repository licence in Atlas's archive.\n\nDocument global installation and installed commands, with npm-compatible guide links and separate source development instructions.",
+      "hash": "7f3d092",
+      "message": "enable public Argus and Atlas releases (#45)",
+      "packages": ["@r5n/argus", "@r5n/atlas"],
+      "subject": "chore: enable public Argus and Atlas releases (#45)",
+      "type": "chore"
+    }
+  ],
+  "id": "0001-fc1a6bfc",
+  "message": "Chores",
+  "patch": ["@r5n/argus", "@r5n/atlas"]
+}
