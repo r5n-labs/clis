@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-04 - @r5n/argus@0.3.3, @r5n/atlas@0.6.3, @r5n/hydra@0.11.2, @r5n/sisyphus@0.12.2
+
+**Packages**
+- 🐛 `@r5n/argus` 0.3.2 → 0.3.3
+- 🐛 `@r5n/atlas` 0.6.2 → 0.6.3
+- 🐛 `@r5n/hydra` 0.11.1 → 0.11.2
+- 🐛 `@r5n/sisyphus` 0.12.1 → 0.12.2
+
+### 🪨 Publish the redesigned logos
+**Packages:** `@r5n/argus` · `@r5n/atlas` · `@r5n/hydra` · `@r5n/sisyphus`
+
+<details>
+<summary>Description</summary>
+
+  The previous patch was tagged in git but never reached npm because trusted publishing was not yet configured for Argus and Atlas.
+</details>
+
 ## 2026-10-04 - @r5n/argus@0.3.2, @r5n/atlas@0.6.2, @r5n/hydra@0.11.1, @r5n/sisyphus@0.12.1
 
 **Packages**

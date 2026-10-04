@@ -1,5 +1,15 @@
 # @r5n/hydra
 
+## 🐛 0.11.2 (2026-10-04)
+
+### 🪨 Publish the redesigned logos
+
+<details>
+<summary>Description</summary>
+
+  The previous patch was tagged in git but never reached npm because trusted publishing was not yet configured for Argus and Atlas.
+</details>
+
 ## 🐛 0.11.1 (2026-10-04)
 
 ### 🪨 Documentation
