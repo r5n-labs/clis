@@ -1,95 +1,133 @@
-name: Release
+name: Recover public CLI release
 
 on:
   push:
-    branches: [main, develop]
+    branches: [chore/retry-public-clis]
 
 concurrency:
   group: sisyphus-release
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 jobs:
-  release:
-    name: Release
+  recover:
+    name: Retry original Argus and Atlas archives
     runs-on: r5n-m2-ultra
-    if: "!contains(github.event.head_commit.message, 'release(🎉):')"
-    outputs:
-      published: ${{ steps.roll.outputs.published }}
-      publishedPackages: ${{ steps.roll.outputs.publishedPackages }}
-
+    timeout-minutes: 10
+    env:
+      RELEASE_ROOT: /Users/vm/Projects/.hydra/runners/runner-5/_work/clis/clis
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NODE_ENV: production
+      NPM_CONFIG_PROVENANCE: "false"
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout submodules
-        env:
-          GIT_CONFIG_COUNT: "1"
-          GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf"
-          GIT_CONFIG_VALUE_0: "git@github.com:"
-        run: git submodule update --init --recursive
-
-      - uses: ./tools/github/setup
-        with:
-          bun: false
-
-      - name: Build
-        run: bun run build
-
-      - name: Check for pending stones
+      - name: Verify and retry preserved archives
         run: |
-          if ! STONES_JSON=$(bun --bun packages/sisyphus/src/cli.ts check --json); then
-            echo "ERROR: Sisyphus check failed"
-            echo "$STONES_JSON"
-            exit 1
-          fi
-          STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length')
-          echo "Found $STONES_COUNT pending stones"
-          echo "STONES_COUNT=$STONES_COUNT" >> "$GITHUB_ENV"
-          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
-          if [ "$STONES_COUNT" -gt 0 ] || [ -f "$RELEASE_DIR/active.json" ]; then
-            echo "RELEASE_PENDING=true" >> "$GITHUB_ENV"
-          else
-            echo "RELEASE_PENDING=false" >> "$GITHUB_ENV"
-          fi
-
-      - name: Roll release
-        id: roll
-        if: env.RELEASE_PENDING == 'true'
-        run: |
-          set -eo pipefail
-          NPM_DIR="$RUNNER_TEMP/npm11"
+          set -euo pipefail
+          cd "$RELEASE_ROOT"
+          export RECOVERY_DIRECTORY="$RUNNER_TEMP/public-clis-recovery"
+          echo "RECOVERY_DIRECTORY=$RECOVERY_DIRECTORY" >> "$GITHUB_ENV"
+          NPM_DIR="$RUNNER_TEMP/npm11-public-clis-recovery"
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
-          npm --version
-          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
-          REPORT="$RUNNER_TEMP/release.json"
-          STATUS=0
-          if [ -f "$RELEASE_DIR/active.json" ]; then
-            bun sis roll --resume --json > "$REPORT" || STATUS=$?
-          else
-            bun sis roll --json --yes > "$REPORT" || STATUS=$?
-          fi
+          echo "$NPM_DIR/node_modules/.bin" >> "$GITHUB_PATH"
+          cat > "$RUNNER_TEMP/retry-public-clis.ts" <<'BUN'
+          import { copyFile, mkdir } from "node:fs/promises";
+          import { join, resolve } from "node:path";
 
-          cat "$REPORT"
+          const RELEASE_ID = "c474ffda104ed0a0a24fb96941666521aa7f146444377115c125537b87200da5";
+          const RELEASE_COMMIT = "998a6a4856f48253d3a1749fa8cea6fb78b625b5";
+          const BASE_COMMIT = "042923ff6b6096268a9dde2809be135ba282c013";
+          const REGISTRY = "https://registry.npmjs.org/";
+          const NOT_FOUND = 404;
+          const HTTP_TIMEOUT_MS = 10_000;
+          const RETRY_DELAY_MS = 5_000;
+          const MAX_LOOKUPS = 12;
+          const expected = [
+            { name: "@r5n/argus", directory: "argus", version: "0.3.1", integrity: "sha512-F7MDNxTAZXq8Zq16d2/hun3MQA0NgkzOE6v6+9yewp4Lu/lWhTHKjlyBCs9IwgsyOHY60kh/+L8hIpLpPWvR8g==" },
+            { name: "@r5n/atlas", directory: "atlas", version: "0.6.1", integrity: "sha512-YWLo+JH46cyV5qHMGXNjbk4vLs3tNpXUxRkmeSMcJcscOO9aGuOpf8Jf2M4JXWH/6WEIfLBPlnawiVS4/L86xg==" },
+          ];
+          const root = process.env.RELEASE_ROOT;
+          const recoveryDirectory = process.env.RECOVERY_DIRECTORY;
+          if (!root || !recoveryDirectory) throw new Error("Missing recovery paths");
+          process.chdir(root);
+          const head = (await Bun.$`git rev-parse HEAD`.quiet()).text().trim();
+          if (![BASE_COMMIT, RELEASE_COMMIT].includes(head)) throw new Error("Original checkout has an unexpected commit");
+          const status = (await Bun.$`git status --porcelain=v1 --untracked-files=all`.quiet()).text().trim();
+          if (status) throw new Error("Original checkout has source changes; recovery stopped");
+          const { ReleaseLedger } = await import(`${root}/packages/sisyphus/src/services/release-ledger/index.ts`);
+          const { readPublishedPackage } = await import(`${root}/packages/sisyphus/src/services/release/npm-registry.ts`);
+          const { publishPackageArtifact } = await import(`${root}/tools/scripts/package-artifact.ts`);
+          const ledger = await ReleaseLedger.loadActive();
+          if (!ledger || ledger.id !== RELEASE_ID) throw new Error("Original release ledger is unavailable");
+          const data = ledger.data;
+          if (data.releaseCommit !== RELEASE_COMMIT || data.baseCommit !== BASE_COMMIT || data.operations.push?.state !== "completed" || !data.tagsReady || data.options.npmTag !== "latest" || data.packages.length !== expected.length) {
+            throw new Error("Original release identity or state does not match");
+          }
+          for (const item of expected) {
+            const pkg = data.packages.find((candidate) => candidate.name === item.name);
+            const artifact = data.artifacts[item.name];
+            if (!pkg || pkg.isPrivate || pkg.newVersion !== item.version || artifact?.integrity !== item.integrity || data.operations.npmRegistries[item.name] !== REGISTRY) {
+              throw new Error(`Original release metadata does not match ${item.name}`);
+            }
+            const tagCommit = (await Bun.$`git rev-parse ${`${item.name}@${item.version}^{}`}`.quiet()).text().trim();
+            if (tagCommit !== RELEASE_COMMIT) throw new Error(`Unexpected tag for ${item.name}`);
+          }
+          await mkdir(recoveryDirectory, { recursive: true });
+          await copyFile(ledger.activePath, join(recoveryDirectory, "active.json"));
+          for (const item of expected) {
+            await copyFile(resolve(ledger.releaseDirectory, data.artifacts[item.name].path), join(recoveryDirectory, `${item.directory}.tgz`));
+          }
+          if (head !== RELEASE_COMMIT) await Bun.$`git switch --detach ${RELEASE_COMMIT}`.quiet();
 
-          PUBLISHED=$(jq -r '.published // false' "$REPORT" 2>/dev/null || echo false)
-          PACKAGES=$(jq -c '.publishedPackages // []' "$REPORT" 2>/dev/null || echo '[]')
-          {
-            echo "published=$PUBLISHED"
-            echo "publishedPackages<<SIS_JSON_EOF"
-            echo "$PACKAGES"
-            echo "SIS_JSON_EOF"
-          } >> "$GITHUB_OUTPUT"
+          async function isPublished(item) {
+            const response = await fetch(`${REGISTRY}${encodeURIComponent(item.name)}/${item.version}`, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
+            if (response.status === NOT_FOUND) return false;
+            if (!response.ok) throw new Error(`Registry lookup failed for ${item.name}: ${response.status}`);
+            const metadata = readPublishedPackage(await response.json());
+            if (!metadata || metadata.name !== item.name || metadata.version !== item.version || metadata.integrity !== item.integrity) {
+              throw new Error(`Registry integrity conflict for ${item.name}`);
+            }
+            return true;
+          }
 
-          exit "$STATUS"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: production
-          NPM_CONFIG_PROVENANCE: "false"
-          NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+          for (const item of expected) {
+            const published = await isPublished(item);
+            const operation = data.operations.npm[item.name];
+            if (!operation) throw new Error(`Missing publication state for ${item.name}`);
+            if (published && operation.state === "pending") throw new Error(`Unexpected existing publication for pending ${item.name}`);
+            if (!published && operation.state === "completed") throw new Error(`Completed publication is absent for ${item.name}`);
+            if (published || operation.state === "pending") continue;
+            console.log(`Retrying original archive: ${item.name}@${item.version}`);
+            await publishPackageArtifact(resolve(ledger.releaseDirectory, data.artifacts[item.name].path), { cwd: join(root, "packages", item.directory) });
+            let visible = false;
+            for (let attempt = 0; attempt < MAX_LOOKUPS; attempt++) {
+              if (await isPublished(item)) { visible = true; break; }
+              await Bun.sleep(RETRY_DELAY_MS);
+            }
+            if (!visible) throw new Error(`Registry has not yet exposed ${item.name}; original ledger retained`);
+          }
+          console.log("Original archives verified; ready to reconcile and resume");
+          BUN
+          bun "$RUNNER_TEMP/retry-public-clis.ts"
+
+      - name: Complete original release
+        run: |
+          set -euo pipefail
+          cd "$RELEASE_ROOT"
+          ROLL_STATUS=0
+          bun sis roll --resume --json > "$RECOVERY_DIRECTORY/report.json" || ROLL_STATUS=$?
+          cat "$RECOVERY_DIRECTORY/report.json"
+          exit "$ROLL_STATUS"
+
+      - name: Preserve exact release artifacts
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: public-clis-original-release
+          path: ${{ runner.temp }}/public-clis-recovery/
+          if-no-files-found: warn
+          retention-days: 7
