@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title">
   <title id="title">Hydra: three serpent heads</title>
-  <rect width="512" height="512" rx="96" fill="#0f0f0e"/>
-  <g fill="none" stroke="#f0e9d8" stroke-width="42" stroke-linecap="round">
-    <path d="M140 208c60 53-6 98 61 137l55 33"/>
-    <path d="M372 208c-60 53 6 98-61 137l-55 33"/>
-    <path d="M256 165c-48 70 41 84 10 146l-28 51"/>
+  <defs>
+    <g id="head">
+      <path d="M56 0h20l13-10M76 0l13 10" fill="none" stroke="#e0703f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M-4-22C6-32 24-34 35-28l23 16c7 6 7 18 0 24L35 28C24 34 6 32-4 22Z" fill="#f0e9d8"/>
+      <circle cx="31" cy="-12" r="8" fill="#0f0f0e"/>
+    </g>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0f0f0e"/>
+  <g fill="none" stroke="#f0e9d8" stroke-width="44" stroke-linecap="round">
+    <path d="M140.9 220.7A40 40 0 0 1 164 257v44a92 92 0 0 0 184 0v-44a40 40 0 0 1 23.1-36.3"/>
+    <path d="M256 393V191"/>
   </g>
-  <g fill="#f0e9d8">
-    <path d="M160 239c16-35 3-70-22-86l6-33-32 22-29 7-27 30 9 19h40l-15 18 29 11 20 25Z"/>
-    <path d="M352 239c-16-35-3-70 22-86l-6-33 32 22 29 7 27 30-9 19h-40l15 18-29 11-20 25Z"/>
-    <path d="m256 184-32-30-13-45-10-40 37 23h36l37-23-10 40-13 45Z"/>
-    <path d="M223 347c60-18 120 4 124 47 5 48-49 70-96 52-38-14-42-48-83-46-18 1-36 12-56 18 16-31 43-46 76-40 41 8 39 34 74 38 24 3 43-7 39-21-5-21-42-23-72-12Z"/>
-  </g>
-  <g fill="#0f0f0e">
-    <path d="m91 171 28 4-17 16Zm330 0-28 4 17 16ZM220 117l28 11-13 17Zm72 0-28 11 13 17Z"/>
-  </g>
+  <use href="#head" transform="translate(140.9 220.7) rotate(-155) scale(1 -1)"/>
+  <use href="#head" transform="translate(371.1 220.7) rotate(-25)"/>
+  <use href="#head" transform="translate(256 191) rotate(-90)"/>
 </svg>

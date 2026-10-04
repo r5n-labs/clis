@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/r5n-labs/clis/develop/packages/sisyphus/assets/logo.svg" width="128" alt="Sisyphus logo — a figure pushing a boulder uphill">
+  <img src="https://raw.githubusercontent.com/r5n-labs/clis/develop/packages/sisyphus/assets/logo.svg" width="128" alt="Sisyphus logo — a boulder on its way uphill">
 </p>
 
 # Sisyphus

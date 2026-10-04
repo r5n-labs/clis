@@ -1,17 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title">
-  <title id="title">Atlas: a kneeling titan carrying the world</title>
-  <rect width="512" height="512" rx="96" fill="#0f0f0e"/>
-  <g fill="none" stroke="#f0e9d8" stroke-width="18" transform="rotate(-20 286 166)">
-    <circle cx="286" cy="166" r="107"/>
-    <ellipse cx="286" cy="166" rx="44" ry="107"/>
-    <path d="M179 166h214"/>
+  <title id="title">Atlas: a column holding the world aloft</title>
+  <defs>
+    <clipPath id="globe"><circle cx="256" cy="162" r="80"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0f0f0e"/>
+  <circle cx="256" cy="162" r="80" fill="#e0703f"/>
+  <g fill="none" stroke="#0f0f0e" stroke-width="10" clip-path="url(#globe)">
+    <ellipse cx="256" cy="162" rx="35" ry="90"/>
+    <path d="M176 122h160M176 162h160M176 202h160"/>
   </g>
   <g fill="#f0e9d8">
-    <path d="M196 284c0-13 9-22 21-22s23 10 23 23l7 11-12 3-7 15-22-8Z"/>
-    <path d="M202 317c-15 13-24 32-27 54l29 26c24-15 39-38 42-62l-16-19Z"/>
-    <path d="M213 322c-19-15-29-32-34-49l21-30-20-15-30 37c-4 5-5 11-2 18 10 28 26 52 48 68Z"/>
-    <path d="m228 322 49-17 38-43 22 13-38 51c-4 5-7 8-14 10l-46 18Z"/>
-    <path d="m184 367-38 14c-8 3-12 8-15 16l-12 28H91c-10 0-18 8-18 18h68l18-40 44-9Z"/>
-    <path d="m215 366 37 34 26 22h45c11 0 18 8 18 20h-73c-7 0-11-2-17-6l-58-41Z"/>
+    <rect x="172" y="242" width="168" height="26" rx="10"/>
+    <path d="M184 262h144l-22 36h-100Z"/>
+    <rect x="208" y="294" width="96" height="110"/>
+    <rect x="180" y="404" width="152" height="26" rx="10"/>
   </g>
+  <path d="M232 308v82M256 308v82M280 308v82" stroke="#0f0f0e" stroke-width="10" stroke-linecap="round"/>
 </svg>
