@@ -1,5 +1,19 @@
 # @r5n/hydra
 
+## 🐛 0.11.1 (2026-10-04)
+
+### 🪨 Documentation
+
+- [`cee4b11`](https://github.com/r5n-labs/clis/commit/cee4b11) docs: redesign CLI logos as geometric marks
+  <details>
+  <summary>Details</summary>
+
+  Replace the uneven silhouettes with one family of bold, minimal marks that
+  share a palette and a single terracotta accent, so every logo stays legible
+  at README and favicon sizes. Drop the unused Sisyphus PNG because only the
+  SVG logos are referenced.
+  </details>
+
 ## ✨ 0.11.0 (2026-10-03)
 
 ### 🪨 Features

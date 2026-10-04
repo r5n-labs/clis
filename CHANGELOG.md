@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-04 - @r5n/argus@0.3.2, @r5n/atlas@0.6.2, @r5n/hydra@0.11.1, @r5n/sisyphus@0.12.1
+
+**Packages**
+- 🐛 `@r5n/argus` 0.3.1 → 0.3.2
+- 🐛 `@r5n/atlas` 0.6.1 → 0.6.2
+- 🐛 `@r5n/hydra` 0.11.0 → 0.11.1
+- 🐛 `@r5n/sisyphus` 0.12.0 → 0.12.1
+
+### 🪨 Documentation
+**Packages:** `@r5n/argus` · `@r5n/atlas` · `@r5n/hydra` · `@r5n/sisyphus`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`cee4b11`](https://github.com/r5n-labs/clis/commit/cee4b11) docs: redesign CLI logos as geometric marks
+  <details>
+  <summary>Details</summary>
+
+  Replace the uneven silhouettes with one family of bold, minimal marks that
+  share a palette and a single terracotta accent, so every logo stays legible
+  at README and favicon sizes. Drop the unused Sisyphus PNG because only the
+  SVG logos are referenced.
+  </details>
+
+</details>
+
 ## 2026-10-03 - @r5n/argus@0.3.1, @r5n/atlas@0.6.1
 
 **Packages**
