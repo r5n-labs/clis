@@ -1,0 +1,15 @@
+{
+  "commits": [
+    {
+      "body": "Replace the uneven silhouettes with one family of bold, minimal marks that\nshare a palette and a single terracotta accent, so every logo stays legible\nat README and favicon sizes. Drop the unused Sisyphus PNG because only the\nSVG logos are referenced.",
+      "hash": "cee4b11",
+      "message": "redesign CLI logos as geometric marks",
+      "packages": ["@r5n/argus", "@r5n/atlas", "@r5n/hydra", "@r5n/sisyphus"],
+      "subject": "docs: redesign CLI logos as geometric marks",
+      "type": "docs"
+    }
+  ],
+  "id": "0001-1630fc56",
+  "message": "Documentation",
+  "patch": ["@r5n/argus", "@r5n/atlas", "@r5n/hydra", "@r5n/sisyphus"]
+}
