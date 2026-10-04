@@ -98,7 +98,10 @@ jobs:
             const published = await isPublished(item);
             const operation = data.operations.npm[item.name];
             if (!operation) throw new Error(`Missing publication state for ${item.name}`);
-            if (published && operation.state === "pending") throw new Error(`Unexpected existing publication for pending ${item.name}`);
+            if (published && operation.state === "pending") {
+              if (item.name !== "@r5n/atlas") throw new Error(`Unexpected existing publication for pending ${item.name}`);
+              await ledger.markNpm(item.name, "started");
+            }
             if (!published && operation.state === "completed") throw new Error(`Completed publication is absent for ${item.name}`);
             if (published || operation.state === "pending") continue;
             console.log(`Retrying original archive: ${item.name}@${item.version}`);
