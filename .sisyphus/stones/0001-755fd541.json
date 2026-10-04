@@ -1,0 +1,6 @@
+{
+  "description": "The previous patch was tagged in git but never reached npm because trusted publishing was not yet configured for Argus and Atlas.",
+  "id": "0001-755fd541",
+  "message": "Publish the redesigned logos",
+  "patch": ["@r5n/argus", "@r5n/atlas", "@r5n/hydra", "@r5n/sisyphus"]
+}
