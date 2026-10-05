@@ -26,17 +26,18 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Resolve release state path
-        run: echo "SIS_RELEASE_DIR=$(git rev-parse --git-path sisyphus/release)" >> "$GITHUB_ENV"
+      - name: Reset release state
+        run: |
+          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          echo "SIS_RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          rm -rf "$RELEASE_DIR"
 
-      # The cache key is sha-free and ref-stable so a workflow_dispatch recovery run
-      # restores the state saved by the failed merge-triggered run.
       - name: Restore release state
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.SIS_RELEASE_DIR }}
-          key: sisyphus-release-${{ runner.os }}-${{ github.event.pull_request.base.ref || github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sisyphus-release-${{ runner.os }}-${{ github.event.pull_request.base.ref || github.ref_name }}-
+          key: sisyphus-release-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sisyphus-release-${{ github.run_id }}-
 
       - name: Remove cached release lock
         run: rm -f "$SIS_RELEASE_DIR/.write.lock" "$SIS_RELEASE_DIR"/.write.lock.*.owner "$SIS_RELEASE_DIR"/.write.lock.*.claim
@@ -66,9 +67,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Save release state
+      - name: Inspect release state
+        id: release-state
         if: always()
-        uses: actions/cache/save@v5
+        run: |
+          if [ -f "$SIS_RELEASE_DIR/active.json" ] || ls "$SIS_RELEASE_DIR"/history/*.json >/dev/null 2>&1; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save release state
+        if: always() && steps.release-state.outputs.save == 'true'
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.SIS_RELEASE_DIR }}
-          key: sisyphus-release-${{ runner.os }}-${{ github.event.pull_request.base.ref || github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: sisyphus-release-${{ github.run_id }}-${{ github.run_attempt }}

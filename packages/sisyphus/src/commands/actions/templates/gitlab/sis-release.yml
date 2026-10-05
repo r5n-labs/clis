@@ -2,6 +2,8 @@ release:
   stage: sisyphus
   image: oven/bun:alpine
   resource_group: sisyphus-release
+  variables:
+    GIT_STRATEGY: clone
   cache:
     key: "sisyphus-release-$CI_COMMIT_SHA"
     policy: pull-push
@@ -35,3 +37,5 @@ release:
     - bun install
     - bun add --global @r5n/sisyphus
     - if [ -f .git/sisyphus/release/active.json ]; then sis roll --resume; else sis roll --publish-only --yes; fi
+  after_script:
+    - if [ ! -f .git/sisyphus/release/active.json ] && ! ls .git/sisyphus/release/history/*.json >/dev/null 2>&1; then rm -rf .git/sisyphus/release; fi
