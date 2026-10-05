@@ -14,7 +14,7 @@ import { DIAG_DIR, discoverLogFiles, sortLogFilesNewestFirst } from "./log-files
 import { parseExternalsVersion } from "./runner-version";
 import type { LogFileType, RunnerLogFile } from "./types";
 
-export const WORK_DIR = "_work";
+const WORK_DIR = "_work";
 
 const EXTERNALS_LINK = "externals";
 const PID_FILE = ".pid";
@@ -89,7 +89,7 @@ export function totalFreedBytes(report: CleanupReport): number {
   return Object.values(report).reduce((sum, outcome) => sum + outcome.freedBytes, 0);
 }
 
-export async function isRunnerActive(runnerDir: string): Promise<boolean> {
+async function isRunnerActive(runnerDir: string): Promise<boolean> {
   let content: string;
   try {
     content = await readFile(join(runnerDir, PID_FILE), "utf-8");
