@@ -3,7 +3,7 @@ import type { Package, Stone } from "../domain";
 import type { NpmVisibility } from "./release/npm-visibility";
 import type { ReleaseLedgerData } from "./release-ledger";
 
-export const RELEASE_REPORT_SCHEMA_VERSION = 1 as const;
+const RELEASE_REPORT_SCHEMA_VERSION = 1 as const;
 
 export type ReleaseReportMode = "abort" | "dry-run" | "preview" | "publish-only" | "release" | "resume";
 

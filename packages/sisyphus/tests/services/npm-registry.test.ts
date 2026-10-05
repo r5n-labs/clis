@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
-import { readPublishedPackage, resolveReleaseNpmTag } from "../../src/services/release/npm-registry";
+import { getNpmTag, readPublishedPackage, resolveReleaseNpmTag } from "../../src/services/release/npm-registry";
 
 function makePackage(name: string, newVersion: string, isPrivate = false): Package {
   return new Package({ file: `packages/${name}/package.json`, isPrivate, name, newVersion, version: "1.0.0" });
 }
+
+describe("getNpmTag", () => {
+  test.each(["latest", "next", "beta-1", "release_2026"])("accepts the named dist-tag %s", (tag) => {
+    expect(getNpmTag(tag)).toBe(tag);
+  });
+
+  test.each(["1.2.3", "v1", "v1.2", "v1.2.x", "x", "bad tag", "@beta"])("rejects %s as a dist-tag", (tag) => {
+    expect(() => getNpmTag(tag)).toThrow("Invalid npm dist-tag");
+  });
+});
 
 describe("resolveReleaseNpmTag", () => {
   test("uses the configured tag for a stable release", () => {

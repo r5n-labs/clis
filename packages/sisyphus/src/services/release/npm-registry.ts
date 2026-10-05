@@ -11,7 +11,7 @@ const SNAPSHOT_TIMESTAMP_SUFFIX = /-\d{14,}$/;
 const SEMVER_LIKE_NPM_TAG_PATTERN =
   /^(?:[vV]?\d+(?:\.(?:\d+|[xX*])){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?|[xX])$/;
 
-export function isValidNpmTag(tag: string): boolean {
+function isValidNpmTag(tag: string): boolean {
   return NPM_TAG_PATTERN.test(tag) && !SEMVER_LIKE_NPM_TAG_PATTERN.test(tag);
 }
 

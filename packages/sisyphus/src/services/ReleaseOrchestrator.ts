@@ -86,8 +86,6 @@ import {
 import { StoneManager } from "./StoneManager";
 import { WorkspaceScanner } from "./WorkspaceScanner";
 
-export { isValidNpmTag } from "./release/npm-registry";
-
 export type ReleaseOptions = {
   changelog: boolean;
   createRelease: boolean;

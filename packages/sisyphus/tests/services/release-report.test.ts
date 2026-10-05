@@ -3,7 +3,7 @@ import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
 import { Stone } from "../../src/domain/Stone";
 import type { ReleaseLedgerData } from "../../src/services/release-ledger";
-import { buildReleaseReport, RELEASE_REPORT_SCHEMA_VERSION } from "../../src/services/release-report";
+import { buildReleaseReport } from "../../src/services/release-report";
 
 const REPORT_KEYS = [
   "baseCommit",
@@ -192,6 +192,6 @@ describe("buildReleaseReport", () => {
     const report = buildReleaseReport({ ...baseInput, ledger: makeLedger() });
 
     expect(Object.keys(report).sort()).toEqual(REPORT_KEYS);
-    expect(report.schemaVersion).toBe(RELEASE_REPORT_SCHEMA_VERSION);
+    expect(report.schemaVersion).toBe(1);
   });
 });

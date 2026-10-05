@@ -16,6 +16,7 @@ import {
 } from "../../src/services";
 import { ReleaseLedger } from "../../src/services/release-ledger";
 import type { SisyphusConfig } from "../../src/types";
+import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import { makeCtx, type RollCtx } from "../helpers/roll";
 
 const PACKAGE_NAME = "@fixture/foo";
@@ -25,10 +26,16 @@ const STONE_FILE = `.sisyphus/stones/${STONE_ID}.json`;
 const RELEASE_TAG = `${PACKAGE_NAME}@1.0.1`;
 const PREVIOUS_LAST_STONE = { commit: "previous-baseline", date: "2026-01-02T03:04:05.000Z" };
 const LEDGER_SENTINEL = "invalid-ledger-must-not-be-loaded-or-changed\n";
+const HTTP_SERVER_ERROR = 500;
 
 async function gitText(root: string, args: string[]): Promise<string> {
   const result = await Bun.$`git ${args}`.cwd(root).quiet();
   return result.stdout.toString().trim();
+}
+
+async function rejectEveryRequest(request: Request): Promise<Response> {
+  await request.arrayBuffer();
+  return Response.json({ ok: false }, { status: HTTP_SERVER_ERROR });
 }
 
 function writeLedgerSentinel(root: string): string {
@@ -41,14 +48,8 @@ function writeLedgerSentinel(root: string): string {
 
 describe("RollCommand release metadata", () => {
   const originalCwd = process.cwd();
-  const originalRegistry = process.env.BUN_CONFIG_REGISTRY;
-  const originalToken = process.env.BUN_CONFIG_TOKEN;
-  const originalNpmRegistry = process.env.NPM_CONFIG_REGISTRY;
-  const originalProvenance = process.env.NPM_CONFIG_PROVENANCE;
-  const originalFetchRetries = process.env.NPM_CONFIG_FETCH_RETRIES;
-  const originalUserConfig = process.env.NPM_CONFIG_USERCONFIG;
   let config: ConfigManager<SisyphusConfig>;
-  let registry: ReturnType<typeof Bun.serve> | undefined;
+  let registry: NpmRegistryServer | undefined;
   let root: string;
 
   beforeEach(async () => {
@@ -85,20 +86,8 @@ describe("RollCommand release metadata", () => {
   });
 
   afterEach(() => {
-    registry?.stop(true);
+    registry?.stop();
     registry = undefined;
-    if (originalRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
-    else process.env.BUN_CONFIG_REGISTRY = originalRegistry;
-    if (originalToken === undefined) delete process.env.BUN_CONFIG_TOKEN;
-    else process.env.BUN_CONFIG_TOKEN = originalToken;
-    if (originalNpmRegistry === undefined) delete process.env.NPM_CONFIG_REGISTRY;
-    else process.env.NPM_CONFIG_REGISTRY = originalNpmRegistry;
-    if (originalProvenance === undefined) delete process.env.NPM_CONFIG_PROVENANCE;
-    else process.env.NPM_CONFIG_PROVENANCE = originalProvenance;
-    if (originalFetchRetries === undefined) delete process.env.NPM_CONFIG_FETCH_RETRIES;
-    else process.env.NPM_CONFIG_FETCH_RETRIES = originalFetchRetries;
-    if (originalUserConfig === undefined) delete process.env.NPM_CONFIG_USERCONFIG;
-    else process.env.NPM_CONFIG_USERCONFIG = originalUserConfig;
     process.chdir(originalCwd);
     rmSync(root, { force: true, recursive: true });
   });
@@ -229,22 +218,7 @@ describe("RollCommand release metadata", () => {
     await Bun.$`git commit -q -m "make package publishable"`.cwd(root).quiet();
     const baseline = await gitText(root, ["rev-parse", "HEAD"]);
 
-    registry = Bun.serve({
-      port: 0,
-      async fetch(request) {
-        await request.arrayBuffer();
-        return Response.json({ ok: false }, { status: 500 });
-      },
-    });
-    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
-    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
-    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
-    process.env.NPM_CONFIG_PROVENANCE = "false";
-    process.env.NPM_CONFIG_FETCH_RETRIES = "0";
-    const registryUrl = new URL(registry.url);
-    const userConfig = join(root, ".git/npmrc-test");
-    writeFileSync(userConfig, `registry=${registry.url}\n//${registryUrl.host}/:_authToken=test-token\n`);
-    process.env.NPM_CONFIG_USERCONFIG = userConfig;
+    registry = serveNpmRegistry(root, rejectEveryRequest);
 
     await expect(new RollCommand().execute(makeCtx(config, { npm: true }))).rejects.toThrow(
       "Release incomplete after npm publication began",
@@ -279,7 +253,7 @@ describe("RollCommand release metadata", () => {
     );
     await Bun.$`git add ${PACKAGE_FILE}`.cwd(root).quiet();
     await Bun.$`git commit -q -m "make package move head"`.cwd(root).quiet();
-    process.env.NPM_CONFIG_REGISTRY = "https://registry.npmjs.org/";
+    registry = serveNpmRegistry(root, rejectEveryRequest);
 
     await expect(new RollCommand().execute(makeCtx(config, { npm: true }))).rejects.toThrow(
       "Release failed and rollback could not be completed; local release state was preserved",
@@ -321,49 +295,6 @@ describe("RollCommand release metadata", () => {
     expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
   });
 
-  test("rejects every resume operation flag before loading or changing the ledger or invoking resume", async () => {
-    const cases: Array<[Partial<RollCtx["args"]>, string]> = [
-      [{ changelog: true }, "--changelog"],
-      [{ changelog: false }, "--changelog"],
-      [{ createRelease: true }, "--createRelease"],
-      [{ createRelease: false }, "--createRelease"],
-      [{ dryRun: true }, "--dryRun"],
-      [{ dryRun: false }, "--dryRun"],
-      [{ noCommit: true }, "--noCommit"],
-      [{ npm: true }, "--npm"],
-      [{ npm: false }, "--npm"],
-      [{ preview: true }, "--preview"],
-      [{ publishOnly: true }, "--publishOnly"],
-      [{ push: true }, "--push"],
-      [{ push: false }, "--push"],
-      [{ tags: true }, "--tags"],
-      [{ tags: false }, "--tags"],
-    ];
-    const activeLedger = writeLedgerSentinel(root);
-    const originalConfig = readFileSync(join(root, ".sisyphus/config.json"), "utf-8");
-    const originalPackage = readFileSync(join(root, PACKAGE_FILE), "utf-8");
-    const originalStone = readFileSync(join(root, STONE_FILE), "utf-8");
-    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
-    const resume = spyOn(ReleaseOrchestrator, "resume");
-
-    try {
-      for (const [args, flag] of cases) {
-        await expect(new RollCommand().execute(makeCtx(config, { ...args, resume: true }))).rejects.toThrow(
-          `--resume cannot be combined with ${flag}`,
-        );
-      }
-
-      expect(resume).not.toHaveBeenCalled();
-      expect(readFileSync(activeLedger, "utf-8")).toBe(LEDGER_SENTINEL);
-      expect(readFileSync(join(root, ".sisyphus/config.json"), "utf-8")).toBe(originalConfig);
-      expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toBe(originalPackage);
-      expect(readFileSync(join(root, STONE_FILE), "utf-8")).toBe(originalStone);
-      expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
-    } finally {
-      resume.mockRestore();
-    }
-  });
-
   test("rejects normal-roll-only flags in publish-only mode before checking the ledger", async () => {
     const cases: Array<[Partial<RollCtx["args"]>, string]> = [
       [{ changelog: true }, "--changelog"],
@@ -387,17 +318,6 @@ describe("RollCommand release metadata", () => {
       expect(JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf-8")).version).toBe("1.0.0");
     } finally {
       assertNoActiveRelease.mockRestore();
-    }
-  });
-
-  test("bare resume still dispatches to the recorded release operation", async () => {
-    const resume = spyOn(ReleaseOrchestrator, "resume").mockResolvedValue({ ledger: null, packages: [], stones: [] });
-
-    try {
-      await expect(new RollCommand().execute(makeCtx(config, { resume: true }))).resolves.toBeUndefined();
-      expect(resume).toHaveBeenCalledTimes(1);
-    } finally {
-      resume.mockRestore();
     }
   });
 

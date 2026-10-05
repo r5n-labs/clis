@@ -1,20 +1,26 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
+import type { ConfigManager } from "@r5n/cli-core";
 import { RollCommand } from "../../src/commands/roll";
+import { ReleaseLedger } from "../../src/services/release-ledger";
+import type { SisyphusConfig } from "../../src/types";
 import { type FakeNpmRegistry, type PackumentView, startFakeNpmRegistry } from "../helpers/npm-registry";
 import {
   type Fixture,
+  gitText,
   makeConfig,
   makePublishPackage,
   PACKAGE_NAME,
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
-import { makeCtx } from "../helpers/roll";
+import { makeCtx, type RollCtx } from "../helpers/roll";
 
 const RELEASED_VERSION = "1.0.1";
 const RELEASED_SPEC = `${PACKAGE_NAME}@${RELEASED_VERSION}`;
 const VISIBILITY_TIMEOUT_SECONDS = 1;
 const TAMPERED_INTEGRITY = "sha512-tampered";
+const HTTP_SERVER_ERROR = 500;
+const NPM_RELEASE = { changelog: false, createRelease: false, npm: true, push: false, tags: false };
 
 const serveAsPublished: PackumentView = (packument) => packument;
 const withholdVersion: PackumentView = () => undefined;
@@ -26,7 +32,7 @@ const serveDifferentArtifact: PackumentView = (packument) => {
 
 type VisibilityCase = {
   name: string;
-  timeout: number;
+  timeout?: number;
   view: PackumentView;
   visible: boolean | null;
   warnings: string[];
@@ -61,12 +67,26 @@ const cases: VisibilityCase[] = [
   {
     name: "skips the registry check by default",
     readsRegistry: false,
-    timeout: 0,
     view: serveAsPublished,
     visible: null,
     warnings: [],
   },
 ];
+
+const invalidTimeouts: unknown[] = [-1, "300"];
+
+async function rollJson(config: ConfigManager<SisyphusConfig>, args: Partial<RollCtx["args"]>) {
+  const logged: string[] = [];
+  const consoleLog = spyOn(console, "log").mockImplementation((value) => {
+    logged.push(String(value));
+  });
+  try {
+    await new RollCommand().execute(makeCtx(config, { ...args, json: true }));
+  } finally {
+    consoleLog.mockRestore();
+  }
+  return JSON.parse(logged.at(-1) as string);
+}
 
 describe("RollCommand npm visibility", () => {
   const originalCwd = process.cwd();
@@ -84,30 +104,26 @@ describe("RollCommand npm visibility", () => {
     fixture = undefined;
   });
 
-  test.each(cases)("$name", async ({ readsRegistry, timeout, view, visible, warnings }) => {
+  async function prepareRelease(view: PackumentView, timeout: unknown, publishStatus?: number) {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
     process.chdir(root);
-    registry = startFakeNpmRegistry(root, view);
+    registry = startFakeNpmRegistry(root, view, publishStatus);
     makePublishPackage(root, "packages/foo", PACKAGE_NAME);
     const config = makeConfig(root);
-    config.set("release", { ...config.get("release"), npmVisibilityTimeout: timeout });
+    if (timeout !== undefined) {
+      config.set("release", { ...config.get("release"), npmVisibilityTimeout: timeout as number });
+    }
     await Bun.$`git add -A`.quiet();
     await Bun.$`git commit -q -m "publish foo with visibility timeout"`.quiet();
+    return { config, registry, root };
+  }
 
-    const logged: string[] = [];
-    const consoleLog = spyOn(console, "log").mockImplementation((value) => {
-      logged.push(String(value));
-    });
-    try {
-      await new RollCommand().execute(
-        makeCtx(config, { changelog: false, createRelease: false, json: true, npm: true, push: false, tags: false }),
-      );
-    } finally {
-      consoleLog.mockRestore();
-    }
+  test.each(cases)("$name", async ({ readsRegistry, timeout, view, visible, warnings }) => {
+    const { config, registry } = await prepareRelease(view, timeout);
 
-    const report = JSON.parse(logged.at(-1) as string);
+    const report = await rollJson(config, NPM_RELEASE);
+
     expect(report.status).toBe("completed");
     expect(report.publishedPackages).toEqual([{ name: PACKAGE_NAME, version: RELEASED_VERSION }]);
     expect(report.packages[0].visible).toBe(visible);
@@ -115,5 +131,41 @@ describe("RollCommand npm visibility", () => {
     for (const fragment of warnings) expect(report.warnings[0]).toContain(fragment);
     expect(registry.published).toEqual([PACKAGE_NAME]);
     expect(registry.readsAfterPublish.length > 0).toBe(readsRegistry);
+  });
+
+  test.each(invalidTimeouts)("rejects release.npmVisibilityTimeout %j before releasing", async (timeout) => {
+    const { config, registry, root } = await prepareRelease(serveAsPublished, timeout);
+    const baseline = await gitText(root, ["rev-parse", "HEAD"]);
+
+    await expect(new RollCommand().execute(makeCtx(config, NPM_RELEASE))).rejects.toThrow(
+      "Invalid release.npmVisibilityTimeout",
+    );
+
+    expect(await gitText(root, ["rev-parse", "HEAD"])).toBe(baseline);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+    expect(registry.published).toEqual([]);
+  });
+
+  test("resumes a publication npm reported as failed and checks its visibility", async () => {
+    const { config, registry, root } = await prepareRelease(
+      serveAsPublished,
+      VISIBILITY_TIMEOUT_SECONDS,
+      HTTP_SERVER_ERROR,
+    );
+
+    await expect(new RollCommand().execute(makeCtx(config, NPM_RELEASE))).rejects.toThrow(
+      "Release incomplete after npm publication began",
+    );
+    expect((await ReleaseLedger.loadActive(root))?.data.operations.npm[PACKAGE_NAME]?.state).toBe("started");
+
+    const report = await rollJson(config, { resume: true });
+
+    expect(report.mode).toBe("resume");
+    expect(report.status).toBe("completed");
+    expect(report.publishedPackages).toEqual([{ name: PACKAGE_NAME, version: RELEASED_VERSION }]);
+    expect(report.packages[0].visible).toBe(true);
+    expect(report.warnings).toEqual([]);
+    expect(registry.published).toEqual([PACKAGE_NAME]);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
   });
 });

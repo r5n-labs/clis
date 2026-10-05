@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { Package } from "../../src/domain/Package";
-import { isValidNpmTag } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
+import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import {
   CHANGELOG_FILE,
   type Fixture,
@@ -32,60 +32,29 @@ async function captureExit(operation: () => Promise<void>): Promise<Exit> {
 
 describe("ReleaseOrchestrator npm publication", () => {
   const originalCwd = process.cwd();
-  const originalRegistry = process.env.BUN_CONFIG_REGISTRY;
-  const originalToken = process.env.BUN_CONFIG_TOKEN;
-  const originalNpmRegistry = process.env.NPM_CONFIG_REGISTRY;
-  const originalProvenance = process.env.NPM_CONFIG_PROVENANCE;
-  const originalFetchRetries = process.env.NPM_CONFIG_FETCH_RETRIES;
-  const originalUserConfig = process.env.NPM_CONFIG_USERCONFIG;
   let fixture: Fixture | undefined;
-  let registry: ReturnType<typeof Bun.serve> | undefined;
+  let registry: NpmRegistryServer | undefined;
 
   function startRegistry(failingPackage?: string, accessLevels: string[] = []): string[] {
+    if (!fixture) throw new Error("Expected a release fixture before starting the registry");
     const requests: string[] = [];
-    registry = Bun.serve({
-      port: 0,
-      async fetch(request) {
-        const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
-        if (request.method === "GET") return Response.json({ error: "not found" }, { status: 404 });
-        requests.push(packageName);
-        const publication = (await request.json()) as { access: string };
-        accessLevels.push(publication.access);
-        return Response.json(
-          { ok: packageName !== failingPackage },
-          { status: packageName === failingPackage ? 500 : 201 },
-        );
-      },
+    registry = serveNpmRegistry(fixture.root, async (request) => {
+      const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      if (request.method === "GET") return Response.json({ error: "not found" }, { status: 404 });
+      requests.push(packageName);
+      const publication = (await request.json()) as { access: string };
+      accessLevels.push(publication.access);
+      return Response.json(
+        { ok: packageName !== failingPackage },
+        { status: packageName === failingPackage ? 500 : 201 },
+      );
     });
-    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
-    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
-    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
-    process.env.NPM_CONFIG_PROVENANCE = "false";
-    process.env.NPM_CONFIG_FETCH_RETRIES = "0";
-    if (fixture) {
-      const registryUrl = new URL(registry.url);
-      const userConfig = join(fixture.root, ".git/npmrc-test");
-      writeFileSync(userConfig, `registry=${registry.url}\n//${registryUrl.host}/:_authToken=test-token\n`);
-      process.env.NPM_CONFIG_USERCONFIG = userConfig;
-    }
     return requests;
   }
 
   afterEach(() => {
-    registry?.stop(true);
+    registry?.stop();
     registry = undefined;
-    if (originalRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
-    else process.env.BUN_CONFIG_REGISTRY = originalRegistry;
-    if (originalToken === undefined) delete process.env.BUN_CONFIG_TOKEN;
-    else process.env.BUN_CONFIG_TOKEN = originalToken;
-    if (originalNpmRegistry === undefined) delete process.env.NPM_CONFIG_REGISTRY;
-    else process.env.NPM_CONFIG_REGISTRY = originalNpmRegistry;
-    if (originalProvenance === undefined) delete process.env.NPM_CONFIG_PROVENANCE;
-    else process.env.NPM_CONFIG_PROVENANCE = originalProvenance;
-    if (originalFetchRetries === undefined) delete process.env.NPM_CONFIG_FETCH_RETRIES;
-    else process.env.NPM_CONFIG_FETCH_RETRIES = originalFetchRetries;
-    if (originalUserConfig === undefined) delete process.env.NPM_CONFIG_USERCONFIG;
-    else process.env.NPM_CONFIG_USERCONFIG = originalUserConfig;
     process.chdir(originalCwd);
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
@@ -120,7 +89,7 @@ describe("ReleaseOrchestrator npm publication", () => {
     const snapshot = ledger.data;
     expect(Object.hasOwn(snapshot.artifacts, publicPackage.name)).toBe(true);
     expect(Object.hasOwn(snapshot.operations.npmRegistries, publicPackage.name)).toBe(true);
-    expect(snapshot.operations.npmRegistries[publicPackage.name]).toBe(String(registry.url));
+    expect(snapshot.operations.npmRegistries[publicPackage.name]).toBe(registry.url);
     expect(snapshot.operations.npm[publicPackage.name]?.state).toBe("completed");
     expect(existsSync(ledger.resolveArtifactPath(publicPackage.name))).toBe(true);
   });
@@ -583,7 +552,7 @@ describe("ReleaseOrchestrator npm publication", () => {
     process.chdir(root);
     const recordedRequests = startRegistry();
     if (!registry) throw new Error("Expected registry server");
-    const recordedRegistry = String(registry.url);
+    const recordedRegistry = registry.url;
     const pkg = makePublishPackage(root, "packages/public", "@fixture/public").withVersions("1.0.0", "1.0.0");
     const packagePath = join(root, pkg.file);
     const manifest = JSON.parse(readFileSync(packagePath, "utf-8"));
@@ -797,15 +766,5 @@ describe("ReleaseOrchestrator npm publication", () => {
     await expect(orchestrator.publishToNpm([pkg])).rejects.toThrow("Failed to run release root build command 0");
     expect(published).toEqual([]);
     expect(orchestrator.hasCrossedIrreversibleBoundary()).toBe(false);
-  });
-});
-
-describe("isValidNpmTag", () => {
-  test("accepts named dist-tags", () => {
-    expect(["latest", "next", "beta-1", "release_2026"].every(isValidNpmTag)).toBe(true);
-  });
-
-  test("rejects semver versions, partials, wildcards, and invalid characters", () => {
-    expect(["1.2.3", "v1", "v1.2", "v1.2.x", "x", "bad tag", "@beta"].some(isValidNpmTag)).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
@@ -15,8 +15,19 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
+const EXECUTABLE_MODE = 0o755;
+
+function rejectEveryPush(root: string): void {
+  const hooksDirectory = join(root, ".git/no-hooks");
+  const hookPath = join(hooksDirectory, "pre-push");
+  mkdirSync(hooksDirectory, { recursive: true });
+  writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+  chmodSync(hookPath, EXECUTABLE_MODE);
+}
+
 describe.each([false, true])("interrupted branch pushes with tags=%s", (tags) => {
   const originalCwd = process.cwd();
+  const plannedRefs = tags ? ["refs/heads/main", `refs/tags/${RELEASE_TAG}`] : ["refs/heads/main"];
   let fixture: Fixture;
   let releaseCommit: string;
   let baseCommit: string;
@@ -43,12 +54,11 @@ describe.each([false, true])("interrupted branch pushes with tags=%s", (tags) =>
       stones: [makePendingStone()],
     });
     await recordReleaseCommit(ledger, fixture.root, releaseCommit);
-    await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(fixture.remote).href }, [
-      { destination: "refs/heads/main", oid: releaseCommit, source: "refs/heads/main" },
-      ...(tags
-        ? [{ destination: `refs/tags/${RELEASE_TAG}`, oid: releaseCommit, source: `refs/tags/${RELEASE_TAG}` }]
-        : []),
-    ]);
+    await ledger.configurePush(
+      "origin",
+      { canonicalUrl: pathToFileURL(fixture.remote).href },
+      plannedRefs.map((ref) => ({ destination: ref, oid: releaseCommit, source: ref })),
+    );
     await ledger.setPhase("local-ready");
     await ledger.markPush("started");
   });
@@ -71,7 +81,21 @@ describe.each([false, true])("interrupted branch pushes with tags=%s", (tags) =>
 
     await ReleaseOrchestrator.resume(makeConfig(fixture.root));
 
-    expect(await gitText(fixture.root, ["ls-remote", fixture.remote, "refs/heads/main"])).toContain(releaseCommit);
+    for (const ref of plannedRefs) {
+      expect(await gitText(fixture.root, ["ls-remote", fixture.remote, ref])).toContain(releaseCommit);
+    }
+    expect(await ReleaseLedger.loadActive()).toBeNull();
+  });
+
+  test("completes without pushing again when every planned ref is already at the recorded oid", async () => {
+    await Bun.$`git push -q origin ${plannedRefs.map((ref) => `${releaseCommit}:${ref}`)}`.quiet();
+    rejectEveryPush(fixture.root);
+
+    await ReleaseOrchestrator.resume(makeConfig(fixture.root));
+
+    for (const ref of plannedRefs) {
+      expect(await gitText(fixture.root, ["ls-remote", fixture.remote, ref])).toContain(releaseCommit);
+    }
     expect(await ReleaseLedger.loadActive()).toBeNull();
   });
 

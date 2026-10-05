@@ -7,8 +7,6 @@ import { isEscapingPath } from "../ReleaseSource";
 import { type BuildOutputMatcher, createBuildOutputMatcher, EMPTY_BUILD_OUTPUT_MATCHER } from "./build-output-matcher";
 import { collectTrackedPaths, listIgnoredInputs, parseIndexRecords } from "./npm-pack";
 
-export { type BuildOutputMatcher, createBuildOutputMatcher, EMPTY_BUILD_OUTPUT_MATCHER } from "./build-output-matcher";
-
 const SUBMODULE_MODE = "160000";
 const RELATIVE_PREFIX = "./";
 

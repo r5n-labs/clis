@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { GitProvider } from "../../src/providers";
 import { ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
+import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import {
   type Fixture,
   gitText,
@@ -15,7 +16,6 @@ import {
   makePublishPackage,
   makeRootBuildScript,
   PACKAGE_FILE,
-  PACKAGE_NAME,
   RELEASE_TAG,
   recordReleaseCommit,
   STONE_FILE,
@@ -35,27 +35,12 @@ async function writePackedArtifact(root: string, artifactPath: string, manifest:
 
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
-  const originalRegistry = process.env.BUN_CONFIG_REGISTRY;
-  const originalToken = process.env.BUN_CONFIG_TOKEN;
-  const originalNpmRegistry = process.env.NPM_CONFIG_REGISTRY;
-  const originalProvenance = process.env.NPM_CONFIG_PROVENANCE;
-  const originalUserConfig = process.env.NPM_CONFIG_USERCONFIG;
   let fixture: Fixture | undefined;
-  let registry: ReturnType<typeof Bun.serve> | undefined;
+  let registry: NpmRegistryServer | undefined;
 
   afterEach(() => {
-    registry?.stop(true);
+    registry?.stop();
     registry = undefined;
-    if (originalRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
-    else process.env.BUN_CONFIG_REGISTRY = originalRegistry;
-    if (originalToken === undefined) delete process.env.BUN_CONFIG_TOKEN;
-    else process.env.BUN_CONFIG_TOKEN = originalToken;
-    if (originalNpmRegistry === undefined) delete process.env.NPM_CONFIG_REGISTRY;
-    else process.env.NPM_CONFIG_REGISTRY = originalNpmRegistry;
-    if (originalProvenance === undefined) delete process.env.NPM_CONFIG_PROVENANCE;
-    else process.env.NPM_CONFIG_PROVENANCE = originalProvenance;
-    if (originalUserConfig === undefined) delete process.env.NPM_CONFIG_USERCONFIG;
-    else process.env.NPM_CONFIG_USERCONFIG = originalUserConfig;
     process.chdir(originalCwd);
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
@@ -144,84 +129,6 @@ describe("ReleaseOrchestrator release resume", () => {
     expect(active?.data.releaseCommit).toBeUndefined();
     expect(active?.data.operations.push).toBeUndefined();
     expect(remoteHead).toBe(baseCommit);
-  });
-
-  test("resumes a started push by confirming exact remote refs without pushing again", async () => {
-    fixture = await setupReleaseFixture(false);
-    const { root, remote } = fixture;
-    process.chdir(root);
-    const pkg = makePackage();
-    const stone = makePendingStone();
-    const head = await gitText(root, ["rev-parse", "HEAD"]);
-    const ledger = await ReleaseLedger.create(
-      {
-        options: {
-          changelog: false,
-          createRelease: false,
-          dryRun: false,
-          npm: false,
-          npmTag: "latest",
-          publishOnly: true,
-          push: true,
-          tags: false,
-        },
-        packages: [pkg],
-        stones: [stone],
-      },
-      root,
-    );
-    await recordReleaseCommit(ledger, root, head);
-    await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(remote).href }, [
-      { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
-    ]);
-    await ledger.setPhase("local-ready");
-    await ledger.markPush("started");
-
-    const result = await ReleaseOrchestrator.resume(makeConfig(root));
-
-    expect(result.packages.map((item) => item.name)).toEqual([PACKAGE_NAME]);
-    expect(await ReleaseLedger.loadActive(root)).toBeNull();
-    expect(await gitText(root, ["ls-remote", remote, "refs/heads/main"])).toContain(head);
-  });
-
-  test("resumes a started push by pushing when the remote has none of the planned refs", async () => {
-    fixture = await setupReleaseFixture(false);
-    const { root } = fixture;
-    process.chdir(root);
-    const emptyRemote = join(root, ".git/empty-remote.git");
-    await Bun.$`git init -q --bare ${emptyRemote}`.quiet();
-    await Bun.$`git remote set-url origin ${emptyRemote}`.quiet();
-    const head = await gitText(root, ["rev-parse", "HEAD"]);
-    const ledger = await ReleaseLedger.create(
-      {
-        options: {
-          changelog: false,
-          createRelease: false,
-          dryRun: false,
-          npm: false,
-          npmTag: "latest",
-          publishOnly: true,
-          push: true,
-          tags: false,
-        },
-        packages: [makePackage()],
-        stones: [makePendingStone()],
-      },
-      root,
-    );
-    await recordReleaseCommit(ledger, root, head);
-    await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(emptyRemote).href }, [
-      { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
-      { destination: `refs/tags/${RELEASE_TAG}`, oid: head, source: `refs/tags/${RELEASE_TAG}` },
-    ]);
-    await ledger.setPhase("local-ready");
-    await ledger.markPush("started");
-
-    await ReleaseOrchestrator.resume(makeConfig(root));
-
-    expect((await gitText(root, ["ls-remote", emptyRemote, "refs/heads/main"])).startsWith(head)).toBe(true);
-    expect((await gitText(root, ["ls-remote", emptyRemote, `refs/tags/${RELEASE_TAG}`])).startsWith(head)).toBe(true);
-    expect(await ReleaseLedger.loadActive(root)).toBeNull();
   });
 
   test("creates provider releases after the remote branch advances past the pushed release commit", async () => {
@@ -513,22 +420,15 @@ describe("ReleaseOrchestrator release resume", () => {
     const artifact = await ledger.setArtifact(pkg.name, artifactSource);
 
     const methods: string[] = [];
-    registry = Bun.serve({
-      port: 0,
-      fetch(request) {
-        methods.push(request.method);
-        return Response.json({
-          "dist-tags": { latest: "1.0.1" },
-          name: pkg.name,
-          versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
-        });
-      },
+    registry = serveNpmRegistry(root, (request) => {
+      methods.push(request.method);
+      return Response.json({
+        "dist-tags": { latest: "1.0.1" },
+        name: pkg.name,
+        versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
+      });
     });
-    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
-    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
-    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
-    process.env.NPM_CONFIG_PROVENANCE = "false";
-    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    await ledger.setNpmRegistry(pkg.name, registry.url);
     await ledger.setPhase("local-ready");
     await ledger.markNpm(pkg.name, "started");
 
@@ -574,21 +474,14 @@ describe("ReleaseOrchestrator release resume", () => {
     await recordReleaseCommit(ledger, root, head);
     const artifact = await ledger.setArtifact(pkg.name, artifactSource);
 
-    registry = Bun.serve({
-      port: 0,
-      fetch() {
-        return Response.json({
-          "dist-tags": { latest: "1.0.1" },
-          name: pkg.name,
-          versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
-        });
-      },
-    });
-    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
-    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
-    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
-    process.env.NPM_CONFIG_PROVENANCE = "false";
-    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    registry = serveNpmRegistry(root, () =>
+      Response.json({
+        "dist-tags": { latest: "1.0.1" },
+        name: pkg.name,
+        versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
+      }),
+    );
+    await ledger.setNpmRegistry(pkg.name, registry.url);
     await ledger.setPhase("local-ready");
     await ledger.markNpm(pkg.name, "started");
 
@@ -647,32 +540,21 @@ describe("ReleaseOrchestrator release resume", () => {
     const artifact = await ledger.setArtifact(publicPkg.name, artifactSource);
 
     const published: string[] = [];
-    registry = Bun.serve({
-      port: 0,
-      async fetch(request) {
-        if (request.method === "GET") {
-          const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
-          if (!packageName.startsWith(publicPkg.name)) return Response.json({ error: "not found" }, { status: 404 });
-          return Response.json({
-            "dist-tags": { latest: "1.0.1" },
-            name: publicPkg.name,
-            versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: publicPkg.name, version: "1.0.1" } },
-          });
-        }
-        published.push(decodeURIComponent(new URL(request.url).pathname.slice(1)));
-        await request.arrayBuffer();
-        return Response.json({ ok: true }, { status: 201 });
-      },
+    registry = serveNpmRegistry(root, async (request) => {
+      if (request.method === "GET") {
+        const packageName = decodeURIComponent(new URL(request.url).pathname.slice(1));
+        if (!packageName.startsWith(publicPkg.name)) return Response.json({ error: "not found" }, { status: 404 });
+        return Response.json({
+          "dist-tags": { latest: "1.0.1" },
+          name: publicPkg.name,
+          versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: publicPkg.name, version: "1.0.1" } },
+        });
+      }
+      published.push(decodeURIComponent(new URL(request.url).pathname.slice(1)));
+      await request.arrayBuffer();
+      return Response.json({ ok: true }, { status: 201 });
     });
-    process.env.BUN_CONFIG_REGISTRY = String(registry.url);
-    process.env.BUN_CONFIG_TOKEN = crypto.randomUUID();
-    process.env.NPM_CONFIG_REGISTRY = String(registry.url);
-    process.env.NPM_CONFIG_PROVENANCE = "false";
-    const registryUrl = new URL(registry.url);
-    const userConfig = join(root, ".git/npmrc-test");
-    writeFileSync(userConfig, `registry=${registry.url}\n//${registryUrl.host}/:_authToken=test-token\n`);
-    process.env.NPM_CONFIG_USERCONFIG = userConfig;
-    await ledger.setNpmRegistry(publicPkg.name, String(registry.url));
+    await ledger.setNpmRegistry(publicPkg.name, registry.url);
     await ledger.setPhase("local-ready");
     await ledger.markNpm(publicPkg.name, "started");
     expect(existsSync(join(root, "root-build-count.txt"))).toBe(false);
@@ -722,14 +604,11 @@ describe("ReleaseOrchestrator release resume", () => {
     });
     await ledger.setArtifact(pkg.name, artifactSource);
     const requests: string[] = [];
-    registry = Bun.serve({
-      port: 0,
-      fetch(request) {
-        requests.push(request.method);
-        return Response.json({ error: "unexpected request" }, { status: 500 });
-      },
+    registry = serveNpmRegistry(root, (request) => {
+      requests.push(request.method);
+      return Response.json({ error: "unexpected request" }, { status: 500 });
     });
-    await ledger.setNpmRegistry(pkg.name, String(registry.url));
+    await ledger.setNpmRegistry(pkg.name, registry.url);
     await ledger.setPhase("local-ready");
 
     await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow("Invalid publishConfig.access");

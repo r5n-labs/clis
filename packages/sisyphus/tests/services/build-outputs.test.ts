@@ -1,12 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Exit } from "@r5n/cli-core";
 import { DEFAULT_BUILD_COMMAND } from "../../src/constants";
-import {
-  createBuildOutputMatcher,
-  EMPTY_BUILD_OUTPUT_MATCHER,
-  resolveBuildConfig,
-  runBuildCommand,
-} from "../../src/services/release/build-outputs";
+import { createBuildOutputMatcher, EMPTY_BUILD_OUTPUT_MATCHER } from "../../src/services/release/build-output-matcher";
+import { resolveBuildConfig, runBuildCommand } from "../../src/services/release/build-outputs";
 
 describe("createBuildOutputMatcher", () => {
   test("matches nested paths under a package glob", () => {
