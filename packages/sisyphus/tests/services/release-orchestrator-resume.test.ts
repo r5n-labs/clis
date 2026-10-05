@@ -23,6 +23,10 @@ import {
 } from "../helpers/release-orchestrator";
 
 const CLI_PATH = join(import.meta.dir, "../../src/cli.ts");
+const HTTP_CREATED = 201;
+const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
+const HTTP_SERVER_ERROR = 500;
 const PROVIDER_RELEASE = {
   notes: [
     "`@fixture/foo` 1.0.0 → 1.0.1",
@@ -422,7 +426,7 @@ describe("ReleaseOrchestrator release resume", () => {
     await orchestrator.rollback();
   });
 
-  test("resumes a started npm publish only when registry integrity matches the durable artifact", async () => {
+  async function startNpmPublication(handle: (request: Request, integrity: string) => Promise<Response>) {
     fixture = await setupReleaseFixture(false);
     const { root } = fixture;
     process.chdir(root);
@@ -449,26 +453,76 @@ describe("ReleaseOrchestrator release resume", () => {
     );
     await recordReleaseCommit(ledger, root, head);
     const artifact = await ledger.setArtifact(pkg.name, artifactSource);
-
-    const methods: string[] = [];
+    const requests: string[] = [];
     registry = serveNpmRegistry(root, (request) => {
-      methods.push(request.method);
-      return Response.json({
-        "dist-tags": { latest: "1.0.1" },
-        name: pkg.name,
-        versions: { "1.0.1": { dist: { integrity: artifact.integrity }, name: pkg.name, version: "1.0.1" } },
-      });
+      requests.push(request.method);
+      return handle(request, artifact.integrity);
     });
     await ledger.setNpmRegistry(pkg.name, registry.url);
     await ledger.setPhase("local-ready");
     await ledger.markNpm(pkg.name, "started");
+    return { artifact, pkg, requests, root };
+  }
+
+  test("resumes a started npm publish only when registry integrity matches the durable artifact", async () => {
+    const { pkg, requests, root } = await startNpmPublication(async (_, integrity) =>
+      Response.json({
+        "dist-tags": { latest: "1.0.1" },
+        name: "@fixture/public",
+        versions: { "1.0.1": { dist: { integrity }, name: "@fixture/public", version: "1.0.1" } },
+      }),
+    );
 
     const result = await ReleaseOrchestrator.resume(makeConfig(root));
 
     expect(result.packages.map((item) => item.name)).toEqual([pkg.name]);
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
     expect(existsSync(join(root, "packages/public/build-count.txt"))).toBe(false);
-    expect(methods).toEqual(["GET"]);
+    expect(requests).toEqual(["GET"]);
+  });
+
+  test("republishes the durable artifact when the registry does not list a started publication", async () => {
+    const uploaded: string[] = [];
+    const { artifact, requests, root } = await startNpmPublication(async (request) => {
+      if (request.method !== "PUT") return Response.json({ error: "not found" }, { status: HTTP_NOT_FOUND });
+      const body = (await request.json()) as { versions: Record<string, { dist: { integrity: string } }> };
+      uploaded.push(body.versions["1.0.1"]?.dist.integrity ?? "");
+      return Response.json({ ok: true }, { status: HTTP_CREATED });
+    });
+
+    await ReleaseOrchestrator.resume(makeConfig(root));
+
+    expect(requests.filter((method) => method === "PUT")).toHaveLength(1);
+    expect(uploaded).toEqual([artifact.integrity]);
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
+  });
+
+  test.each([
+    {
+      expected: "was already accepted by",
+      name: "npm reports the version as already published",
+      uploads: 1,
+      respond: (request: Request) =>
+        request.method === "PUT"
+          ? Response.json(
+              { error: "You cannot publish over the previously published versions: 1.0.1." },
+              { status: HTTP_FORBIDDEN },
+            )
+          : Response.json({ error: "not found" }, { status: HTTP_NOT_FOUND }),
+    },
+    {
+      expected: "did not confirm whether it exists",
+      name: "the registry cannot be read",
+      uploads: 0,
+      respond: () => Response.json({ error: "unavailable" }, { status: HTTP_SERVER_ERROR }),
+    },
+  ])("keeps a started publication pending when $name", async ({ expected, respond, uploads }) => {
+    const { pkg, requests, root } = await startNpmPublication(async (request) => respond(request));
+
+    await expect(ReleaseOrchestrator.resume(makeConfig(root))).rejects.toThrow(expected);
+
+    expect(requests.filter((method) => method === "PUT")).toHaveLength(uploads);
+    expect((await ReleaseLedger.loadActive(root))?.data.operations.npm[pkg.name]?.state).toBe("started");
   });
 
   test("does not re-run the root build or clean outputs when every artifact is already in the ledger", async () => {

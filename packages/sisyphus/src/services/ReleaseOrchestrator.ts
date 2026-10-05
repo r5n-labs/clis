@@ -688,7 +688,7 @@ export class ReleaseOrchestrator {
     if (operation.state === "completed") return;
 
     if (operation.state === "started") {
-      await reconcileNpmPublication(ledger, prepared.pkg);
+      await reconcileNpmPublication(ledger, prepared.pkg, () => this.publishPackage(prepared));
       return;
     }
 
