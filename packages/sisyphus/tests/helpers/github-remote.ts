@@ -4,7 +4,6 @@ import type { ReleaseLedgerRemoteDestination } from "../../src/services/release-
 
 const EXECUTABLE_MODE = 0o755;
 const GITHUB_HOST = "git@github.com";
-const ISOLATED_ENVIRONMENT_KEYS = ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "PATH"] as const;
 
 export const GITHUB_OWNER = "acme";
 export const GITHUB_REPO = "widgets";
@@ -15,7 +14,7 @@ export const GITHUB_DESTINATION: ReleaseLedgerRemoteDestination = {
   repo: GITHUB_REPO,
 };
 
-export type GitHubRemote = { ghCalls: () => string[][]; restore(): void };
+export type GitHubRemote = { env: Record<string, string | undefined>; ghCalls: () => string[][] };
 
 export async function routeGitHubRemote(root: string, remote: string): Promise<GitHubRemote> {
   const bin = join(root, ".git/github-bin");
@@ -59,22 +58,17 @@ export async function routeGitHubRemote(root: string, remote: string): Promise<G
   await Bun.$`git config core.sshCommand ${sshPath}`.cwd(root).quiet();
   await Bun.$`git config ssh.variant simple`.cwd(root).quiet();
 
-  const originalEnvironment = ISOLATED_ENVIRONMENT_KEYS.map((key) => [key, process.env[key]] as const);
-  process.env.GIT_CONFIG_GLOBAL = globalConfig;
-  process.env.GIT_CONFIG_NOSYSTEM = "1";
-  process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
-
   return {
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: globalConfig,
+      GIT_CONFIG_NOSYSTEM: "1",
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+    },
     ghCalls: () =>
       readFileSync(callsPath, "utf8")
         .split("\n")
         .filter(Boolean)
         .map((line) => JSON.parse(line) as string[]),
-    restore() {
-      for (const [key, value] of originalEnvironment) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-    },
   };
 }

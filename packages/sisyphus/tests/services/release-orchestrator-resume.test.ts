@@ -4,13 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
-import {
-  GITHUB_DESTINATION,
-  GITHUB_OWNER,
-  GITHUB_REPO,
-  type GitHubRemote,
-  routeGitHubRemote,
-} from "../helpers/github-remote";
+import { GITHUB_DESTINATION, GITHUB_OWNER, GITHUB_REPO, routeGitHubRemote } from "../helpers/github-remote";
 import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import {
   type Fixture,
@@ -28,6 +22,7 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
+const CLI_PATH = join(import.meta.dir, "../../src/cli.ts");
 const PROVIDER_RELEASE = {
   notes: [
     "`@fixture/foo` 1.0.0 → 1.0.1",
@@ -57,14 +52,11 @@ async function writePackedArtifact(root: string, artifactPath: string, manifest:
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
   let fixture: Fixture | undefined;
-  let github: GitHubRemote | undefined;
   let registry: NpmRegistryServer | undefined;
 
   afterEach(() => {
     registry?.stop();
     registry = undefined;
-    github?.restore();
-    github = undefined;
     process.chdir(originalCwd);
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
@@ -159,7 +151,7 @@ describe("ReleaseOrchestrator release resume", () => {
     fixture = await setupReleaseFixture(false);
     const { root, remote } = fixture;
     process.chdir(root);
-    github = await routeGitHubRemote(root, remote);
+    const github = await routeGitHubRemote(root, remote);
     const pkg = makePackage();
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
@@ -192,7 +184,24 @@ describe("ReleaseOrchestrator release resume", () => {
     const advanced = await gitText(root, ["commit-tree", `${head}^{tree}`, "-p", head, "-m", "advance"]);
     await Bun.$`git push -q ${remote} ${`${advanced}:refs/heads/main`}`.quiet();
 
-    const resumed = await ReleaseOrchestrator.resume(makeConfig(root));
+    const child = Bun.spawn([process.execPath, CLI_PATH, "roll", "--resume", "--json"], {
+      cwd: root,
+      env: github.env,
+      stderr: "pipe",
+      stdin: "ignore",
+      stdout: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: expect.any(String) });
+    const report = JSON.parse(stdout);
+    expect(report.mode).toBe("resume");
+    expect(report.status).toBe("completed");
+    expect(report.operations.providerReleases).toBe(true);
 
     expect(github.ghCalls().filter(([command]) => command === "release")).toEqual([
       [
@@ -208,8 +217,6 @@ describe("ReleaseOrchestrator release resume", () => {
         "--verify-tag",
       ],
     ]);
-    expect(resumed.ledger?.phase).toBe("completed");
-    expect(resumed.ledger?.operations.providerReleases[pkg.name]?.state).toBe("completed");
     expect(await ReleaseLedger.loadActive(root)).toBeNull();
   });
 
