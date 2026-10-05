@@ -52,9 +52,9 @@ Tests live in `packages/<name>/tests/` for core, sisyphus, hydra and argus, colo
 
 | Where | Value |
 |-------|-------|
-| `package.json` `packageManager` | `bun@1.3.3` |
-| `.github/workflows/ci.yml` `BUN_VERSION` | `1.3.14` |
-| `@types/bun` | `1.3.14` |
+| `package.json` `packageManager` | `bun@1.4.2` |
+| `.github/workflows/ci.yml` `BUN_VERSION` | `1.4.2` |
+| `@types/bun` | `1.4.2` |
 | Release workflow | the self-hosted runner's own bun; `npm@11` bootstrapped into `$RUNNER_TEMP` |
 | Root devDependencies | exact pins (Biome, @clack/prompts, lefthook, TypeScript 7) |
 
@@ -132,7 +132,7 @@ Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries thr
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.
 - Release tests need a 30 s per-test timeout. `bunfig.toml` preloads `test-setup.ts`, which sets it through `bun:test`, but Bun applies that only to the first file of a multi-file run and ignores the TOML `test.timeout` setting, so `bun run test` and CI pass `--timeout 30000`; add it to any multi-file `bun test` invocation.
 - Prerequisites on PATH: `git`, `npm` (11 or 12). Provider tests use local command shims; they never contact real GitHub or GitLab services.
-- Pass command shims through a subprocess `env` (see `packages/sisyphus/tests/helpers/pull-request.ts`), never by changing `process.env.PATH` in the test process: Bun 1.3.14 resolves `Bun.$` commands from the `PATH` it started with, so the real `gh` would run. Isolate global Git config (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`) whenever a test uses a real host URL such as `github.com`.
+- Pass command shims through a subprocess `env` (see `packages/sisyphus/tests/helpers/pull-request.ts`), never by changing `process.env.PATH` in the test process: Bun before 1.4 resolves `Bun.$` commands from the `PATH` it started with, so the real `gh` would run on an older runtime. Isolate global Git config (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`) whenever a test uses a real host URL such as `github.com`.
 - Prefer integration tests over broad mocking; pin every bug fix with a regression test that fails on the previous behaviour.
 
 ## Git Hooks
