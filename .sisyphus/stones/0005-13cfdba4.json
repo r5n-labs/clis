@@ -1,0 +1,15 @@
+{
+  "commits": [
+    {
+      "body": "The self-hosted runner now provides Bun 1.4.2, which the release workflow\nuses directly. Pin CI, packageManager and @types/bun to the same version so\ntests, builds and releases run on one runtime.",
+      "hash": "0d7e2ce",
+      "message": "align Bun pins with the runner's Bun 1.4.2",
+      "packages": ["@r5n/atlas"],
+      "subject": "chore: align Bun pins with the runner's Bun 1.4.2",
+      "type": "chore"
+    }
+  ],
+  "id": "0005-13cfdba4",
+  "message": "Chores",
+  "patch": ["@r5n/atlas"]
+}
