@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-05 - @r5n/sisyphus@0.13.0
+
+**Packages**
+- ✨ `@r5n/sisyphus` 0.12.2 → 0.13.0
+
+### 🪨 Features
+**Packages:** `@r5n/sisyphus`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`0dc422e`](https://github.com/r5n-labs/clis/commit/0dc422e) feat(sisyphus): verify npm visibility after publishing
+  <details>
+  <summary>Details</summary>
+
+  npm can accept a publication and only list the version minutes or hours
+  later, so a successful npm publish no longer proves that a release reached
+  the registry. Add release.npmVisibilityTimeout to poll each released version
+  and compare its integrity with the packed artifact. Late or mismatched
+  versions become report warnings and visible flags instead of failing an
+  irreversible release, and the check stays off by default.
+  </details>
+
+</details>
+
 ## 2026-10-04 - @r5n/argus@0.3.3, @r5n/atlas@0.6.3, @r5n/hydra@0.11.2, @r5n/sisyphus@0.12.2
 
 **Packages**
