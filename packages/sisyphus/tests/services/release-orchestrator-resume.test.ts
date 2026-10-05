@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
-import { GITHUB_DESTINATION, GITHUB_OWNER, GITHUB_REPO, routeGitHubRemote } from "../helpers/github-remote";
+import {
+  GITHUB_DESTINATION,
+  GITHUB_OWNER,
+  GITHUB_REPO,
+  type GitHubRemote,
+  routeGitHubRemote,
+} from "../helpers/github-remote";
 import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import {
   type Fixture,
@@ -50,15 +56,16 @@ async function writePackedArtifact(root: string, artifactPath: string, manifest:
 
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
-  const originalPath = process.env.PATH;
   let fixture: Fixture | undefined;
+  let github: GitHubRemote | undefined;
   let registry: NpmRegistryServer | undefined;
 
   afterEach(() => {
     registry?.stop();
     registry = undefined;
+    github?.restore();
+    github = undefined;
     process.chdir(originalCwd);
-    process.env.PATH = originalPath;
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
       rmSync(fixture.remote, { force: true, recursive: true });
@@ -152,8 +159,7 @@ describe("ReleaseOrchestrator release resume", () => {
     fixture = await setupReleaseFixture(false);
     const { root, remote } = fixture;
     process.chdir(root);
-    const github = await routeGitHubRemote(root, remote);
-    process.env.PATH = `${github.bin}:${originalPath}`;
+    github = await routeGitHubRemote(root, remote);
     const pkg = makePackage();
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
