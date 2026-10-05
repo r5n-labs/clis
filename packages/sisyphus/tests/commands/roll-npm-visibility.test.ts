@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ConfigManager } from "@r5n/cli-core";
 import { RollCommand } from "../../src/commands/roll";
+import { hashReleasePlan, hashReleaseSource, StoneManager } from "../../src/services";
 import { ReleaseLedger } from "../../src/services/release-ledger";
 import type { SisyphusConfig } from "../../src/types";
 import { type FakeNpmRegistry, type PackumentView, startFakeNpmRegistry } from "../helpers/npm-registry";
@@ -10,6 +12,7 @@ import {
   gitText,
   makeConfig,
   makePublishPackage,
+  PACKAGE_FILE,
   PACKAGE_NAME,
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
@@ -21,6 +24,7 @@ const VISIBILITY_TIMEOUT_SECONDS = 1;
 const TAMPERED_INTEGRITY = "sha512-tampered";
 const HTTP_SERVER_ERROR = 500;
 const NPM_RELEASE = { changelog: false, createRelease: false, npm: true, push: false, tags: false };
+const PUBLISH_ONLY_NPM_RELEASE = { createRelease: false, npm: true, publishOnly: true, tags: false };
 
 const serveAsPublished: PackumentView = (packument) => packument;
 const withholdVersion: PackumentView = () => undefined;
@@ -119,6 +123,24 @@ describe("RollCommand npm visibility", () => {
     return { config, registry, root };
   }
 
+  async function preparePublishOnly(config: ConfigManager<SisyphusConfig>, root: string) {
+    const manager = new StoneManager(config);
+    const stones = await manager.list();
+    const timestamp = await manager.archive(stones);
+    const manifest = JSON.parse(readFileSync(join(root, PACKAGE_FILE), "utf8"));
+    writeFileSync(join(root, PACKAGE_FILE), `${JSON.stringify({ ...manifest, version: RELEASED_VERSION }, null, 2)}\n`);
+    const plan = {
+      packages: { [PACKAGE_NAME]: { newVersion: RELEASED_VERSION, oldVersion: manifest.version } },
+      sourceHash: await hashReleaseSource(config.get("sisyphusDir")),
+      stoneIds: stones.map((stone) => stone.id),
+      timestamp,
+    };
+    const stoneJson = stones.map((stone) => stone.toJson());
+    config.set("currentRelease", { ...plan, planHash: hashReleasePlan(plan, stoneJson) });
+    await Bun.$`git add -A`.quiet();
+    await Bun.$`git commit -q -m "prepare publish-only release"`.quiet();
+  }
+
   test.each(cases)("$name", async ({ readsRegistry, timeout, view, visible, warnings }) => {
     const { config, registry } = await prepareRelease(view, timeout);
 
@@ -131,6 +153,19 @@ describe("RollCommand npm visibility", () => {
     for (const fragment of warnings) expect(report.warnings[0]).toContain(fragment);
     expect(registry.published).toEqual([PACKAGE_NAME]);
     expect(registry.readsAfterPublish.length > 0).toBe(readsRegistry);
+  });
+
+  test("checks registry visibility after a publish-only release", async () => {
+    const { config, registry, root } = await prepareRelease(serveAsPublished, VISIBILITY_TIMEOUT_SECONDS);
+    await preparePublishOnly(config, root);
+
+    const report = await rollJson(config, PUBLISH_ONLY_NPM_RELEASE);
+
+    expect(report.mode).toBe("publish-only");
+    expect(report.status).toBe("completed");
+    expect(report.publishedPackages).toEqual([{ name: PACKAGE_NAME, version: RELEASED_VERSION }]);
+    expect(report.packages[0].visible).toBe(true);
+    expect(registry.readsAfterPublish.length > 0).toBe(true);
   });
 
   test.each(invalidTimeouts)("rejects release.npmVisibilityTimeout %j before releasing", async (timeout) => {

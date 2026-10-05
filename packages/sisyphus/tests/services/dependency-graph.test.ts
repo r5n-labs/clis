@@ -201,6 +201,8 @@ describe("isRangeInvalidated", () => {
     expect(isRangeInvalidated("workspace:^", "0.1.2", "0.1.3")).toBe(false);
     expect(isRangeInvalidated("workspace:^", "0.1.2", "0.2.0")).toBe(true);
     expect(isRangeInvalidated("workspace:^", "0.0.3", "0.0.4")).toBe(true);
+    expect(isRangeInvalidated("workspace:^", "0.0.0", "0.1.0")).toBe(true);
+    expect(isRangeInvalidated("workspace:^", "0.0.3", "0.1.3")).toBe(true);
   });
 
   test("tilde admits patch only", () => {
@@ -384,12 +386,5 @@ describe("excludeIgnoredFromStone", () => {
     const stone = Stone.create({ major: ["@app/a"], message: "release" });
 
     expect(excludeIgnoredFromStone(stone, []).stone).toBe(stone);
-  });
-});
-
-describe("isRangeInvalidated for 0.0.x carets", () => {
-  test("a minor bump leaves a 0.0.x caret range", () => {
-    expect(isRangeInvalidated("workspace:^", "0.0.0", "0.1.0")).toBe(true);
-    expect(isRangeInvalidated("workspace:^", "0.0.3", "0.1.3")).toBe(true);
   });
 });

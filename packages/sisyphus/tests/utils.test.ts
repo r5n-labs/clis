@@ -59,7 +59,7 @@ describe("findAffectedPackages", () => {
     expect(findAffectedPackages(["README.md"], pathMap, false)).not.toContain("root");
   });
 
-  test("BUG: root package is included for every file when includeRoot=true", () => {
+  test("includeRoot=true attributes every file to the root package as well as its own package", () => {
     const result = findAffectedPackages(["packages/ui/index.ts"], pathMap, true);
 
     expect(result).toContain("@scope/ui");

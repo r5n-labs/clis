@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { ConfigManager } from "@r5n/cli-core";
 import { VersionCommand } from "../../src/commands/version";
 import { SISYPHUS_DEFAULT_CONFIG } from "../../src/constants";
-import type { Package, StoneData } from "../../src/domain";
 import type { StoneJson } from "../../src/domain/Stone";
 import type { SisyphusConfig } from "../../src/types";
 import { createWorkspaceFixture } from "../helpers/workspace";
@@ -12,17 +11,16 @@ import { createWorkspaceFixture } from "../helpers/workspace";
 type ExecuteCtx = Parameters<VersionCommand["execute"]>[0];
 type CtxArgs = Record<string, string | boolean | undefined>;
 type CtxPositionals = Record<string, string | undefined>;
-type PackageSelection = { major: string[]; minor: string[]; patch: string[] };
-type InteractiveHarness = {
-  createStone: (ctx: ExecuteCtx, data: StoneData, packages: Map<string, Package>) => Promise<void>;
-  isInteractiveSession: (ctx: ExecuteCtx) => boolean;
-  promptDescription: () => Promise<string | undefined>;
-  promptMessage: () => Promise<string>;
-  selectPackagesInteractive: (
-    packages: Map<string, Package>,
-    packageNames: readonly string[],
-  ) => Promise<PackageSelection>;
-};
+type AskedPrompts = { confirm: string[]; multiselect: string[][]; text: string[] };
+
+const PACKAGE_ROOT = join(import.meta.dir, "../..");
+const VERSION_PATH = join(PACKAGE_ROOT, "src/commands/version.ts");
+const CONFIG_HELPER_PATH = join(import.meta.dir, "../helpers/release-orchestrator.ts");
+const PROMPTS_PATH = Bun.resolveSync("@clack/prompts", PACKAGE_ROOT);
+const PROMPTS_MARKER = "PROMPTS:";
+const MESSAGE_PROMPT = "Stone message (used as commit message)";
+const DESCRIPTION_PROMPT = "Description (optional, press enter to skip)";
+const CONFIRM_PROMPT = "Create this stone?";
 
 async function runGit(cwd: string, args: string[]): Promise<string> {
   const subprocess = Bun.spawn(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" });
@@ -48,6 +46,54 @@ function makeCtx(
     interactive: options.interactive ?? true,
     positionals: options.positionals ?? {},
   } as ExecuteCtx;
+}
+
+async function executeInTty(root: string, args: CtxArgs, textAnswers: Record<string, string> = {}) {
+  const source = `
+    import { mock } from "bun:test";
+    const original = { ...await import(${JSON.stringify(PROMPTS_PATH)}) };
+    const textAnswers = ${JSON.stringify(textAnswers)};
+    const asked = { confirm: [], multiselect: [], text: [] };
+    mock.module(${JSON.stringify(PROMPTS_PATH)}, () => ({
+      ...original,
+      confirm: async ({ message }) => {
+        asked.confirm.push(message);
+        return true;
+      },
+      multiselect: async ({ message, options }) => {
+        const offered = options.map((option) => option.value);
+        asked.multiselect.push(offered);
+        return message.includes("patch") ? offered : [];
+      },
+      text: async ({ message }) => {
+        asked.text.push(message);
+        return textAnswers[message] ?? "";
+      },
+    }));
+    Object.defineProperty(process.stdout, "isTTY", { value: true });
+    const { VersionCommand } = await import(${JSON.stringify(VERSION_PATH)});
+    const { makeConfig } = await import(${JSON.stringify(CONFIG_HELPER_PATH)});
+    await new VersionCommand().execute({
+      args: ${JSON.stringify({ all: false, dryRun: false, fromCommits: false, yes: false, ...args })},
+      cli: { name: "SISYPHUS" }, config: makeConfig(process.cwd()), interactive: true, positionals: {},
+    });
+    process.stdout.write(${JSON.stringify(PROMPTS_MARKER)} + JSON.stringify(asked) + "\\n");
+  `;
+  const subprocess = Bun.spawn([process.execPath, "--eval", source], {
+    cwd: root,
+    stderr: "pipe",
+    stdin: "ignore",
+    stdout: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(subprocess.stdout).text(),
+    new Response(subprocess.stderr).text(),
+    subprocess.exited,
+  ]);
+  const asked = stdout.split("\n").find((line) => line.startsWith(PROMPTS_MARKER));
+
+  if (exitCode !== 0 || !asked) throw new Error(`version in a TTY failed (${exitCode}): ${stderr.trim()}`);
+  return JSON.parse(asked.slice(PROMPTS_MARKER.length)) as AskedPrompts;
 }
 
 describe("VersionCommand non-interactive flags", () => {
@@ -223,13 +269,9 @@ describe("VersionCommand non-interactive flags", () => {
   });
 
   test("missing message is prompted in a TTY session with manual selection", async () => {
-    const command = new VersionCommand();
-    const harness = command as unknown as InteractiveHarness;
-    harness.isInteractiveSession = () => true;
-    harness.promptMessage = async () => "fix: prompted";
+    const asked = await executeInTty(root, { patch: "@fixture/foo", yes: true }, { [MESSAGE_PROMPT]: "fix: prompted" });
 
-    await command.execute(makeCtx(config, { patch: "@fixture/foo", yes: true }));
-
+    expect(asked).toEqual({ confirm: [], multiselect: [], text: [MESSAGE_PROMPT] });
     const [stone] = readStones();
     expect(stone?.message).toBe("fix: prompted");
     expect(stone?.patch).toEqual(["@fixture/foo"]);
@@ -529,24 +571,12 @@ describe("VersionCommand non-interactive flags", () => {
   });
 
   test("plain interactive mode applies filter choices and preserves tag", async () => {
-    const command = new VersionCommand();
-    const harness = command as unknown as InteractiveHarness;
-    let availablePackageNames: readonly string[] = [];
-    let stoneData: StoneData | undefined;
+    const asked = await executeInTty(root, { filter: "foo", message: "fix: foo", tag: " beta " });
 
-    harness.isInteractiveSession = () => true;
-    harness.selectPackagesInteractive = async (_packages, packageNames) => {
-      availablePackageNames = packageNames;
-      return { major: [], minor: [], patch: [...packageNames] };
-    };
-    harness.promptDescription = async () => undefined;
-    harness.createStone = async (_ctx, data, _packages) => {
-      stoneData = data;
-    };
-
-    await command.execute(makeCtx(config, { filter: "foo", message: "fix: foo", tag: " beta " }));
-
-    expect(availablePackageNames).toEqual(["@fixture/foo"]);
-    expect(stoneData).toMatchObject({ message: "fix: foo", patch: ["@fixture/foo"], tag: "beta" });
+    expect([...new Set(asked.multiselect.flat())]).toEqual(["@fixture/foo"]);
+    expect(asked.text).toEqual([DESCRIPTION_PROMPT]);
+    expect(asked.confirm).toEqual([CONFIRM_PROMPT]);
+    const [stone] = readStones();
+    expect(stone).toMatchObject({ message: "fix: foo", patch: ["@fixture/foo"], tag: "beta" });
   });
 });
