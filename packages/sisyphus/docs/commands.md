@@ -79,7 +79,7 @@ Publishing builds each public package, rewrites its `package.json` to a clean pu
 
 Publication defaults to public access and honours `publishConfig.access: "restricted"` from the immutable package manifest. Invalid access values fail before publication.
 
-For releases with external operations, Sisyphus stores the plan, immutable artefacts, exact Git refs, and per-operation progress below Git's worktree-specific administrative directory. `--resume` verifies an ambiguous npm upload by SHA-512 integrity, verifies an ambiguous push from exact remote refs, and verifies provider releases by tag, title, and notes. If the external system cannot confirm the expected state, resume stops rather than repeating the operation.
+For releases with external operations, Sisyphus stores the plan, immutable artefacts, exact Git refs, and per-operation progress below Git's worktree-specific administrative directory. `--resume` verifies an ambiguous npm upload by SHA-512 integrity, verifies an ambiguous push from exact remote refs, and verifies provider releases by tag, title, and notes. If the external system cannot confirm the expected state, resume stops rather than repeating the operation. Resume runs from the recorded release commit; when HEAD is still the release's base commit with no tracked changes, as in a fresh CI checkout with a restored ledger, it checks out the release commit (detached) first.
 
 Npm publication requires a release commit, so it cannot be combined with `--noCommit`. Publish-only releases verify the source hash recorded by `actions release-pr`, the exact package versions, and the complete archived-stone set before creating tags or artefacts.
 
@@ -104,6 +104,8 @@ CI integration. `actions init` detects your provider (GitHub Actions or GitLab C
 Run `actions release-pr` from a clean working tree; commit or stash local changes first. It restores the original branch or detached checkout after preparing or previewing the release PR. `--dryRun` previews the fetched base without creating or resetting the local release branch.
 
 The generated GitLab workflows require `GITLAB_TOKEN` with API access and repository write permission; `SIS_PUSH_TOKEN` can supply a separate repository write credential. They configure a credential-free origin URL and a credential helper for both stone and release-branch pushes. Automatic MR detection expects GitLab's standard merge commit title and `See merge request <project>!<number>` footer. Use merge commits for release merge requests; squash, rebase and custom commit messages require adapting the rules or running the release job manually.
+
+The generated release workflows keep the recovery ledger between attempts, so retrying a failed release job resumes it. GitHub caches the ledger per workflow run; re-run the failed job rather than starting a new run. GitLab clones afresh and caches the ledger per commit with `when: always`, skipping the upload when the ledger holds no release; retries on a different runner need a [distributed runner cache](https://docs.gitlab.com/runner/configuration/autoscale/#distributed-runners-caching), otherwise only the runner that saved the ledger can restore it.
 
 ## `sisyphus init`
 

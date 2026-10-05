@@ -62,6 +62,32 @@ export async function validateReleaseCommit(data: ReleaseLedgerData): Promise<vo
   await validateReleaseCommitCandidate(data, head);
 }
 
+export async function checkoutReleaseCommitFromBase(data: ReleaseLedgerData): Promise<void> {
+  const { baseCommit, releaseCommit } = data;
+  if (!releaseCommit || releaseCommit === baseCommit) return;
+  if ((await getHeadCommit()) !== baseCommit) return;
+  if (!(await hasCommit(releaseCommit)) || !(await hasCleanTrackedFiles())) return;
+
+  await validateReleaseCommitCandidate(data, releaseCommit);
+  await runInContext(
+    () => Bun.$`git checkout --quiet --detach ${releaseCommit}`.quiet(),
+    `Failed to check out release commit ${releaseCommit} from base commit ${baseCommit}`,
+  );
+}
+
+async function hasCommit(oid: string): Promise<boolean> {
+  const result = await Bun.$`git cat-file -e ${`${oid}^{commit}`}`.quiet().nothrow();
+  return result.exitCode === 0;
+}
+
+async function hasCleanTrackedFiles(): Promise<boolean> {
+  const result = await runInContext(
+    () => Bun.$`git status --porcelain=v1 -z --untracked-files=no --ignore-submodules=none`.quiet(),
+    "Failed to inspect tracked files before resuming",
+  );
+  return result.stdout.length === 0;
+}
+
 export async function validateReleaseCommitCandidate(data: ReleaseLedgerData, candidate: string): Promise<void> {
   if (!data.expectedReleaseTree) {
     throw new Exit(

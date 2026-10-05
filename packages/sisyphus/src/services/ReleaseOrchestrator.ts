@@ -26,6 +26,7 @@ import {
 } from "./release/build-outputs";
 import { formatCommitMessage, getChangelogFiles, getCommitAuthorArg, getCommitterEnv } from "./release/commit-meta";
 import {
+  checkoutReleaseCommitFromBase,
   getCommitTree,
   validateCommitParent,
   validateCommitTree,
@@ -165,6 +166,7 @@ export class ReleaseOrchestrator {
 
     try {
       await orchestrator.recoverReleaseCommit(data);
+      await checkoutReleaseCommitFromBase(ledger.data);
       await validateReleaseCommit(ledger.data);
       await orchestrator.ensureLedgerPlan(packages, stones);
       if (data.options.npm) {
