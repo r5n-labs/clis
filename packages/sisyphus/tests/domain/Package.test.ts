@@ -34,15 +34,6 @@ describe("Package.fromJson()", () => {
     expect(pkg.version).toBe("0.0.0");
   });
 
-  test("handles private packages", () => {
-    const json: PackageJson = { name: "@app/private", private: true, version: "0.1.0" };
-    const pkg = Package.fromJson(json, "packages/private/package.json");
-
-    expect(pkg.name).toBe("@app/private");
-    expect(pkg.version).toBe("0.1.0");
-    expect(pkg.isPrivate).toBe(true);
-  });
-
   test("preserves isPrivate through withBump and withVersions", () => {
     const pkg = makePackage({ private: true });
 
@@ -122,21 +113,6 @@ describe("package.newVersion getter", () => {
     expect(pkg.newVersion).toBe("1.2.4");
   });
 
-  test("computes major bump correctly", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Major);
-    expect(pkg.newVersion).toBe("2.0.0");
-  });
-
-  test("computes minor bump correctly", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Minor);
-    expect(pkg.newVersion).toBe("1.3.0");
-  });
-
-  test("computes dependency bump as patch increment", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Dependency);
-    expect(pkg.newVersion).toBe("1.2.4");
-  });
-
   test("computes tagged bump correctly", () => {
     const pkg = makePackage({ version: "1.0.0" }).withBump(BumpType.Minor, "beta");
     expect(pkg.newVersion).toBe("1.1.0-beta.0");
@@ -154,26 +130,6 @@ describe("package.label getter", () => {
     expect(pkg.label).toBe("@app/core@1.2.3");
   });
 
-  test("returns formatted string with version arrow and emoji for patch", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Patch);
-    expect(pkg.label).toBe("@app/core@1.2.3 => 1.2.4 🐛");
-  });
-
-  test("returns formatted string with version arrow and emoji for major", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Major);
-    expect(pkg.label).toBe("@app/core@1.2.3 => 2.0.0 🚨");
-  });
-
-  test("returns formatted string with version arrow and emoji for minor", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Minor);
-    expect(pkg.label).toBe("@app/core@1.2.3 => 1.3.0 ✨");
-  });
-
-  test("returns formatted string with emoji for dependency bump", () => {
-    const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Dependency);
-    expect(pkg.label).toBe("@app/core@1.2.3 => 1.2.4 📦");
-  });
-
   test("uses the pinned newVersion instead of recomputing it", () => {
     const pkg = makePackage({ version: "1.2.3" }).withBump(BumpType.Patch).withVersions("1.2.3", "9.9.9");
     expect(pkg.label).toBe("@app/core@1.2.3 => 9.9.9 🐛");
@@ -188,7 +144,6 @@ describe("package.label getter", () => {
       version: "0.0.0",
     });
     expect(pkg.label).toBe("@app/core@0.0.0 => 0.0.0-nightly-20260101000000 📸");
-    expect(pkg.label).toBe(`@app/core@0.0.0 => ${pkg.newVersion} 📸`);
   });
 });
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ChangesetParser } from "../../src/services/ChangesetParser";
+import { type ChangesetContent, ChangesetParser } from "../../src/services/ChangesetParser";
 
 const roots: string[] = [];
 
@@ -16,6 +16,12 @@ function fixture(content: string) {
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
+
+const changeset = (packages: Record<string, string>, summary: string): ChangesetContent => ({
+  filename: "change.md",
+  packages,
+  summary,
 });
 
 describe("ChangesetParser", () => {
@@ -54,5 +60,26 @@ More details after the rule.
     const result = await fixture(content).parse();
     expect(result.changesets).toEqual([]);
     expect(result.errors).toHaveLength(1);
+  });
+
+  test.each([
+    { expected: { message: "Migrated from changeset", patch: ["@fixture/core"] }, summary: "" },
+    { expected: { message: "Only one line", patch: ["@fixture/core"] }, summary: "Only one line" },
+  ])("uses $expected.message as the message without a description or empty bump lists", ({ expected, summary }) => {
+    expect(new ChangesetParser().toStoneData(changeset({ "@fixture/core": "patch" }, summary))).toEqual(expected);
+  });
+
+  test.each<{ error: string; packages: Record<string, string> }>([
+    {
+      error: 'Changeset change.md: @fixture/core uses an unsupported bump type "prepatch"',
+      packages: { "@fixture/core": "prepatch" },
+    },
+    {
+      error:
+        'Changeset change.md: @fixture/core uses an unsupported bump type "prepatch"; @fixture/ui uses an unsupported bump type "none"',
+      packages: { "@fixture/core": "prepatch", "@fixture/ok": "patch", "@fixture/ui": "none" },
+    },
+  ])("rejects every unsupported bump in one error instead of dropping packages: $error", ({ error, packages }) => {
+    expect(() => new ChangesetParser().toStoneData(changeset(packages, "Summary"))).toThrow(error);
   });
 });

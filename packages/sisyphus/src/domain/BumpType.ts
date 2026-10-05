@@ -8,7 +8,7 @@ export enum BumpType {
   Snapshot = "snapshot",
 }
 
-export const BUMP_PRIORITY: Record<BumpType, number> = {
+const BUMP_PRIORITY: Record<BumpType, number> = {
   [BumpType.Major]: 5,
   [BumpType.Minor]: 4,
   [BumpType.Patch]: 3,
@@ -46,8 +46,4 @@ export function compareBumps(a: BumpType, b: BumpType): number {
 
 export function higherBump(a: BumpType, b: BumpType): BumpType {
   return compareBumps(a, b) >= 0 ? a : b;
-}
-
-export function isBumpType(value: string): value is BumpType {
-  return Object.values(BumpType).includes(value as BumpType);
 }

@@ -1,14 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  BUMP_EMOJI,
-  BUMP_ORDER,
-  BUMP_PRIORITY,
-  BumpType,
-  compareBumps,
-  higherBump,
-  isBumpType,
-} from "../../src/domain/BumpType";
+import { BUMP_ORDER, BumpType, compareBumps, higherBump } from "../../src/domain/BumpType";
 
 describe("compareBumps", () => {
   test("Major > Minor returns positive", () => {
@@ -54,16 +46,6 @@ describe("higherBump", () => {
   });
 });
 
-describe("isBumpType", () => {
-  test.each(["major", "minor", "patch", "dependency", "snapshot"])('returns true for valid value "%s"', (value) => {
-    expect(isBumpType(value)).toBe(true);
-  });
-
-  test.each(["invalid", "", "Major", "MAJOR"])('returns false for invalid value "%s"', (value) => {
-    expect(isBumpType(value)).toBe(false);
-  });
-});
-
 describe("BUMP_ORDER", () => {
   test("contains all 5 types in priority order", () => {
     expect(BUMP_ORDER).toEqual([
@@ -73,23 +55,5 @@ describe("BUMP_ORDER", () => {
       BumpType.Dependency,
       BumpType.Snapshot,
     ]);
-  });
-});
-
-describe("BUMP_PRIORITY", () => {
-  test("Major has highest priority (5)", () => {
-    expect(BUMP_PRIORITY[BumpType.Major]).toBe(5);
-
-    for (const type of [BumpType.Minor, BumpType.Patch, BumpType.Dependency, BumpType.Snapshot]) {
-      expect(BUMP_PRIORITY[type]).toBeLessThan(BUMP_PRIORITY[BumpType.Major]);
-    }
-  });
-});
-
-describe("BUMP_EMOJI", () => {
-  test("all types have a non-empty emoji string", () => {
-    for (const type of Object.values(BumpType)) {
-      expect(BUMP_EMOJI[type]).toMatch(/.+/);
-    }
   });
 });

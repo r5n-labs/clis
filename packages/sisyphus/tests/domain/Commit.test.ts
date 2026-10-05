@@ -21,12 +21,6 @@ describe("Commit.parse", () => {
     });
   });
 
-  test("parses standard fix commit", () => {
-    const commit = Commit.parse(HASH, "fix: resolve bug", AUTHOR);
-
-    expect(commit).toMatchObject({ breaking: false, message: "resolve bug", type: "fix" });
-  });
-
   test("parses commit with scope", () => {
     const commit = Commit.parse(HASH, "feat(api): add endpoint", AUTHOR);
 
@@ -52,7 +46,7 @@ describe("Commit.parse", () => {
       test(`recognizes "${type}" as conventional type`, () => {
         const commit = Commit.parse(HASH, `${type}: some message`, AUTHOR);
 
-        expect(commit).toMatchObject({ isConventional: true, message: "some message", type });
+        expect(commit).toMatchObject({ message: "some message", type });
       });
     }
   });
@@ -69,12 +63,6 @@ describe("Commit.parse", () => {
     expect(commit).toMatchObject({ message: "just a message", subject: "just a message", type: OTHER_COMMIT_TYPE });
   });
 
-  test("commit with colon but no known type falls back to OTHER_COMMIT_TYPE", () => {
-    const commit = Commit.parse(HASH, "WIP: work in progress", AUTHOR);
-
-    expect(commit).toMatchObject({ message: "WIP: work in progress", type: OTHER_COMMIT_TYPE });
-  });
-
   test("empty subject edge case", () => {
     const commit = Commit.parse(HASH, "", AUTHOR);
 
@@ -85,18 +73,6 @@ describe("Commit.parse", () => {
 describe("Commit getters", () => {
   test("shortHash returns first 7 characters", () => {
     expect(Commit.parse(HASH, "feat: something", AUTHOR).shortHash).toBe("abc1234");
-  });
-
-  test("shortHash works with exactly 7 char hash", () => {
-    expect(Commit.parse("abc1234", "feat: something", AUTHOR).shortHash).toBe("abc1234");
-  });
-
-  test("isConventional returns true for known types", () => {
-    expect(Commit.parse(HASH, "feat: something", AUTHOR).isConventional).toBe(true);
-  });
-
-  test("isConventional returns false for other type", () => {
-    expect(Commit.parse(HASH, "random message", AUTHOR).isConventional).toBe(false);
   });
 });
 

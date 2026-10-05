@@ -176,10 +176,6 @@ export class Commit {
     return this.hash.slice(0, SHORT_HASH_LENGTH);
   }
 
-  get isConventional(): boolean {
-    return this.type !== OTHER_COMMIT_TYPE;
-  }
-
   withFiles(files: string[]): Commit {
     return new Commit({ ...this.toOptions(), files });
   }

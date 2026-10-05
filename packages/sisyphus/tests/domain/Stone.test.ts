@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { BumpType } from "../../src/domain/BumpType";
 import type { CommitInfo } from "../../src/domain/Commit";
 import type { StoneData } from "../../src/domain/Stone";
 import { Stone } from "../../src/domain/Stone";
@@ -63,6 +62,14 @@ describe("Stone.fromJson() / toJson()", () => {
     ({ packages }) => {
       const json = JSON.parse(JSON.stringify({ id: "invalid-shape", message: "Invalid", patch: packages }));
       expect(() => Stone.fromJson(json)).toThrow("Invalid patch packages");
+    },
+  );
+
+  test.each(["0", "01", "beta.4", "with space", "", null, false, []].map((tag) => ({ tag })))(
+    "rejects unsupported snapshot tags read from stone JSON: %p",
+    ({ tag }) => {
+      const json = JSON.parse(JSON.stringify({ id: "invalid-snapshot", message: "Snapshot", snapshot: ["pkg"], tag }));
+      expect(() => Stone.fromJson(json)).toThrow("Invalid prerelease tag");
     },
   );
 
@@ -279,22 +286,16 @@ describe("stone.allPackages", () => {
   });
 });
 
-describe("stone.affectsPackage() via getPackages", () => {
-  test("finds package in the correct bump type", () => {
-    const stone = Stone.create(baseData);
+describe("stone.affectsPackage()", () => {
+  test.each(["@app/core", "@app/utils", "@app/cli", "@app/deps", "@app/snapshot"])(
+    "reports %p listed under its bump type",
+    (name) => {
+      expect(Stone.create(baseData).affectsPackage(name)).toBe(true);
+    },
+  );
 
-    expect(stone.getPackages(BumpType.Major)).toContain("@app/core");
-    expect(stone.getPackages(BumpType.Minor)).toContain("@app/utils");
-    expect(stone.getPackages(BumpType.Patch)).toContain("@app/cli");
-    expect(stone.getPackages(BumpType.Dependency)).toContain("@app/deps");
-    expect(stone.getPackages(BumpType.Snapshot)).toContain("@app/snapshot");
-  });
-
-  test("returns empty array for bump type with no packages", () => {
-    const stone = Stone.create({ major: ["@app/core"], message: "only major" });
-
-    expect(stone.getPackages(BumpType.Minor)).toEqual([]);
-    expect(stone.getPackages(BumpType.Patch)).toEqual([]);
+  test("ignores a package the stone does not list", () => {
+    expect(Stone.create(baseData).affectsPackage("@app/other")).toBe(false);
   });
 });
 
@@ -310,30 +311,6 @@ describe("immutable update methods", () => {
       tag: original.tag,
     });
     expect(original.message).toBe("release v1.0.0");
-  });
-
-  test("withTag() returns new stone with updated tag, original unchanged", () => {
-    const original = Stone.create(baseData);
-    const updated = original.withTag("beta");
-
-    expect(updated).toMatchObject({ id: original.id, tag: "beta" });
-    expect(original.tag).toBe("alpha");
-  });
-
-  test("withTag(undefined) clears the tag", () => {
-    expect(Stone.create(baseData).withTag(undefined).tag).toBeUndefined();
-  });
-
-  test("withDescription() returns new stone with updated description, original unchanged", () => {
-    const original = Stone.create(baseData);
-    const updated = original.withDescription("Updated description");
-
-    expect(updated).toMatchObject({ description: "Updated description", id: original.id });
-    expect(original.description).toBe("Initial release");
-  });
-
-  test("withDescription(undefined) clears the description", () => {
-    expect(Stone.create(baseData).withDescription(undefined).description).toBeUndefined();
   });
 });
 

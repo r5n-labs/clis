@@ -260,18 +260,6 @@ export class Stone {
     return new Stone({ ...this.toOptions(), message });
   }
 
-  withTag(tag: string | undefined): Stone {
-    return new Stone({ ...this.toOptions(), tag });
-  }
-
-  withDescription(description: string | undefined): Stone {
-    return new Stone({ ...this.toOptions(), description });
-  }
-
-  withCommits(commits: readonly CommitInfo[] | undefined): Stone {
-    return new Stone({ ...this.toOptions(), commits });
-  }
-
   withPackages(bump: BumpType, packages: readonly string[]): Stone {
     const newPackages = new Map(this._packages);
     newPackages.set(bump, packages);

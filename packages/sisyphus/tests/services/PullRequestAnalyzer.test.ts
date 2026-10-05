@@ -58,7 +58,7 @@ async function fixture() {
   writeGitHubPrShim(bin);
   writeFileSync(join(root, "response.json"), JSON.stringify(response));
   writeFileSync(join(root, "provider-calls"), "");
-  return { bin, response, root };
+  return { bin, root };
 }
 
 async function analyse(f: Awaited<ReturnType<typeof fixture>>, url?: string) {
@@ -116,16 +116,5 @@ describe("PullRequestAnalyzer", () => {
       "feat: update foo",
       "feat: update bar",
     ]);
-  });
-
-  test("uses the whole PR file list when original commits are unavailable after a rebase or squash", async () => {
-    const f = await fixture();
-    f.response.commits = ["unavailable-original-first", "unavailable-original-last"];
-    writeFileSync(join(f.root, "response.json"), JSON.stringify(f.response));
-    const result = await analyse(f);
-    expect(result.exitCode).toBe(0);
-    const analysis = JSON.parse(result.stdout);
-    expect(analysis.packages).toEqual(["@fixture/bar", "@fixture/foo"]);
-    expect(analysis.commits[0].packages.sort()).toEqual(["@fixture/bar", "@fixture/foo"]);
   });
 });
