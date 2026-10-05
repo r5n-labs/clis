@@ -50,18 +50,28 @@ describe("repository release workflow", () => {
     { active: true, pending: true, stones: [] },
     { active: false, pending: true, stones: [{ name: "fix" }] },
   ])("detects pending work for %j", async ({ active, pending, stones }) => {
+    const resetStep = releaseWorkflow.jobs.release.steps.find((step) => step.name === "Reset release state");
     const checkStep = releaseWorkflow.jobs.release.steps.find((step) => step.name === "Check for pending stones");
     const rollStep = releaseWorkflow.jobs.release.steps.find((step) => step.name === "Roll release");
     expect(rollStep?.if).toBe("env.RELEASE_PENDING == 'true'");
+    if (!resetStep?.run) throw new Error("Missing release state reset script");
     if (!checkStep?.run) throw new Error("Missing release check script");
     writeFileSync(join(bin, "bun"), '#!/bin/sh\nprintf "%s\\n" "$TEST_STONES_JSON"\n');
     chmodSync(join(bin, "bun"), EXECUTABLE_MODE);
-    if (active) {
-      mkdirSync(join(fixture, ".git/sisyphus/release"), { recursive: true });
-      writeFileSync(join(fixture, ".git/sisyphus/release/active.json"), "{}");
-    }
     const envFile = join(fixture, "github env");
-    const result = await runShell(checkStep.run, { GITHUB_ENV: envFile, TEST_STONES_JSON: JSON.stringify({ stones }) });
+    expect((await runShell(resetStep.run, { GITHUB_ENV: envFile })).exitCode).toBe(0);
+    const releaseDirectory = readFileSync(envFile, "utf8").match(/^SIS_RELEASE_DIR=(.+)$/m)?.[1];
+    expect(releaseDirectory).toBe(".git/sisyphus/release");
+    if (!releaseDirectory) throw new Error("Missing exported release directory");
+    if (active) {
+      mkdirSync(join(fixture, releaseDirectory), { recursive: true });
+      writeFileSync(join(fixture, releaseDirectory, "active.json"), "{}");
+    }
+    const result = await runShell(checkStep.run, {
+      GITHUB_ENV: envFile,
+      SIS_RELEASE_DIR: releaseDirectory,
+      TEST_STONES_JSON: JSON.stringify({ stones }),
+    });
     expect(result.exitCode).toBe(0);
     expect(readFileSync(envFile, "utf8")).toContain(`RELEASE_PENDING=${pending}\n`);
   });

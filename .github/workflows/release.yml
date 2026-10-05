@@ -34,6 +34,22 @@ jobs:
           GIT_CONFIG_VALUE_0: "git@github.com:"
         run: git submodule update --init --recursive
 
+      - name: Reset release state
+        run: |
+          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
+          echo "SIS_RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          rm -rf "$RELEASE_DIR"
+
+      - name: Restore release state
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.SIS_RELEASE_DIR }}
+          key: sisyphus-release-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sisyphus-release-${{ github.run_id }}-
+
+      - name: Remove cached release lock
+        run: rm -f "$SIS_RELEASE_DIR/.write.lock" "$SIS_RELEASE_DIR"/.write.lock.*.owner "$SIS_RELEASE_DIR"/.write.lock.*.claim
+
       - uses: ./tools/github/setup
         with:
           bun: false
@@ -51,8 +67,7 @@ jobs:
           STONES_COUNT=$(echo "$STONES_JSON" | jq '.stones | length')
           echo "Found $STONES_COUNT pending stones"
           echo "STONES_COUNT=$STONES_COUNT" >> "$GITHUB_ENV"
-          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
-          if [ "$STONES_COUNT" -gt 0 ] || [ -f "$RELEASE_DIR/active.json" ]; then
+          if [ "$STONES_COUNT" -gt 0 ] || [ -f "$SIS_RELEASE_DIR/active.json" ]; then
             echo "RELEASE_PENDING=true" >> "$GITHUB_ENV"
           else
             echo "RELEASE_PENDING=false" >> "$GITHUB_ENV"
@@ -67,10 +82,9 @@ jobs:
           npm install --prefix "$NPM_DIR" --no-fund --no-audit npm@11 >/dev/null
           export PATH="$NPM_DIR/node_modules/.bin:$PATH"
           npm --version
-          RELEASE_DIR="$(git rev-parse --git-path sisyphus/release)"
           REPORT="$RUNNER_TEMP/release.json"
           STATUS=0
-          if [ -f "$RELEASE_DIR/active.json" ]; then
+          if [ -f "$SIS_RELEASE_DIR/active.json" ]; then
             bun sis roll --resume --json > "$REPORT" || STATUS=$?
           else
             bun sis roll --json --yes > "$REPORT" || STATUS=$?
@@ -96,3 +110,18 @@ jobs:
           NODE_ENV: production
           NPM_CONFIG_PROVENANCE: "false"
           NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
+      - name: Inspect release state
+        id: release-state
+        if: always()
+        run: |
+          if [ -f "$SIS_RELEASE_DIR/active.json" ] || ls "$SIS_RELEASE_DIR"/history/*.json >/dev/null 2>&1; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save release state
+        if: always() && steps.release-state.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.SIS_RELEASE_DIR }}
+          key: sisyphus-release-${{ github.run_id }}-${{ github.run_attempt }}
