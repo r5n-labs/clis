@@ -3,6 +3,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type ConfigManager, Exit } from "@r5n/cli-core";
 import { resolveNpmAccess } from "@r5n/tools/scripts/npm-access";
+import {
+  type CatalogMap,
+  extractCatalogs,
+  type RootManifest,
+  type WorkspaceVersionMap,
+} from "@r5n/tools/scripts/publish-manifest";
 import { DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE, DEFAULT_NPM_TAG } from "../constants";
 import { Package, Stone } from "../domain";
 import { createGitProvider, type GitProvider } from "../providers";
@@ -10,14 +16,7 @@ import type { SisyphusConfig } from "../types";
 import { ChangelogGenerator } from "./ChangelogGenerator";
 import { createCommitUrl, GitRemoteParser } from "./GitRemoteParser";
 import { PackageUpdater } from "./PackageUpdater";
-import {
-  type CatalogMap,
-  extractCatalogs,
-  type RootManifest,
-  renderPublishManifest,
-  type WorkspaceVersionMap,
-  workspaceVersionsFromPackages,
-} from "./PublishManifest";
+import { renderPublishManifest, workspaceVersionsFromPackages } from "./PublishManifest";
 import {
   assertBuildOutputsUntracked,
   cleanBuildOutputs,

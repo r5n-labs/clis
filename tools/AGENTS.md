@@ -19,7 +19,7 @@ The setup command writes missing configuration files, extends workspace membersh
 
 - `builder/index.ts`: shared Bun builder, type-check gate, bundle budgets and optional README badge updates. CLI packages import `@r5n/tools/builder` and bundle their runtime dependencies.
 - `scripts/setup-monorepo.ts`: monorepo scaffolding and setup commands. Installation failures must fail the setup; retries must preserve the lockfile.
-- `scripts/prepare-publish.ts` and `publish-manifest.ts`: resolve workspace and catalogue dependencies for publication.
+- `scripts/publish-manifest.ts`: the shared publish-manifest implementation used by `prepare-publish.ts` and the Sisyphus release. `renderPublishManifest` resolves workspace and catalogue dependencies, drops `devDependencies` and keeps the original indentation; expected failures throw `PublishManifestError` with a `hint`. It must not import `@r5n/cli-core`, which depends on this workspace.
 - `scripts/publish-package.ts` and `package-artifact.ts`: verify committed source, prepare an immutable tarball, restore the manifest and publish that artifact. Use the package's `package:dryRun` or `package:publish` script.
 - `github/setup/action.yml`: composite action for Bun setup and frozen dependency installation.
 - `biome.json` and `typescript/base.json`: shared formatting, lint and strict TypeScript configuration.

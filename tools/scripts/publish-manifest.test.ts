@@ -2,14 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CatalogMap, WorkspaceVersionMap } from "./publish-manifest";
+import type { CatalogMap, RootManifest, WorkspaceVersionMap } from "./publish-manifest";
 import {
-  createPublishManifest,
   extractCatalogs,
   extractWorkspaceGlobs,
-  resolveCatalogVersion,
-  resolveDependencies,
-  resolveWorkspaceVersion,
+  PublishManifestError,
+  renderPublishManifest,
 } from "./publish-manifest";
 
 const catalogs: CatalogMap = { default: { "left-pad": "1.3.0" }, react19: { react: "19.0.0" } };
@@ -20,187 +18,188 @@ const workspaceVersions: WorkspaceVersionMap = {
   "@r5n/private-core": { isPrivate: true, version: "0.2.2" },
 };
 
-describe("resolveWorkspaceVersion", () => {
-  test("workspace:* resolves to the exact pinned version", () => {
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:*", workspaceVersions, "@r5n/hydra")).toBe("1.2.3");
-  });
+const CATALOG_HINT = "Add the entry to the root package.json catalog before publishing";
+const MISSING_WORKSPACE_HINT = "Check the dependency name against your workspaces globs";
+const MISSING_VERSION_HINT = "Add a version field before publishing";
+const PRIVATE_MESSAGE =
+  '"@r5n/hydra" depends on private workspace package "@r5n/private-core", which is not published to the registry';
+const PRIVATE_HINT =
+  'Move "@r5n/private-core" to devDependencies (bundled CLIs do not need it at runtime) or publish it first';
 
-  test("workspace:^ resolves to a caret range", () => {
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:^", workspaceVersions, "@r5n/hydra")).toBe("^1.2.3");
-  });
+function render(manifest: Record<string, unknown>, ownCatalogs = catalogs, ownWorkspaces = workspaceVersions): unknown {
+  return JSON.parse(
+    renderPublishManifest(JSON.stringify({ name: "@r5n/hydra", ...manifest }), ownCatalogs, ownWorkspaces),
+  );
+}
 
-  test("workspace:~ resolves to a tilde range", () => {
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:~", workspaceVersions, "@r5n/hydra")).toBe("~1.2.3");
-  });
+function renderFailure(dependencies: Record<string, string>): PublishManifestError {
+  try {
+    render({ dependencies });
+  } catch (error) {
+    if (error instanceof PublishManifestError) return error;
+    throw error;
+  }
+  throw new Error(`Expected ${JSON.stringify(dependencies)} to be rejected`);
+}
 
-  test("workspace:<version> strips the prefix and keeps the specifier", () => {
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:1.2.3", workspaceVersions, "@r5n/hydra")).toBe("1.2.3");
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:^1.2.3", workspaceVersions, "@r5n/hydra")).toBe(
-      "^1.2.3",
-    );
-    expect(resolveWorkspaceVersion("@r5n/cli-core", "workspace:~1.2.3", workspaceVersions, "@r5n/hydra")).toBe(
-      "~1.2.3",
-    );
-  });
+function manifestText(indent: string): string {
+  return `{\n${indent}"name": "@r5n/hydra",\n${indent}"bin": {\n${indent}${indent}"hydra": "./dist/cli.js"\n${indent}}\n}\n`;
+}
 
-  test("throws when the workspace package is unknown", () => {
-    expect(() => resolveWorkspaceVersion("@r5n/missing", "workspace:*", workspaceVersions, "@r5n/hydra")).toThrow(
-      'Workspace package "@r5n/missing" (required by @r5n/hydra) was not found in the workspace',
-    );
-  });
-
-  test("throws when the workspace package has no version", () => {
-    expect(() => resolveWorkspaceVersion("@r5n/no-version", "workspace:*", workspaceVersions, "@r5n/hydra")).toThrow(
-      'Workspace package "@r5n/no-version" (required by @r5n/hydra) has no version in its package.json',
-    );
-  });
-
-  test("throws on a private workspace package", () => {
-    expect(() => resolveWorkspaceVersion("@r5n/private-core", "workspace:*", workspaceVersions, "@r5n/hydra")).toThrow(
-      'depends on private workspace package "@r5n/private-core"',
-    );
-  });
-
-  test("throws on a bare workspace: specifier", () => {
-    expect(() => resolveWorkspaceVersion("@r5n/cli-core", "workspace:", workspaceVersions, "@r5n/hydra")).toThrow(
-      'Invalid workspace specifier "workspace:" for "@r5n/cli-core" (required by @r5n/hydra)',
-    );
-  });
-});
-
-describe("resolveCatalogVersion", () => {
-  test("resolves catalog: from the default catalog", () => {
-    expect(resolveCatalogVersion("left-pad", "catalog:", catalogs, "@r5n/hydra")).toBe("1.3.0");
-  });
-
-  test("resolves catalog:<name> from a named catalog", () => {
-    expect(resolveCatalogVersion("react", "catalog:react19", catalogs, "@r5n/hydra")).toBe("19.0.0");
-  });
-
-  test("throws when the catalog has no entry", () => {
-    expect(() => resolveCatalogVersion("react", "catalog:", catalogs, "@r5n/hydra")).toThrow(
-      'Catalog "default" has no entry for "react" (required by @r5n/hydra)',
-    );
-  });
-
-  test("throws when the named catalog is unknown", () => {
-    expect(() => resolveCatalogVersion("react", "catalog:vue", catalogs, "@r5n/hydra")).toThrow(
-      'Catalog "vue" has no entry for "react" (required by @r5n/hydra)',
-    );
-  });
-});
-
-describe("resolveDependencies", () => {
-  test("resolves catalog and workspace protocols and passes plain versions through", () => {
-    const resolved = resolveDependencies(
-      { "@r5n/cli-core": "workspace:*", "left-pad": "catalog:", mri: "1.2.0", react: "catalog:react19" },
-      catalogs,
-      workspaceVersions,
-      "@r5n/hydra",
-    );
-
-    expect(resolved).toEqual({ "@r5n/cli-core": "1.2.3", "left-pad": "1.3.0", mri: "1.2.0", react: "19.0.0" });
-  });
-
-  test("returns undefined for undefined dependency maps", () => {
-    expect(resolveDependencies(undefined, catalogs, workspaceVersions, "@r5n/hydra")).toBeUndefined();
-  });
-});
-
-describe("createPublishManifest", () => {
+describe("renderPublishManifest", () => {
   test.each([
-    ["catalog:", 'Catalog "default" has no entry for "constructor"'],
-    ["catalog:constructor", 'Catalog "constructor" has no entry for "constructor"'],
-    ["workspace:^1.0.0", 'Workspace package "constructor"'],
-  ])("rejects an inherited missing dependency before serialising %s", (specifier, message) => {
-    expect(() =>
-      JSON.stringify(
-        createPublishManifest({ name: "fixture", dependencies: { constructor: specifier } }, extractCatalogs({}), {}),
-      ),
-    ).toThrow(message);
+    ["workspace:*", "@r5n/cli-core", "1.2.3"],
+    ["workspace:^", "@r5n/cli-core", "^1.2.3"],
+    ["workspace:~", "@r5n/cli-core", "~1.2.3"],
+    ["workspace:2.0.0", "@r5n/cli-core", "2.0.0"],
+    ["workspace:^2.0.0", "@r5n/cli-core", "^2.0.0"],
+    ["workspace:~2.0.0", "@r5n/cli-core", "~2.0.0"],
+    ["catalog:", "left-pad", "1.3.0"],
+    ["catalog:react19", "react", "19.0.0"],
+    ["^1.3.0", "mri", "^1.3.0"],
+  ])("resolves %s for %s to %s", (specifier, name, expected) => {
+    expect(render({ dependencies: { [name]: specifier } })).toEqual({
+      name: "@r5n/hydra",
+      dependencies: { [name]: expected },
+    });
+  });
+
+  test.each([
+    [
+      "workspace:*",
+      "@r5n/missing",
+      'Workspace package "@r5n/missing" (required by @r5n/hydra) was not found in the workspace',
+      MISSING_WORKSPACE_HINT,
+    ],
+    [
+      "workspace:^1.0.0",
+      "constructor",
+      'Workspace package "constructor" (required by @r5n/hydra) was not found in the workspace',
+      MISSING_WORKSPACE_HINT,
+    ],
+    ["workspace:*", "@r5n/private-core", PRIVATE_MESSAGE, PRIVATE_HINT],
+    ["workspace:0.2.2", "@r5n/private-core", PRIVATE_MESSAGE, PRIVATE_HINT],
+    [
+      "workspace:*",
+      "@r5n/no-version",
+      'Workspace package "@r5n/no-version" (required by @r5n/hydra) has no version in its package.json',
+      MISSING_VERSION_HINT,
+    ],
+    [
+      "workspace:^",
+      "@r5n/no-version",
+      'Workspace package "@r5n/no-version" (required by @r5n/hydra) has no version in its package.json',
+      MISSING_VERSION_HINT,
+    ],
+    [
+      "workspace:",
+      "@r5n/cli-core",
+      'Invalid workspace specifier "workspace:" for "@r5n/cli-core" (required by @r5n/hydra)',
+      "Use workspace:*, workspace:^, workspace:~, or workspace:<range>",
+    ],
+    ["catalog:", "react", 'Catalog "default" has no entry for "react" (required by @r5n/hydra)', CATALOG_HINT],
+    [
+      "catalog:react19",
+      "left-pad",
+      'Catalog "react19" has no entry for "left-pad" (required by @r5n/hydra)',
+      CATALOG_HINT,
+    ],
+    ["catalog:vue", "react", 'Catalog "vue" has no entry for "react" (required by @r5n/hydra)', CATALOG_HINT],
+    [
+      "catalog:",
+      "constructor",
+      'Catalog "default" has no entry for "constructor" (required by @r5n/hydra)',
+      CATALOG_HINT,
+    ],
+    [
+      "catalog:constructor",
+      "constructor",
+      'Catalog "constructor" has no entry for "constructor" (required by @r5n/hydra)',
+      CATALOG_HINT,
+    ],
+  ])("rejects %s for %s", (specifier, name, message, hint) => {
+    expect(renderFailure({ [name]: specifier })).toMatchObject({ hint, message });
+  });
+
+  test("resolves every published dependency section, drops devDependencies and keeps other fields", () => {
+    const manifest = {
+      bin: { hydra: "./dist/cli.js" },
+      dependencies: { "@r5n/cli-core": "workspace:*", "left-pad": "catalog:", mri: "1.2.0" },
+      devDependencies: { "@r5n/private-core": "workspace:*", typescript: "catalog:" },
+      license: "Apache-2.0",
+      optionalDependencies: { "@r5n/cli-core": "workspace:~", react: "catalog:react19" },
+      peerDependencies: { "@r5n/cli-core": "workspace:^" },
+      private: false,
+      scripts: { build: "bun build.ts" },
+      version: "0.5.8",
+    };
+
+    expect(render(manifest)).toEqual({
+      bin: { hydra: "./dist/cli.js" },
+      dependencies: { "@r5n/cli-core": "1.2.3", "left-pad": "1.3.0", mri: "1.2.0" },
+      license: "Apache-2.0",
+      name: "@r5n/hydra",
+      optionalDependencies: { "@r5n/cli-core": "~1.2.3", react: "19.0.0" },
+      peerDependencies: { "@r5n/cli-core": "^1.2.3" },
+      private: false,
+      scripts: { build: "bun build.ts" },
+      version: "0.5.8",
+    });
   });
 
   test("preserves declared prototype-named catalogue and workspace dependencies", () => {
     const ownCatalogs = extractCatalogs(JSON.parse('{"catalogs":{"__proto__":{"constructor":"2.0.0"}}}'));
-    const manifest = createPublishManifest(
-      {
-        name: "fixture",
-        dependencies: { constructor: "catalog:__proto__" },
-        peerDependencies: { constructor: "workspace:^" },
-      },
-      ownCatalogs,
-      { constructor: { isPrivate: false, version: "2.0.0" } },
-    );
+    const ownWorkspaces = { constructor: { isPrivate: false, version: "2.0.0" } };
+    const manifest = {
+      dependencies: { constructor: "catalog:__proto__" },
+      peerDependencies: { constructor: "workspace:^" },
+    };
 
-    expect(JSON.parse(JSON.stringify(manifest))).toEqual({
-      name: "fixture",
+    expect(render(manifest, ownCatalogs, ownWorkspaces)).toEqual({
+      name: "@r5n/hydra",
       dependencies: { constructor: "2.0.0" },
       peerDependencies: { constructor: "^2.0.0" },
     });
   });
 
-  test("drops devDependencies and resolves all dependency sections", () => {
-    const manifest = createPublishManifest(
-      {
-        dependencies: { "@r5n/cli-core": "workspace:*" },
-        devDependencies: { "@r5n/tools": "workspace:*", typescript: "5.0.0" },
-        name: "@r5n/hydra",
-        optionalDependencies: { "left-pad": "catalog:" },
-        peerDependencies: { "@r5n/cli-core": "workspace:^" },
-        version: "0.5.8",
-      },
-      catalogs,
-      workspaceVersions,
-    );
-
-    expect(manifest).toEqual({
-      dependencies: { "@r5n/cli-core": "1.2.3" },
-      name: "@r5n/hydra",
-      optionalDependencies: { "left-pad": "1.3.0" },
-      peerDependencies: { "@r5n/cli-core": "^1.2.3" },
-      version: "0.5.8",
-    });
-    expect(manifest.devDependencies).toBeUndefined();
-  });
-
-  test("preserves unrelated manifest fields", () => {
-    const manifest = createPublishManifest(
-      { bin: { hydra: "./dist/cli.js" }, name: "@r5n/hydra", version: "0.5.8" },
-      catalogs,
-      workspaceVersions,
-    );
-
-    expect(manifest.bin).toEqual({ hydra: "./dist/cli.js" });
+  test.each([
+    ["four-space", manifestText("    "), manifestText("    ")],
+    ["tab", manifestText("\t"), manifestText("\t")],
+    ["single-line", '{"name":"@r5n/hydra","bin":{"hydra":"./dist/cli.js"}}', manifestText("  ")],
+  ])("renders a %s manifest in its own indentation, defaulting to two spaces", (_layout, original, expected) => {
+    expect(renderPublishManifest(original, catalogs, workspaceVersions)).toBe(expected);
   });
 });
 
 describe("extractCatalogs", () => {
-  test("merges catalog sources from root and workspaces object", () => {
-    const extracted = extractCatalogs({
-      catalog: { a: "1.0.0" },
-      catalogs: { named: { b: "2.0.0" } },
-      workspaces: { catalog: { c: "3.0.0" }, catalogs: { other: { d: "4.0.0" } }, packages: ["packages/*"] },
-    });
-
-    expect(extracted).toEqual({ default: { a: "1.0.0", c: "3.0.0" }, named: { b: "2.0.0" }, other: { d: "4.0.0" } });
-  });
-
-  test("returns an empty default catalog when none is defined", () => {
-    expect(extractCatalogs({ workspaces: ["packages/*"] })).toEqual({ default: {} });
+  test.each<[string, RootManifest, CatalogMap]>([
+    [
+      "merges root and workspaces catalogue sources",
+      {
+        catalog: { a: "1.0.0" },
+        catalogs: { named: { b: "2.0.0" } },
+        workspaces: { catalog: { c: "3.0.0" }, catalogs: { other: { d: "4.0.0" } }, packages: ["packages/*"] },
+      },
+      { default: { a: "1.0.0", c: "3.0.0" }, named: { b: "2.0.0" }, other: { d: "4.0.0" } },
+    ],
+    [
+      "lets the workspaces catalogue override root default entries",
+      { catalog: { zod: "3.0.0" }, workspaces: { catalog: { zod: "3.24.1" } } },
+      { default: { zod: "3.24.1" } },
+    ],
+    ["returns an empty default catalogue for array workspaces", { workspaces: ["packages/*"] }, { default: {} }],
+  ])("%s", (_name, rootManifest, expected) => {
+    expect(extractCatalogs(rootManifest)).toEqual(expected);
   });
 });
 
 describe("extractWorkspaceGlobs", () => {
-  test("supports the array form", () => {
-    expect(extractWorkspaceGlobs({ workspaces: ["packages/*", "tools"] })).toEqual(["packages/*", "tools"]);
-  });
-
-  test("supports the object form", () => {
-    expect(extractWorkspaceGlobs({ workspaces: { packages: ["packages/*"] } })).toEqual(["packages/*"]);
-  });
-
-  test("returns an empty list when workspaces is missing", () => {
-    expect(extractWorkspaceGlobs({})).toEqual([]);
+  test.each<[string, RootManifest, string[]]>([
+    ["the array form", { workspaces: ["packages/*", "tools"] }, ["packages/*", "tools"]],
+    ["the object form", { workspaces: { packages: ["packages/*"] } }, ["packages/*"]],
+    ["a missing workspaces field", {}, []],
+  ])("reads %s", (_name, rootManifest, expected) => {
+    expect(extractWorkspaceGlobs(rootManifest)).toEqual(expected);
   });
 });
 
@@ -211,12 +210,27 @@ describe("prepare-publish dependency membership", () => {
   });
 
   test.each([
-    { specifier: "catalog:", expected: undefined },
-    { specifier: "catalog:constructor", expected: undefined },
-    { specifier: "workspace:^1.0.0", expected: undefined },
-    { specifier: "catalog:__proto__", expected: "2.0.0" },
-    { specifier: "workspace:^", expected: "^2.0.0" },
-  ])("prepares only declared entries for $specifier", async ({ specifier, expected }) => {
+    {
+      specifier: "catalog:",
+      expected: undefined,
+      output: ['Catalog "default" has no entry for "constructor" (required by fixture)', CATALOG_HINT],
+    },
+    {
+      specifier: "catalog:constructor",
+      expected: undefined,
+      output: ['Catalog "constructor" has no entry for "constructor" (required by fixture)', CATALOG_HINT],
+    },
+    {
+      specifier: "workspace:^1.0.0",
+      expected: undefined,
+      output: [
+        'Workspace package "constructor" (required by fixture) was not found in the workspace',
+        MISSING_WORKSPACE_HINT,
+      ],
+    },
+    { specifier: "catalog:__proto__", expected: "2.0.0", output: [] },
+    { specifier: "workspace:^", expected: "^2.0.0", output: [] },
+  ])("prepares only declared entries for $specifier", async ({ specifier, expected, output }) => {
     const root = mkdtempSync(join(tmpdir(), "prepare-membership-"));
     roots.push(root);
     const packageDirectory = join(root, "packages", "fixture");
@@ -261,9 +275,7 @@ describe("prepare-publish dependency membership", () => {
       });
     } else {
       expect(exitCode).toBe(1);
-      expect(stdout + stderr).toContain(
-        specifier.startsWith("workspace:") ? "was not found in the workspace" : 'has no entry for "constructor"',
-      );
+      for (const line of output) expect(stdout + stderr).toContain(line);
       expect(readFileSync(manifestPath, "utf8")).toBe(original);
     }
   });

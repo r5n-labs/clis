@@ -1,11 +1,13 @@
 const CATALOG_PREFIX = "catalog:";
 const WORKSPACE_PREFIX = "workspace:";
 const DEFAULT_CATALOG = "default";
+const DEFAULT_INDENT = 2;
+const LEADING_INDENT = /^[\t ]+/m;
 const RANGE_ONLY_SPECIFIERS = new Set(["*", "^", "~"]);
 
-export type DependencyMap = Record<string, string>;
+type DependencyMap = Record<string, string>;
+type WorkspaceEntry = { version: string | null; isPrivate: boolean };
 export type CatalogMap = Record<string, DependencyMap>;
-export type WorkspaceEntry = { version: string | null; isPrivate: boolean };
 export type WorkspaceVersionMap = Record<string, WorkspaceEntry>;
 
 export interface PackageManifest {
@@ -26,6 +28,17 @@ export interface RootManifest {
   [key: string]: unknown;
 }
 
+export class PublishManifestError extends Error {
+  readonly _tag = "PublishManifestError";
+
+  constructor(
+    message: string,
+    readonly hint: string,
+  ) {
+    super(message);
+  }
+}
+
 export function extractCatalogs(rootPkg: RootManifest): CatalogMap {
   const workspaces = Array.isArray(rootPkg.workspaces) ? undefined : rootPkg.workspaces;
   return {
@@ -40,24 +53,22 @@ export function extractWorkspaceGlobs(rootPkg: RootManifest): string[] {
   return rootPkg.workspaces?.packages ?? [];
 }
 
-export function resolveCatalogVersion(
-  name: string,
-  specifier: string,
-  catalogs: CatalogMap,
-  packageName: string,
-): string {
+function resolveCatalogVersion(name: string, specifier: string, catalogs: CatalogMap, packageName: string): string {
   const catalogName = specifier.slice(CATALOG_PREFIX.length) || DEFAULT_CATALOG;
   const catalog = Object.hasOwn(catalogs, catalogName) ? catalogs[catalogName] : undefined;
   const catalogVersion = catalog && Object.hasOwn(catalog, name) ? catalog[name] : undefined;
 
   if (!catalogVersion) {
-    throw new Error(`Catalog "${catalogName}" has no entry for "${name}" (required by ${packageName})`);
+    throw new PublishManifestError(
+      `Catalog "${catalogName}" has no entry for "${name}" (required by ${packageName})`,
+      "Add the entry to the root package.json catalog before publishing",
+    );
   }
 
   return catalogVersion;
 }
 
-export function resolveWorkspaceVersion(
+function resolveWorkspaceVersion(
   name: string,
   specifier: string,
   workspaceVersions: WorkspaceVersionMap,
@@ -67,31 +78,41 @@ export function resolveWorkspaceVersion(
   const entry = Object.hasOwn(workspaceVersions, name) ? workspaceVersions[name] : undefined;
 
   if (!entry) {
-    throw new Error(`Workspace package "${name}" (required by ${packageName}) was not found in the workspace`);
+    throw new PublishManifestError(
+      `Workspace package "${name}" (required by ${packageName}) was not found in the workspace`,
+      "Check the dependency name against your workspaces globs",
+    );
   }
 
   if (entry.isPrivate) {
-    throw new Error(
-      `"${packageName}" depends on private workspace package "${name}", which is not published to the registry. Move "${name}" to devDependencies or publish it first`,
+    throw new PublishManifestError(
+      `"${packageName}" depends on private workspace package "${name}", which is not published to the registry`,
+      `Move "${name}" to devDependencies (bundled CLIs do not need it at runtime) or publish it first`,
     );
   }
 
   if (!RANGE_ONLY_SPECIFIERS.has(range)) {
     if (!range) {
-      throw new Error(`Invalid workspace specifier "${specifier}" for "${name}" (required by ${packageName})`);
+      throw new PublishManifestError(
+        `Invalid workspace specifier "${specifier}" for "${name}" (required by ${packageName})`,
+        "Use workspace:*, workspace:^, workspace:~, or workspace:<range>",
+      );
     }
     return range;
   }
 
   const version = entry.version;
   if (!version) {
-    throw new Error(`Workspace package "${name}" (required by ${packageName}) has no version in its package.json`);
+    throw new PublishManifestError(
+      `Workspace package "${name}" (required by ${packageName}) has no version in its package.json`,
+      "Add a version field before publishing",
+    );
   }
 
   return range === "*" ? version : `${range}${version}`;
 }
 
-export function resolveDependencies(
+function resolveDependencies(
   deps: DependencyMap | undefined,
   catalogs: CatalogMap,
   workspaceVersions: WorkspaceVersionMap,
@@ -110,7 +131,7 @@ export function resolveDependencies(
   );
 }
 
-export function createPublishManifest(
+function createPublishManifest(
   manifest: PackageManifest,
   catalogs: CatalogMap,
   workspaceVersions: WorkspaceVersionMap,
@@ -128,4 +149,16 @@ export function createPublishManifest(
     ),
     peerDependencies: resolveDependencies(manifest.peerDependencies, catalogs, workspaceVersions, manifest.name),
   };
+}
+
+export function renderPublishManifest(
+  originalText: string,
+  catalogs: CatalogMap,
+  workspaceVersions: WorkspaceVersionMap,
+): string {
+  const manifest = JSON.parse(originalText) as PackageManifest;
+  const publishManifest = createPublishManifest(manifest, catalogs, workspaceVersions);
+  const indent = originalText.match(LEADING_INDENT)?.[0] ?? DEFAULT_INDENT;
+
+  return `${JSON.stringify(publishManifest, null, indent)}\n`;
 }

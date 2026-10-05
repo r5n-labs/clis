@@ -1,9 +1,14 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { CatalogMap, PackageManifest, RootManifest, WorkspaceVersionMap } from "./publish-manifest";
-import { createPublishManifest, extractCatalogs, extractWorkspaceGlobs } from "./publish-manifest";
+import {
+  extractCatalogs,
+  extractWorkspaceGlobs,
+  PublishManifestError,
+  renderPublishManifest,
+} from "./publish-manifest";
 
-const JSON_INDENT = 2;
+const HINT_INDENT = "    ";
 
 const packages = Bun.argv.slice(2);
 
@@ -46,6 +51,11 @@ async function collectWorkspaceVersions(rootDir: string, rootPkg: RootManifest):
   return Object.fromEntries(versions);
 }
 
+function describeFailure(error: unknown): string {
+  if (error instanceof PublishManifestError) return `${error.message}\n${HINT_INDENT}${error.hint}`;
+  return error instanceof Error ? error.message : String(error);
+}
+
 console.info(`Preparing ${packages.length} package${packages.length > 1 ? "s" : ""} for publish`);
 
 const errors: Array<{ pkg: string; error: string }> = [];
@@ -68,13 +78,12 @@ for (const pkg of packages) {
       workspaceVersions = await collectWorkspaceVersions(rootDir, rootPkg);
     }
 
-    const manifest = (await Bun.file(pkgFilePath).json()) as PackageManifest;
-    const publishManifest = createPublishManifest(manifest, catalogs, workspaceVersions);
+    const publishText = renderPublishManifest(await Bun.file(pkgFilePath).text(), catalogs, workspaceVersions);
 
-    await Bun.write(pkgFilePath, `${JSON.stringify(publishManifest, null, JSON_INDENT)}\n`);
+    await Bun.write(pkgFilePath, publishText);
     console.info(`✅ Processed ${pkg}`);
   } catch (error) {
-    errors.push({ error: error instanceof Error ? error.message : String(error), pkg });
+    errors.push({ error: describeFailure(error), pkg });
   }
 }
 
