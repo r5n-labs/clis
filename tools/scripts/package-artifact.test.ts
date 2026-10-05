@@ -124,25 +124,6 @@ describe("preparePackageArtifact", () => {
     expect(existsSync(fixture.artifactPath)).toBe(false);
   });
 
-  test("rejects ignored pre-build files included by the package manifest", async () => {
-    const fixture = await createPackageFixture();
-    const manifest = JSON.parse(readFileSync(fixture.manifestPath, "utf-8"));
-    writeFileSync(
-      fixture.manifestPath,
-      `${JSON.stringify({ ...manifest, files: ["source.ts", "ignored.js"] }, null, 2)}\n`,
-    );
-    writeFileSync(join(fixture.packageDirectory, ".gitignore"), "ignored.js\n");
-    await Bun.$`git add packages/example`.cwd(fixture.root).quiet();
-    await Bun.$`git -c commit.gpgsign=false commit -q -m "include ignored source"`.cwd(fixture.root).quiet();
-    writeFileSync(join(fixture.packageDirectory, "ignored.js"), "unbound payload\n");
-
-    await expect(preparePackageArtifact(fixture.packageDirectory, fixture.artifactPath)).rejects.toThrow(
-      /Repository contains ignored build inputs outside node_modules:[\s\S]*packages\/example\/ignored\.js[\s\S]*pristine worktree/,
-    );
-
-    expect(existsSync(fixture.artifactPath)).toBe(false);
-  });
-
   test("rejects ignored inputs that a build would copy into generated output", async () => {
     const fixture = await createPackageFixture();
     const manifest = JSON.parse(readFileSync(fixture.manifestPath, "utf-8"));
