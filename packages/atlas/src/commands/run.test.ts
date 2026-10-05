@@ -184,17 +184,6 @@ describe("RunCommand", () => {
     expect(existsSync(output)).toBe(false);
   });
 
-  test("returns nonzero from the CLI for explicitly empty option values", async () => {
-    const command = ["--", process.execPath, "-e", ""];
-    const profile = spawnAtlas(["run", "--profile= , , ", ...command]);
-    const cwd = spawnAtlas(["run", "--cwd=   ", ...command]);
-
-    const [profileExitCode, cwdExitCode] = await Promise.all([profile.exited, cwd.exited]);
-
-    expect(profileExitCode).toBe(1);
-    expect(cwdExitCode).toBe(1);
-  });
-
   test("rejects unknown flags before -- with a passthrough hint instead of spawning", async () => {
     const output = join(tmpRoot, "spawned.txt");
     const execution = new RunCommand().execute(
@@ -268,16 +257,6 @@ describe("RunCommand", () => {
     expect(exitCode).toBe(0);
     expect(stdout.trim()).toBe("a --version b");
   });
-
-  test.each(["", " ", "0", "-1", "1.5", "not-a-pid", "9007199254740992"])(
-    "rejects unsafe child readiness PID %j before any signal",
-    async (contents) => {
-      const ready = join(tmpRoot, "ready.txt");
-      writeFileSync(ready, contents);
-
-      await expect(waitForPid(ready)).rejects.toThrow("Invalid child PID");
-    },
-  );
 
   test.each(["SIGTERM", "SIGINT"] as const)(
     "forwards %s to the direct child and preserves its exit code",

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverAtlasConfig, loadAtlasConfig, resolveAtlasEnv } from "./config";
+import { loadAtlasConfig, resolveAtlasEnv } from "./config";
 
 let tmpRoot: string;
 
@@ -46,7 +46,7 @@ function envWithOwnSource(source: string, value: string): Record<string, string 
   return env;
 }
 
-describe("discoverAtlasConfig", () => {
+describe("loadAtlasConfig discovery", () => {
   test("finds global config and nearest project config from nested cwd", () => {
     const home = join(tmpRoot, "home");
     const project = join(tmpRoot, "repo");
@@ -56,11 +56,11 @@ describe("discoverAtlasConfig", () => {
     writeJson(join(project, ".atlas", "config.json"), { profiles: { "app:web": { vars: { APP: "web" } } } });
     mkdirSync(nested, { recursive: true });
 
-    const discovered = discoverAtlasConfig({ cwd: nested, home });
+    const loaded = loadAtlasConfig({ cwd: nested, home });
 
-    expect(discovered.globalPath).toBe(join(home, ".atlas", "config.json"));
-    expect(discovered.projectPath).toBe(join(project, ".atlas", "config.json"));
-    expect(discovered.projectRoot).toBe(project);
+    expect(loaded.globalPath).toBe(join(home, ".atlas", "config.json"));
+    expect(loaded.projectPath).toBe(join(project, ".atlas", "config.json"));
+    expect(loaded.projectRoot).toBe(project);
   });
 
   test("uses the closest project config when directories are nested", () => {
@@ -71,10 +71,10 @@ describe("discoverAtlasConfig", () => {
     writeJson(join(outer, ".atlas", "config.json"), { profiles: { outer: { vars: { NAME: "outer" } } } });
     writeJson(join(inner, ".atlas", "config.json"), { profiles: { inner: { vars: { NAME: "inner" } } } });
 
-    const discovered = discoverAtlasConfig({ cwd: join(inner, "src"), home });
+    const loaded = loadAtlasConfig({ cwd: join(inner, "src"), home });
 
-    expect(discovered.projectPath).toBe(join(inner, ".atlas", "config.json"));
-    expect(discovered.projectRoot).toBe(inner);
+    expect(loaded.projectPath).toBe(join(inner, ".atlas", "config.json"));
+    expect(loaded.projectRoot).toBe(inner);
   });
 
   test("does not use the global config as a discovered project config", () => {
@@ -87,13 +87,12 @@ describe("discoverAtlasConfig", () => {
     });
     mkdirSync(project, { recursive: true });
 
-    const discovered = discoverAtlasConfig({ cwd: project, home });
     const loaded = loadAtlasConfig({ cwd: project, home });
     const resolved = resolveAtlasEnv(loaded);
 
-    expect(discovered.globalPath).toBe(join(home, ".atlas", "config.json"));
-    expect(discovered.projectPath).toBeUndefined();
-    expect(discovered.projectRoot).toBeUndefined();
+    expect(loaded.globalPath).toBe(join(home, ".atlas", "config.json"));
+    expect(loaded.projectPath).toBeUndefined();
+    expect(loaded.projectRoot).toBeUndefined();
     expect(loaded.config.defaults?.profiles).toEqual(["team"]);
     expect(resolved.exportFile).toBe(join(project, ".env.global"));
   });

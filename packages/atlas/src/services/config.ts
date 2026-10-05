@@ -33,7 +33,7 @@ class AtlasConfigValidationError extends Error {
   readonly _tag = "AtlasConfigValidationError";
 }
 
-export function discoverAtlasConfig(options: DiscoveryOptions = {}) {
+function discoverAtlasConfig(options: DiscoveryOptions = {}) {
   const cwd = resolve(options.cwd ?? process.cwd());
   const home = resolve(options.home ?? homedir());
   const globalCandidate = join(home, ATLAS_DIR, ATLAS_CONFIG_FILE);

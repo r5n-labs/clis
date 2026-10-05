@@ -33,7 +33,7 @@ afterEach(() => {
   rmSync(fixtureRoot, { force: true, recursive: true });
 });
 
-async function runAtlas(argv: string[]) {
+async function runAtlas(argv: readonly string[]) {
   const child = Bun.spawn([process.execPath, join(import.meta.dir, "..", "cli.ts"), ...argv], {
     cwd: project,
     env: { ...process.env, HOME: join(fixtureRoot, "home"), NO_COLOR: "1" },
@@ -67,17 +67,20 @@ describe("Atlas option validation", () => {
     expect(readFileSync(join(project, ".atlas", "config.json"), "utf8")).toBe(before);
   });
 
-  test.each(
-    [
-      ["export", "--out", ""],
-      ["export", "--cwd", "   "],
-      ["profiles", "list", "--cwd", ""],
-      ["profiles", "show", "app", "--cwd", ""],
-    ].map((argv) => ({ argv })),
-  )("rejects blank paths in %j", async ({ argv }) => {
+  test.each([
+    { argv: ["export", "--out", ""], message: "--out must not be empty" },
+    { argv: ["export", "--cwd", "   "], message: "--cwd must not be empty" },
+    { argv: ["profiles", "list", "--cwd", ""], message: "--cwd must not be empty" },
+    { argv: ["profiles", "show", "app", "--cwd", ""], message: "--cwd must not be empty" },
+    { argv: ["run", "--cwd=   ", "--", process.execPath, "-e", ""], message: "--cwd must not be empty" },
+    {
+      argv: ["run", "--profile= , , ", "--", process.execPath, "-e", ""],
+      message: "--profile must include at least one profile",
+    },
+  ])("rejects blank option values in %j", async ({ argv, message }) => {
     const result = await runAtlas(argv);
     expect(result.exitCode).toBe(1);
-    expect(result.stdout + result.stderr).toContain("must not be empty");
+    expect(result.stdout + result.stderr).toContain(message);
     expect(existsSync(join(project, ".env.generated"))).toBe(false);
   });
 
