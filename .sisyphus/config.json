@@ -62,6 +62,7 @@
     "build": { "command": ["bun", "run", "build"], "outputs": ["packages/*/dist/**"], "root": [] },
     "createRelease": false,
     "npm": true,
+    "npmVisibilityTimeout": 300,
     "push": true,
     "tags": true
   },
