@@ -47,3 +47,45 @@ test.each(["constructor", "toString", "__proto__"])(
     ]);
   },
 );
+
+test("gettext keeps contexts, multiline text and plural forms together", () => {
+  const entry =
+    'msgctxt "combat"\nmsgid "One hit"\nmsgid_plural "%d hits"\nmsgstr[0] "Jedno "\n"uderzenie"\nmsgstr[1] "%d uderzenia"\nmsgstr[2] "%d uderzeń"';
+  const entries = translationTargets(
+    "pl.po",
+    `msgid ""\nmsgstr "Language: pl\\nPlural-Forms: nplurals=3; plural=(n != 1);\\n"\n\n${entry}\n`,
+  );
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.name).toBe("combat:One hit");
+  expect(entries[0]?.translation).toEqual({ context: "combat", id: "One hit" });
+  expect(entries[0]?.source).toBe(`Language: pl\nPlural-Forms: nplurals=3; plural=(n != 1);\n\n${entry}`);
+});
+
+test.each(["\n", "\r\n"])("gettext preserves source locations across blank separators with %j", (newline) => {
+  const lines = [
+    'msgid ""',
+    'msgstr "Language: pl\\n"',
+    "",
+    "  ",
+    "",
+    'msgid "Hello"',
+    'msgstr "Cześć"',
+    "",
+    "",
+    "# Greeting",
+    'msgid "Bye"',
+    'msgstr "Pa"',
+    "",
+  ];
+  const entries = translationTargets("pl.po", lines.join(newline));
+  expect(entries.map(({ line, endLine }) => ({ line, endLine }))).toEqual([
+    { line: 6, endLine: 7 },
+    { line: 10, endLine: 12 },
+  ]);
+  for (const entry of entries) {
+    const block = lines.slice(entry.line - 1, entry.endLine).join("\n");
+    expect(entry.source).toEndWith(block);
+    expect(entry.source).toStartWith("Language: pl\n");
+  }
+  expect(() => translationTargets("bad.po", lines.slice(0, 5).concat("broken").join(newline))).toThrow("bad.po:6");
+});
