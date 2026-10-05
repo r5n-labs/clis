@@ -100,7 +100,6 @@ export type ReleaseLedgerData = {
 };
 
 export type CreateReleaseLedgerInput = {
-  id?: string;
   options: Omit<ReleaseLedgerOptions, "dryRun"> & { dryRun: boolean };
   packages: readonly ReleaseLedgerPackageInput[];
   stones: readonly ReleaseLedgerStoneInput[];

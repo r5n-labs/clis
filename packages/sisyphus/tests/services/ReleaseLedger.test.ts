@@ -87,6 +87,7 @@ const BASE_INPUT: CreateReleaseLedgerInput = {
   packages: [{ file: PACKAGE_FILE, isPrivate: false, name: PACKAGE_NAME, newVersion: "1.0.1", oldVersion: "1.0.0" }],
   stones: [{ id: "0001-release", message: "ship it", patch: [PACKAGE_NAME] }],
 };
+const NEXT_STONE = { id: "0002-release", message: "ship again", patch: [PACKAGE_NAME] };
 
 async function createRepository(): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), "sisyphus-ledger-"));
@@ -107,6 +108,10 @@ function input(options: Partial<CreateReleaseLedgerInput["options"]> = {}): Crea
     packages: BASE_INPUT.packages.map((pkg) => ({ ...pkg })),
     stones: BASE_INPUT.stones.map((stone) => ({ ...stone })),
   };
+}
+
+function nextReleaseInput(): CreateReleaseLedgerInput {
+  return { ...input({ tags: false }), stones: [{ ...NEXT_STONE }] };
 }
 
 function spawnWriteLockHolder(releaseDirectory: string, env: Record<string, string> = {}) {
@@ -662,12 +667,15 @@ describe("ReleaseLedger", () => {
   test("preserves both releases when another completion and creation race with archival", async () => {
     const root = await createRepository();
     roots.push(root);
+    const first = input({ tags: false });
+    const next = nextReleaseInput();
     const child = Bun.spawn(
       [
         process.execPath,
         join(import.meta.dir, "../helpers/release-ledger-completion.ts"),
         root,
-        JSON.stringify(input({ tags: false })),
+        JSON.stringify(first),
+        JSON.stringify(next),
       ],
       { stderr: "pipe", stdin: "ignore", stdout: "pipe" },
     );
@@ -679,16 +687,17 @@ describe("ReleaseLedger", () => {
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
     const result = JSON.parse(stdout);
     expect(result.intercepted).toBe(true);
-    expect(result.history).toMatchObject({ id: "first", phase: "completed", packages: BASE_INPUT.packages });
-    expect(result.active).toMatchObject({ id: "next", phase: "planned", packages: BASE_INPUT.packages });
-    expect((await ReleaseLedger.loadActive(root))?.id).toBe("next");
+    expect(result.history).toMatchObject({ phase: "completed", packages: BASE_INPUT.packages, stones: first.stones });
+    expect(result.active).toMatchObject({ phase: "planned", packages: BASE_INPUT.packages, stones: next.stones });
+    expect(result.active.id).not.toBe(result.history.id);
+    expect((await ReleaseLedger.loadActive(root))?.id).toBe(result.active.id);
   });
 
   test("a stale completed handle cannot archive the next active release", async () => {
     const root = await createRepository();
     roots.push(root);
-    const first = await ReleaseLedger.create({ ...input({ tags: false }), id: "first" }, root);
-    const historyPath = join(first.releaseDirectory, "history/first.json");
+    const first = await ReleaseLedger.create(input({ tags: false }), root);
+    const historyPath = join(first.releaseDirectory, "history", `${first.id}.json`);
     mkdirSync(dirname(historyPath), { recursive: true });
     writeFileSync(historyPath, "existing history\n");
     await expect(first.complete()).rejects.toThrow("history ledger already exists");
@@ -697,13 +706,13 @@ describe("ReleaseLedger", () => {
     rmSync(historyPath);
     await competing.complete();
     const archived = readFileSync(historyPath, "utf8");
-    const next = await ReleaseLedger.create({ ...input({ tags: false }), id: "next" }, root);
+    const next = await ReleaseLedger.create(nextReleaseInput(), root);
     const active = readFileSync(next.activePath, "utf8");
 
     await expect(first.complete()).rejects.toThrow();
 
     expect(readFileSync(historyPath, "utf8")).toBe(archived);
     expect(readFileSync(next.activePath, "utf8")).toBe(active);
-    expect((await ReleaseLedger.loadActive(root))?.id).toBe("next");
+    expect((await ReleaseLedger.loadActive(root))?.id).toBe(next.id);
   });
 });

@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { GitProvider } from "../../src/providers";
 import { ReleaseOrchestrator } from "../../src/services/ReleaseOrchestrator";
 import { ReleaseLedger } from "../../src/services/release-ledger";
+import { GITHUB_DESTINATION, GITHUB_OWNER, GITHUB_REPO, routeGitHubRemote } from "../helpers/github-remote";
 import { type NpmRegistryServer, serveNpmRegistry } from "../helpers/npm-registry";
 import {
   type Fixture,
@@ -22,6 +22,21 @@ import {
   setupReleaseFixture,
 } from "../helpers/release-orchestrator";
 
+const PROVIDER_RELEASE = {
+  notes: [
+    "`@fixture/foo` 1.0.0 → 1.0.1",
+    "",
+    "<details>",
+    "<summary>Stones (1)</summary>",
+    "",
+    "### ship it",
+    "",
+    "</details>",
+  ].join("\n"),
+  tag: RELEASE_TAG,
+  title: "@fixture/foo v1.0.1",
+};
+
 async function writePackedArtifact(root: string, artifactPath: string, manifest: object): Promise<void> {
   const source = join(root, ".git/artifact-fixture");
   try {
@@ -35,6 +50,7 @@ async function writePackedArtifact(root: string, artifactPath: string, manifest:
 
 describe("ReleaseOrchestrator release resume", () => {
   const originalCwd = process.cwd();
+  const originalPath = process.env.PATH;
   let fixture: Fixture | undefined;
   let registry: NpmRegistryServer | undefined;
 
@@ -42,6 +58,7 @@ describe("ReleaseOrchestrator release resume", () => {
     registry?.stop();
     registry = undefined;
     process.chdir(originalCwd);
+    process.env.PATH = originalPath;
     if (fixture) {
       rmSync(fixture.root, { force: true, recursive: true });
       rmSync(fixture.remote, { force: true, recursive: true });
@@ -135,8 +152,9 @@ describe("ReleaseOrchestrator release resume", () => {
     fixture = await setupReleaseFixture(false);
     const { root, remote } = fixture;
     process.chdir(root);
+    const github = await routeGitHubRemote(root, remote);
+    process.env.PATH = `${github.bin}:${originalPath}`;
     const pkg = makePackage();
-    const stone = makePendingStone();
     const head = await gitText(root, ["rev-parse", "HEAD"]);
     const ledger = await ReleaseLedger.create(
       {
@@ -151,16 +169,16 @@ describe("ReleaseOrchestrator release resume", () => {
           tags: true,
         },
         packages: [pkg],
-        stones: [stone],
+        stones: [makePendingStone()],
       },
       root,
     );
     await recordReleaseCommit(ledger, root, head);
-    await ledger.configurePush("origin", { canonicalUrl: pathToFileURL(remote).href }, [
+    await ledger.configurePush("origin", GITHUB_DESTINATION, [
       { destination: "refs/heads/main", oid: head, source: "refs/heads/main" },
       { destination: `refs/tags/${RELEASE_TAG}`, oid: head, source: `refs/tags/${RELEASE_TAG}` },
     ]);
-    await ledger.configureProviderRelease(pkg.name, { notes: "notes", tag: RELEASE_TAG, title: "title" });
+    await ledger.configureProviderRelease(pkg.name, PROVIDER_RELEASE);
     await ledger.setPhase("local-ready");
     await ledger.markPush("started");
     await Bun.$`git push -q ${remote} ${`${head}:refs/tags/${RELEASE_TAG}`}`.quiet();
@@ -168,25 +186,25 @@ describe("ReleaseOrchestrator release resume", () => {
     const advanced = await gitText(root, ["commit-tree", `${head}^{tree}`, "-p", head, "-m", "advance"]);
     await Bun.$`git push -q ${remote} ${`${advanced}:refs/heads/main`}`.quiet();
 
-    const releasedTags: string[] = [];
-    const orchestrator = makeOrchestrator(root, { changelog: false, createRelease: true, push: true });
-    const internals = orchestrator as unknown as {
-      commitUrlFn: ((hash: string) => string) | null;
-      ledger: ReleaseLedger | null;
-      provider: GitProvider | null;
-    };
-    internals.ledger = ledger;
-    internals.commitUrlFn = (hash: string) => `https://example.invalid/commit/${hash}`;
-    internals.provider = {
-      createRelease: async (release: { tag: string }) => {
-        releasedTags.push(release.tag);
-      },
-    } as unknown as GitProvider;
+    const resumed = await ReleaseOrchestrator.resume(makeConfig(root));
 
-    await orchestrator.createGitRelease([stone], [pkg]);
-
-    expect(releasedTags).toEqual([RELEASE_TAG]);
-    expect(ledger.data.operations.providerReleases[pkg.name]?.state).toBe("completed");
+    expect(github.ghCalls().filter(([command]) => command === "release")).toEqual([
+      [
+        "release",
+        "create",
+        PROVIDER_RELEASE.tag,
+        "--repo",
+        `${GITHUB_OWNER}/${GITHUB_REPO}`,
+        "--title",
+        PROVIDER_RELEASE.title,
+        "--notes",
+        PROVIDER_RELEASE.notes,
+        "--verify-tag",
+      ],
+    ]);
+    expect(resumed.ledger?.phase).toBe("completed");
+    expect(resumed.ledger?.operations.providerReleases[pkg.name]?.state).toBe("completed");
+    expect(await ReleaseLedger.loadActive(root)).toBeNull();
   });
 
   test("recreates missing local release tags at the recorded commit before completing", async () => {

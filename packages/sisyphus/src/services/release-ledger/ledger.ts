@@ -41,7 +41,6 @@ import {
   RELEASE_LEDGER_SCHEMA_VERSION,
   RELEASE_PHASES,
   ReleaseLedgerError,
-  validateReleaseId,
 } from "./types";
 import {
   assertCompletionReady,
@@ -100,13 +99,9 @@ export class ReleaseLedger {
       : undefined;
     const packages = serializePackages(input.packages);
     const stones = serializeStones(input.stones);
-    const id = validateReleaseId(
-      input.id ??
-        createHash("sha256")
-          .update(JSON.stringify({ baseCommit, options: input.options, packages, stones }))
-          .digest("hex"),
-      "create.id",
-    );
+    const id = createHash("sha256")
+      .update(JSON.stringify({ baseCommit, options: input.options, packages, stones }))
+      .digest("hex");
     const npm = createStringRecord<ReleaseLedgerOperation>();
     const releaseTags = input.options.tags ? packages.map((pkg) => `${pkg.name}@${pkg.newVersion}`).sort() : [];
 
