@@ -61,6 +61,8 @@ describe("argument validation", () => {
     { argv: ["-n", "--no-npm"] },
     { argv: ["--no-n", "--npm=false"] },
     { argv: ["-nn"] },
+    { argv: ["-=n", "-n"] },
+    { argv: ["-=nn"] },
   ])("rejects repeated positive, negative and aliased options: %j", ({ argv }) => {
     const defs: Record<string, ArgDefinition> = { npm: { alias: "n", default: true, type: "boolean" } };
     expect(() => parseCommandArgs([...argv], defs)).toThrow(Exit);
@@ -124,6 +126,7 @@ describe("parseGlobalArgs", () => {
     { argv: ["-h", "--no-help"] },
     { argv: ["--no-help", "--no-help"] },
     { argv: ["-hh"] },
+    { argv: ["check", "-=hh"] },
   ])("rejects repeated global spellings: %j", ({ argv }) => {
     expect(() => parseGlobalArgs([...argv], globals)).toThrow(Exit);
     expect(() => parseGlobalArgs([...argv], globals)).toThrow("--help can only be provided once");
