@@ -85,6 +85,11 @@
         },
         "createRelease": { "type": "boolean" },
         "npm": { "type": "boolean" },
+        "npmVisibilityTimeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds to wait after npm publication for each released version to become visible with the published integrity. Versions still missing are reported as warnings without failing the release. 0 skips the check."
+        },
         "push": { "type": "boolean" },
         "tags": { "type": "boolean" }
       }

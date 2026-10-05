@@ -68,7 +68,7 @@ sisyphus roll --resume
 - `--noCommit` — skip the release commit (also disables tags, push, and provider release)
 - `--preview` — write changelogs, list their paths, then offer to revert; `--yes`, `--json` and non-interactive runs automatically restore the original files
 - `--publishOnly` — publish from `currentRelease` recorded by `actions release-pr`, without touching files
-- `-j, --json` — print a machine-readable release report on stdout instead of the interactive output; the report carries a required `warnings` string array listing ignore exclusions, cycle-order caveats, and channel problems
+- `-j, --json` — print a machine-readable release report on stdout instead of the interactive output; the report carries a required `warnings` string array listing ignore exclusions, cycle-order caveats, channel problems, and npm versions not yet visible within `release.npmVisibilityTimeout`; each package reports `visible` as `true`, `false`, or `null` when unchecked
 - `--resume` — reconcile and continue the active incomplete release
 - `--abort` — abandon the incomplete release if nothing external has started; releases with external progress must use `--resume`
 - `-d, --dryRun`, `-y, --yes`

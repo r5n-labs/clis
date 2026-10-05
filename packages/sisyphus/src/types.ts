@@ -8,6 +8,7 @@ export type ReleaseConfig = {
   build: ReleaseBuildConfig;
   createRelease: boolean;
   npm: boolean;
+  npmVisibilityTimeout: number;
   push: boolean;
   tags: boolean;
 };

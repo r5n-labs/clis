@@ -5,14 +5,17 @@ import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_NPM_TAG } from "../constants";
 import { BumpType, Package, Stone } from "../domain";
 import {
+  awaitNpmVisibility,
   buildReleaseReport,
   ChangelogGenerator,
   dependentsOptions,
+  describeNpmVisibility,
   excludeIgnored,
   explainEmptyRelease,
   getNpmTag,
   hashReleasePlan,
   hashReleaseSource,
+  type NpmVisibility,
   orderForRelease,
   ReleaseLedger,
   type ReleaseLedgerData,
@@ -20,6 +23,7 @@ import {
   type ReleaseReportInput,
   type ReleaseReportMode,
   type ReleaseReportStatus,
+  resolveNpmVisibilityTimeout,
   resolveReleaseNpmTag,
   StoneManager,
   stripIgnoredFromStones,
@@ -43,6 +47,7 @@ type ReportContext = {
   releaseCommit?: string;
   mode: ReleaseReportMode;
   npmTag: string;
+  npmVisibility?: NpmVisibility[];
   packages: Package[];
   stones: Stone[];
   tagsEnabled?: boolean;
@@ -89,6 +94,7 @@ export class RollCommand extends BaseCommand {
 
   private reportContext: ReportContext = { mode: "release", npmTag: DEFAULT_NPM_TAG, packages: [], stones: [] };
   private restoreStdout: (() => void) | undefined;
+  private npmVisibilityTimeout = 0;
   private stdoutWasTTY = false;
   private warnings: string[] = [];
 
@@ -117,6 +123,7 @@ export class RollCommand extends BaseCommand {
       ledger: this.reportContext.ledger ?? null,
       mode: this.reportContext.mode,
       npmTag: this.reportContext.npmTag,
+      npmVisibility: this.reportContext.npmVisibility,
       packages: this.reportContext.packages,
       releaseCommit: this.reportContext.releaseCommit,
       status,
@@ -141,6 +148,8 @@ export class RollCommand extends BaseCommand {
       await this.executeAbort(ctx);
       return;
     }
+
+    this.npmVisibilityTimeout = resolveNpmVisibilityTimeout(ctx.config.get("release").npmVisibilityTimeout);
 
     if (ctx.args.resume) {
       this.reportContext.mode = "resume";
@@ -238,6 +247,28 @@ export class RollCommand extends BaseCommand {
   private recordWarning(ctx: RollCtx, message: string) {
     this.warnings.push(message);
     if (!ctx.args.json) log.warn(color.yellow(message));
+  }
+
+  private async verifyNpmVisibility(ctx: RollCtx, reporter: RollReporter) {
+    const ledger = this.reportContext.ledger;
+    if (!ledger?.options.npm || this.npmVisibilityTimeout === 0) return;
+
+    reporter.start("Checking npm registry visibility...");
+    try {
+      this.reportContext.npmVisibility = await awaitNpmVisibility(ledger, this.npmVisibilityTimeout);
+      reporter.stop("Npm registry visibility checked");
+    } catch (error) {
+      reporter.stop("Npm registry visibility check failed");
+      this.recordWarning(
+        ctx,
+        `Could not check npm registry visibility: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+
+    for (const warning of describeNpmVisibility(this.reportContext.npmVisibility, this.npmVisibilityTimeout)) {
+      this.recordWarning(ctx, warning);
+    }
   }
 
   private assertJsonConsent(ctx: RollCtx) {
@@ -456,6 +487,7 @@ export class RollCommand extends BaseCommand {
 
       await orchestrator.completeRelease();
       this.reportContext.ledger = orchestrator.getLedgerSnapshot() ?? this.reportContext.ledger;
+      await this.verifyNpmVisibility(ctx, s);
 
       s.note(
         `Released ${color.bold(String(packages.length))} package(s)\n` +
@@ -787,6 +819,7 @@ export class RollCommand extends BaseCommand {
 
       await orchestrator.completeRelease();
       this.reportContext.ledger = orchestrator.getLedgerSnapshot() ?? this.reportContext.ledger;
+      await this.verifyNpmVisibility(ctx, s);
 
       s.note(
         `Published ${color.bold(String(packages.length))} package(s)\n` +
@@ -844,6 +877,7 @@ export class RollCommand extends BaseCommand {
       stones,
       tagsEnabled: ledger?.options.tags ?? false,
     };
+    await this.verifyNpmVisibility(ctx, createRollReporter(ctx.args.json));
 
     if (!ctx.args.json) {
       note(

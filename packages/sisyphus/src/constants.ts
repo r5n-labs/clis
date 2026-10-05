@@ -107,6 +107,7 @@ export const SISYPHUS_DEFAULT_CONFIG: SisyphusConfig = {
     build: { command: [...DEFAULT_BUILD_COMMAND], outputs: [], root: [] },
     createRelease: false,
     npm: false,
+    npmVisibilityTimeout: 0,
     push: false,
     tags: false,
   },

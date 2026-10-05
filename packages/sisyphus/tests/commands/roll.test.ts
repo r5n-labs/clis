@@ -16,6 +16,7 @@ import {
 } from "../../src/services";
 import { ReleaseLedger } from "../../src/services/release-ledger";
 import type { SisyphusConfig } from "../../src/types";
+import { makeCtx, type RollCtx } from "../helpers/roll";
 
 const PACKAGE_NAME = "@fixture/foo";
 const PACKAGE_FILE = "packages/foo/package.json";
@@ -24,18 +25,6 @@ const STONE_FILE = `.sisyphus/stones/${STONE_ID}.json`;
 const RELEASE_TAG = `${PACKAGE_NAME}@1.0.1`;
 const PREVIOUS_LAST_STONE = { commit: "previous-baseline", date: "2026-01-02T03:04:05.000Z" };
 const LEDGER_SENTINEL = "invalid-ledger-must-not-be-loaded-or-changed\n";
-
-type RollCtx = Parameters<RollCommand["execute"]>[0];
-
-function makeCtx(config: ConfigManager<SisyphusConfig>, args: Partial<RollCtx["args"]> = {}): RollCtx {
-  return {
-    args: { abort: false, noCommit: false, preview: false, publishOnly: false, yes: true, ...args },
-    cli: { name: "SISYPHUS" },
-    config,
-    interactive: false,
-    positionals: {},
-  } as RollCtx;
-}
 
 async function gitText(root: string, args: string[]): Promise<string> {
   const result = await Bun.$`git ${args}`.cwd(root).quiet();
@@ -936,6 +925,7 @@ describe("RollCommand release metadata", () => {
         published: false,
         registry: null,
         tag: null,
+        visible: null,
       },
     ]);
     expect(readFileSync(join(root, PACKAGE_FILE), "utf-8")).toContain('"version": "1.0.0"');

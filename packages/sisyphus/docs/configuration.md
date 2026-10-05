@@ -26,6 +26,7 @@
   },
   "release": {
     "npm": false,
+    "npmVisibilityTimeout": 0,
     "tags": false,
     "push": false,
     "createRelease": false
@@ -53,6 +54,7 @@
 - `changelog` — `sections` maps conventional commit types (`feat`, `fix`, `breaking`, ...) to headings; `root` adds a combined root changelog; `packageHeader`/`rootHeader` support `{emoji}`, `{version}`, `{date}`, `{packages}`
 - `commits.skip` / `pr.skip` — filters for `version --fromCommits` and `pr`
 - `release` — defaults for the corresponding `roll` flags, plus `release.build` (see below)
+- `release.npmVisibilityTimeout` — seconds to wait after npm publication for each released version to appear on its registry with the integrity of the packed artifact. npm can take minutes, occasionally much longer, to list a new version, so versions still missing after the timeout become report warnings rather than a failed release. `0` (the default) skips the check
 - `dependents` — which manifest sections pull a dependent into a release (`kinds`) and whether dependents are always released or only when their published range no longer admits the new version (`updateInternal`)
 - `ignore` — package names or globs that are never released; they are skipped when selecting packages, never pulled in as dependents, and never traversed through
 - `sisyphusDir` / `stonesPath` — relocate the config directory or stone storage

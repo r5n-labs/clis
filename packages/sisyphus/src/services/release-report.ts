@@ -1,5 +1,6 @@
 import { Exit } from "@r5n/cli-core";
 import type { Package, Stone } from "../domain";
+import type { NpmVisibility } from "./release/npm-visibility";
 import type { ReleaseLedgerData } from "./release-ledger";
 
 export const RELEASE_REPORT_SCHEMA_VERSION = 1 as const;
@@ -17,6 +18,7 @@ export type ReleaseReportPackage = {
   registry: string | null;
   tag: string | null;
   integrity: string | null;
+  visible: boolean | null;
 };
 
 export type ReleaseReport = {
@@ -45,6 +47,7 @@ export type ReleaseReportInput = {
   releaseCommit?: string;
   mode: ReleaseReportMode;
   npmTag: string;
+  npmVisibility?: readonly NpmVisibility[];
   packages: readonly Package[];
   status: ReleaseReportStatus;
   stones: readonly Stone[];
@@ -54,7 +57,7 @@ export type ReleaseReportInput = {
 
 export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
   const { ledger } = input;
-  const packages = ledger ? fromLedger(ledger) : fromPlan(input.packages);
+  const packages = ledger ? fromLedger(ledger, input.npmVisibility ?? []) : fromPlan(input.packages);
   const publishedPackages = packages
     .filter((pkg) => pkg.published)
     .map((pkg) => ({ name: pkg.name, version: pkg.newVersion }));
@@ -86,7 +89,7 @@ export function buildReleaseReport(input: ReleaseReportInput): ReleaseReport {
   return report;
 }
 
-function fromLedger(ledger: ReleaseLedgerData): ReleaseReportPackage[] {
+function fromLedger(ledger: ReleaseLedgerData, visibility: readonly NpmVisibility[]): ReleaseReportPackage[] {
   return ledger.packages.map((pkg) => ({
     integrity: ledger.artifacts[pkg.name]?.integrity ?? null,
     name: pkg.name,
@@ -98,7 +101,13 @@ function fromLedger(ledger: ReleaseLedgerData): ReleaseReportPackage[] {
     tag: ledger.tagsReady
       ? (ledger.releaseTags.find((tag) => tag === formatReleaseTag(pkg.name, pkg.newVersion)) ?? null)
       : null,
+    visible: readVisibility(visibility, pkg.name),
   }));
+}
+
+function readVisibility(visibility: readonly NpmVisibility[], name: string): boolean | null {
+  const result = visibility.find((entry) => entry.name === name);
+  return result ? result.state === "visible" : null;
 }
 
 function formatReleaseTag(name: string, version: string): string {
@@ -115,6 +124,7 @@ function fromPlan(packages: readonly Package[]): ReleaseReportPackage[] {
     published: false,
     registry: null,
     tag: null,
+    visible: null,
   }));
 }
 
