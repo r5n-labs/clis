@@ -80,7 +80,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Run tests
-        run: bun test --pass-with-no-tests
+        run: bun test --pass-with-no-tests --timeout 30000
 
   build:
     name: Build

@@ -27,7 +27,7 @@
     "atlas:dbg": "bun --inspect-brk packages/atlas/src/cli.ts",
     "argus": "bun --bun packages/argus/src/cli.ts",
     "argus:dbg": "bun --inspect-brk packages/argus/src/cli.ts",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "type-check": "bun --elide-lines=0 --filter '*' type-check"
   },
   "version": "0.0.0",

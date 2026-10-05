@@ -11,7 +11,7 @@ Bun + TypeScript monorepo of zero-dependency, single-file CLIs built on one priv
 | Lint and format (writes) | `bun lint` |
 | Lint read-only | `bun biome check` |
 | Type check every workspace | `bun type-check` |
-| Run all tests (sequential) | `bun test` |
+| Run all tests (sequential) | `bun run test` |
 | Run one test file | `bun test packages/sisyphus/tests/domain/semver.test.ts` |
 | Run tests by name | `bun test -t "pattern"` |
 | Lint workflows | `actionlint` (config in `.github/actionlint.yaml`) |
@@ -128,9 +128,9 @@ Use the repository-local [test-audit skill](.agents/skills/test-audit/SKILL.md) 
 
 Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries through parser adapters. `argus check` plans without API calls, `run` evaluates missing answers, `report create` saves a review snapshot, report retrieval commands read that snapshot, and `verify --import` saves independently reviewed verdicts. Use an external `--config` to keep state outside the reviewed project; change questions require `--base <revision>`. Model flags are candidates, not verified defects. Its single-file build embeds all grammar WASM and HTML viewer assets; `bun packages/argus/scripts/smoke.ts` checks a copied build without adjacent assets or API calls.
 
-- `bun test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
+- `bun run test` runs everything sequentially; many sisyphus tests call `process.chdir` and mutate `process.env`, so never use `--concurrent`.
 - Filesystem tests build fixtures with `mkdtempSync(join(tmpdir(), "<prefix>-"))` and remove them in `afterEach`. Sisyphus release tests create real git repositories, a fake npm registry via `Bun.serve({ port: 0 })`, and spawn `bun` and `npm` subprocesses. Helpers live in `packages/sisyphus/tests/helpers/`.
-- `bunfig.toml` preloads `test-setup.ts`, which sets the per-test timeout to 30 s through `bun:test`; release tests need it. Bun 1.3.14 ignores the TOML `test.timeout` setting.
+- Release tests need a 30 s per-test timeout. `bunfig.toml` preloads `test-setup.ts`, which sets it through `bun:test`, but Bun applies that only to the first file of a multi-file run and ignores the TOML `test.timeout` setting, so `bun run test` and CI pass `--timeout 30000`; add it to any multi-file `bun test` invocation.
 - Prerequisites on PATH: `git`, `npm` (11 or 12). Provider tests use local command shims; they never contact real GitHub or GitLab services.
 - Prefer integration tests over broad mocking; pin every bug fix with a regression test that fails on the previous behaviour.
 
