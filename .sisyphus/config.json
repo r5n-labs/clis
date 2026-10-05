@@ -69,6 +69,6 @@
   "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": [],
+  "stones": ["0001-b8d22e73"],
   "tag": "latest"
 }
