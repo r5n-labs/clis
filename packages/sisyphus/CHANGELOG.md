@@ -1,5 +1,131 @@
 # @r5n/sisyphus
 
+## 🐛 0.13.1 (2026-10-05)
+
+### 🪨 Bug fixes
+
+- [`618898c`](https://github.com/r5n-labs/clis/commit/618898c) fix(sisyphus): republish a started npm upload the registry does not list
+  <details>
+  <summary>Details</summary>
+
+  Resume stopped whenever an interrupted npm publication was not on the
+  registry, so a release that npm rejected, for example before trusted
+  publishing was configured, could only be finished by hand or replaced with a
+  new version. When the registry answers E404, re-check the durable tarball
+  against the ledger integrity and publish it again through the normal publish
+  path; npm never replaces a published version, so this cannot create a second
+  artefact. An upload npm already accepted but does not list yet, or a registry
+  that cannot be read, still stops the resume with a specific message.
+  </details>
+- [`b197af7`](https://github.com/r5n-labs/clis/commit/b197af7) fix(sisyphus): keep the release ledger across workflow re-runs
+  <details>
+  <summary>Details</summary>
+
+  Shipped release workflows lost the ledger whenever a re-run landed on a fresh
+  runner, so recovery could never resume. Restore the ledger from a cache keyed
+  by the workflow run and save it whenever a release left state behind, reset
+  stale runner state first, and use a per-commit GitLab cache with a clone
+  strategy.
+  </details>
+- [`48f3dd2`](https://github.com/r5n-labs/clis/commit/48f3dd2) fix(sisyphus): resume releases from a fresh checkout of the base commit
+  <details>
+  <summary>Details</summary>
+
+  A re-run of a failed release job checks out the base commit on a new runner,
+  but resume required HEAD to be the release commit and stopped. When HEAD is
+  exactly the recorded base, the release commit exists locally, tracked files
+  are clean and the commit passes the existing tree validation, check it out
+  before validating so the release can continue.
+  </details>
+
+### 🪨 Refactoring
+
+- [`97b3fb2`](https://github.com/r5n-labs/clis/commit/97b3fb2) refactor(sisyphus): stop exporting module-internal release helpers
+  <details>
+  <summary>Details</summary>
+
+  These helpers are only used inside their own modules.
+  </details>
+- [`3d3620d`](https://github.com/r5n-labs/clis/commit/3d3620d) refactor(sisyphus): drop the ledger id seam and test provider releases via resume
+  <details>
+  <summary>Details</summary>
+
+  Release ledgers accepted a caller-supplied id that only tests used. Derive the
+  id from the ledger content alone and make the race tests differ by real input.
+  Exercise the provider release through ReleaseOrchestrator.resume with gh and
+  ssh shims instead of injecting private orchestrator fields.
+  </details>
+- [`2ee0768`](https://github.com/r5n-labs/clis/commit/2ee0768) refactor(tools,sisyphus): share one publish manifest implementation
+  <details>
+  <summary>Details</summary>
+
+  Sisyphus and the tools publish scripts kept identical copies of the workspace
+  and catalogue resolution, which had started to drift. Keep one implementation
+  in tools that raises a typed PublishManifestError with a hint, let Sisyphus
+  convert it to Exit at its boundary, and test every contract once through the
+  public entry points. prepare-publish now prints the hint for each failure and
+  preserves the manifest indentation.
+  </details>
+- [`d8b622e`](https://github.com/r5n-labs/clis/commit/d8b622e) refactor(sisyphus): drop test-only release exports and tighten release tests
+  <details>
+  <summary>Details</summary>
+
+  Test npm dist-tags through getNpmTag instead of a re-exported predicate,
+  import the build-output matcher from its module, and pin the report schema
+  version as a literal. Make the visibility default case use the real default,
+  reject invalid timeouts before releasing, and cover resume with a real ledger.
+  Replace resume push tests that could not detect a re-push with reconcile
+  cases guarded by a rejecting pre-push hook, and share the fake registry
+  environment so no test reads the developer's npm config or the public
+  registry.
+  </details>
+- [`63d6583`](https://github.com/r5n-labs/clis/commit/63d6583) refactor(sisyphus): drop dead domain helpers and duplicated tests
+  <details>
+  <summary>Details</summary>
+
+  isBumpType, Stone.withTag, withDescription, withCommits and the
+  Commit.isConventional getter had no production callers and survived only
+  through their tests. Remove them with the tests, drop Package and helper
+  cases that replay VersionCalculator and ChangesetParser, move unique cases to
+  their owners, and make the affectsPackage test exercise affectsPackage.
+  </details>
+
+### 🪨 Tests
+
+- [`80d2fe9`](https://github.com/r5n-labs/clis/commit/80d2fe9) test(sisyphus): drive prompt tests through execute and cover publish-only visibility
+  <details>
+  <summary>Details</summary>
+
+  Replace private method overrides in the version and init tests with mocked
+  prompts at the command boundary, keep the init ordering regression, name the
+  root attribution test after its intended behaviour, fold the 0.0.x range rows
+  into the caret table, and cover the registry visibility check on publish-only
+  releases.
+  </details>
+- [`2b030fb`](https://github.com/r5n-labs/clis/commit/2b030fb) test(sisyphus): run the provider release resume through a CLI subprocess
+  <details>
+  <summary>Details</summary>
+
+  Bun 1.3.14 resolves Bun.$ commands from the PATH it started with, so the gh
+  shim prepended to process.env.PATH was ignored on CI and the test reached the
+  real gh with the runner's credentials. Run sis roll --resume in a subprocess
+  that receives the shim PATH and an isolated Git config at spawn time, as the
+  other provider tests do, and document the pitfall.
+  </details>
+- [`3c2099d`](https://github.com/r5n-labs/clis/commit/3c2099d) test(sisyphus): isolate global git config in the GitHub remote helper
+  <details>
+  <summary>Details</summary>
+
+  The provider release test records a github.com destination, but a global
+  url.insteadOf rule on the CI runner rewrote the push URL and failed the
+  remote check. Point GIT_CONFIG_GLOBAL at an empty file and disable the
+  system config while the routed remote is active, and restore PATH and the
+  git environment through the helper.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.3.0 → 0.3.1
+
 ## ✨ 0.13.0 (2026-10-05)
 
 ### 🪨 Features

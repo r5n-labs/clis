@@ -39,7 +39,7 @@
     "updateInternal": "always"
   },
   "ignore": [],
-  "lastStone": { "commit": "11d66da4820d7d70a2ebea536771e20a136bcec4", "date": "2026-10-05T07:14:04.909Z" },
+  "lastStone": { "commit": "c82f0742fd85afe4e0658cddfba4e88cfbb3d32c", "date": "2026-10-05T18:31:20.733Z" },
   "plugins": [],
   "pr": {
     "labelMapping": {
@@ -69,6 +69,6 @@
   "scripts": { "post": {}, "pre": {} },
   "single": false,
   "sisyphusDir": ".sisyphus",
-  "stones": ["0001-2b2325a7", "0002-1325f797", "0003-f3a6431e", "0004-c0177cb9", "0005-13cfdba4"],
+  "stones": [],
   "tag": "latest"
 }

@@ -1,5 +1,38 @@
 # @r5n/hydra
 
+## 🐛 0.11.3 (2026-10-05)
+
+### 🪨 Refactoring
+
+- [`a686948`](https://github.com/r5n-labs/clis/commit/a686948) refactor(hydra): drop unused provider barrel re-exports
+  <details>
+  <summary>Details</summary>
+
+  Remove barrel entries that nothing imports through the barrel and stop
+  exporting two constants used only inside cleanup.
+  </details>
+- [`952d555`](https://github.com/r5n-labs/clis/commit/952d555) refactor(hydra): test log cleanup through its boundaries
+  <details>
+  <summary>Details</summary>
+
+  Remove exports and barrel entries that only tests used, cover log
+  classification through discoverLogFiles, and replace the cutoff formula test
+  with a performCleanup case proving that olderThanDays counts whole days.
+  </details>
+
+### 🪨 Tests
+
+- [`57654d4`](https://github.com/r5n-labs/clis/commit/57654d4) test(hydra): fold cleanup option checks into the mutating options table
+  <details>
+  <summary>Details</summary>
+
+  Every row now asserts its exit code and output and that a _work marker
+  survives, including the dry-run cleanup that previously had its own file.
+  </details>
+
+### Dependency updates
+- `@r5n/tools` 0.3.0 → 0.3.1
+
 ## 🐛 0.11.2 (2026-10-04)
 
 ### 🪨 Publish the redesigned logos

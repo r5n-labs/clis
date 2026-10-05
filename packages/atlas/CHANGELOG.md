@@ -1,5 +1,56 @@
 # @r5n/atlas
 
+## 🐛 0.6.4 (2026-10-05)
+
+### 🪨 Bug fixes
+
+- [`1ebb6e9`](https://github.com/r5n-labs/clis/commit/1ebb6e9) fix(atlas): resolve the home directory when it is used
+  <details>
+  <summary>Details</summary>
+
+  Bun caches os.homedir() at startup, so Atlas ignored a HOME changed later in
+  the process and its in-process tests read the developer's real global config.
+  Resolve HOME at call time like Node's homedir, and give every Atlas command
+  test, in process or spawned, its own temporary home.
+  </details>
+
+### 🪨 Refactoring
+
+- [`9c9c22a`](https://github.com/r5n-labs/clis/commit/9c9c22a) refactor(atlas): validate options with the core helper
+  <details>
+  <summary>Details</summary>
+
+  Atlas reimplemented validateKnownArgs from @r5n/cli-core. Use the shared helper
+  so unknown options are reported the same way as in the other CLIs.
+  </details>
+- [`6c9b399`](https://github.com/r5n-labs/clis/commit/6c9b399) refactor(atlas): test config discovery and blank options at the boundary
+  <details>
+  <summary>Details</summary>
+
+  Test discovery through loadAtlasConfig so discoverAtlasConfig no longer needs
+  an export, delete a test that only exercised a local helper, and move the
+  blank --cwd and --profile CLI cases into the validation table with their
+  messages, since the old exit-code check passed for an unrelated reason.
+  </details>
+
+### 🪨 Chores
+
+- [`0d7e2ce`](https://github.com/r5n-labs/clis/commit/0d7e2ce) chore: align Bun pins with the runner's Bun 1.4.2
+  <details>
+  <summary>Details</summary>
+
+  The self-hosted runner now provides Bun 1.4.2, which the release workflow
+  uses directly. Pin CI, packageManager and @types/bun to the same version so
+  tests, builds and releases run on one runtime.
+  </details>
+
+### Dependency updates
+- `@r5n/cli-core` 0.5.0 → 0.5.1
+- `@r5n/tools` 0.3.0 → 0.3.1
+- `@r5n/argus` 0.3.3 → 0.3.4
+- `@r5n/hydra` 0.11.2 → 0.11.3
+- `@r5n/sisyphus` 0.13.0 → 0.13.1
+
 ## 🐛 0.6.3 (2026-10-04)
 
 ### 🪨 Publish the redesigned logos

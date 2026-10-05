@@ -1,5 +1,32 @@
 # @r5n/argus
 
+## 🐛 0.3.4 (2026-10-05)
+
+### 🪨 Tests
+
+- [`a640f68`](https://github.com/r5n-labs/clis/commit/a640f68) test(argus): keep gettext cases with the gettext parser tests
+  <details>
+  <summary>Details</summary>
+
+  Move the gettext context, plural and source location cases out of the GDScript
+  tests and drop a row that duplicated the trailing garbage case.
+  </details>
+- [`f68e926`](https://github.com/r5n-labs/clis/commit/f68e926) test(argus): remove duplicated and circular review tests
+  <details>
+  <summary>Details</summary>
+
+  Drop an HTML report test whose contracts belong to stronger viewer, render and
+  snapshot tests, remove a fingerprint assertion computed by the helper under
+  test, fold the comment preset upgrade into the config upgrade table with the
+  missing naming row, and keep only the translation row that proves decoding.
+  </details>
+
+### Dependency updates
+- `@r5n/sisyphus` 0.13.0 → 0.13.1
+- `@r5n/atlas` 0.6.3 → 0.6.4
+- `@r5n/hydra` 0.11.2 → 0.11.3
+- `@r5n/tools` 0.3.0 → 0.3.1
+
 ## 🐛 0.3.3 (2026-10-04)
 
 ### 🪨 Publish the redesigned logos

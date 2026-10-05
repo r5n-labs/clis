@@ -1,5 +1,32 @@
 # @r5n/cli-core
 
+## 🐛 0.5.1 (2026-10-05)
+
+### 🪨 Tests
+
+- [`1bbfb92`](https://github.com/r5n-labs/clis/commit/1bbfb92) test(core): cover the repeated-flag fallback in number conversion
+  <details>
+  <summary>Details</summary>
+
+  Tokens such as -=n bypass the occurrence check, so convertNumbers still has to
+  reject repeated values; pin that path so it is not removed as dead code.
+  </details>
+- [`cd85ce2`](https://github.com/r5n-labs/clis/commit/cd85ce2) test(core): remove duplicated CLI and parser tests
+  <details>
+  <summary>Details</summary>
+
+  Drop a router test that repeats the non-terminal subprocess check, replace a
+  negative assertion that could never fail with the real menu prompt, fold the
+  older repeated-flag tests into the occurrence tables while keeping the Exit
+  contract, and collapse deepMerge cases into one table.
+  </details>
+
+### Dependency updates
+- `@r5n/sisyphus` 0.13.0 → 0.13.1
+- `@r5n/atlas` 0.6.3 → 0.6.4
+- `@r5n/hydra` 0.11.2 → 0.11.3
+- `@r5n/tools` 0.3.0 → 0.3.1
+
 ## ✨ 0.5.0 (2026-10-03)
 
 ### 🪨 Features

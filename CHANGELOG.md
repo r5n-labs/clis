@@ -1,5 +1,275 @@
 # Changelog
 
+## 2026-10-05 - @r5n/argus@0.3.4, @r5n/atlas@0.6.4, @r5n/cli-core@0.5.1, @r5n/hydra@0.11.3, @r5n/sisyphus@0.13.1, @r5n/tools@0.3.1
+
+**Packages**
+- 🐛 `@r5n/argus` 0.3.3 → 0.3.4
+- 🐛 `@r5n/atlas` 0.6.3 → 0.6.4
+- 🐛 `@r5n/cli-core` 0.5.0 → 0.5.1
+- 🐛 `@r5n/hydra` 0.11.2 → 0.11.3
+- 🐛 `@r5n/sisyphus` 0.13.0 → 0.13.1
+- 🐛 `@r5n/tools` 0.3.0 → 0.3.1
+
+### 🪨 Bug fixes
+**Packages:** `@r5n/sisyphus` · `@r5n/atlas`
+
+<details>
+<summary>Commits (4)</summary>
+
+- [`618898c`](https://github.com/r5n-labs/clis/commit/618898c) fix(sisyphus): republish a started npm upload the registry does not list
+  <details>
+  <summary>Details</summary>
+
+  Resume stopped whenever an interrupted npm publication was not on the
+  registry, so a release that npm rejected, for example before trusted
+  publishing was configured, could only be finished by hand or replaced with a
+  new version. When the registry answers E404, re-check the durable tarball
+  against the ledger integrity and publish it again through the normal publish
+  path; npm never replaces a published version, so this cannot create a second
+  artefact. An upload npm already accepted but does not list yet, or a registry
+  that cannot be read, still stops the resume with a specific message.
+  </details>
+- [`1ebb6e9`](https://github.com/r5n-labs/clis/commit/1ebb6e9) fix(atlas): resolve the home directory when it is used
+  <details>
+  <summary>Details</summary>
+
+  Bun caches os.homedir() at startup, so Atlas ignored a HOME changed later in
+  the process and its in-process tests read the developer's real global config.
+  Resolve HOME at call time like Node's homedir, and give every Atlas command
+  test, in process or spawned, its own temporary home.
+  </details>
+- [`b197af7`](https://github.com/r5n-labs/clis/commit/b197af7) fix(sisyphus): keep the release ledger across workflow re-runs
+  <details>
+  <summary>Details</summary>
+
+  Shipped release workflows lost the ledger whenever a re-run landed on a fresh
+  runner, so recovery could never resume. Restore the ledger from a cache keyed
+  by the workflow run and save it whenever a release left state behind, reset
+  stale runner state first, and use a per-commit GitLab cache with a clone
+  strategy.
+  </details>
+- [`48f3dd2`](https://github.com/r5n-labs/clis/commit/48f3dd2) fix(sisyphus): resume releases from a fresh checkout of the base commit
+  <details>
+  <summary>Details</summary>
+
+  A re-run of a failed release job checks out the base commit on a new runner,
+  but resume required HEAD to be the release commit and stopped. When HEAD is
+  exactly the recorded base, the release commit exists locally, tracked files
+  are clean and the commit passes the existing tree validation, check it out
+  before validating so the release can continue.
+  </details>
+
+</details>
+
+### 🪨 Refactoring
+**Packages:** `@r5n/sisyphus` · `@r5n/atlas` · `@r5n/hydra` · `@r5n/tools`
+
+<details>
+<summary>Commits (9)</summary>
+
+- [`97b3fb2`](https://github.com/r5n-labs/clis/commit/97b3fb2) refactor(sisyphus): stop exporting module-internal release helpers
+  <details>
+  <summary>Details</summary>
+
+  These helpers are only used inside their own modules.
+  </details>
+- [`9c9c22a`](https://github.com/r5n-labs/clis/commit/9c9c22a) refactor(atlas): validate options with the core helper
+  <details>
+  <summary>Details</summary>
+
+  Atlas reimplemented validateKnownArgs from @r5n/cli-core. Use the shared helper
+  so unknown options are reported the same way as in the other CLIs.
+  </details>
+- [`a686948`](https://github.com/r5n-labs/clis/commit/a686948) refactor(hydra): drop unused provider barrel re-exports
+  <details>
+  <summary>Details</summary>
+
+  Remove barrel entries that nothing imports through the barrel and stop
+  exporting two constants used only inside cleanup.
+  </details>
+- [`3d3620d`](https://github.com/r5n-labs/clis/commit/3d3620d) refactor(sisyphus): drop the ledger id seam and test provider releases via resume
+  <details>
+  <summary>Details</summary>
+
+  Release ledgers accepted a caller-supplied id that only tests used. Derive the
+  id from the ledger content alone and make the race tests differ by real input.
+  Exercise the provider release through ReleaseOrchestrator.resume with gh and
+  ssh shims instead of injecting private orchestrator fields.
+  </details>
+- [`2ee0768`](https://github.com/r5n-labs/clis/commit/2ee0768) refactor(tools,sisyphus): share one publish manifest implementation
+  <details>
+  <summary>Details</summary>
+
+  Sisyphus and the tools publish scripts kept identical copies of the workspace
+  and catalogue resolution, which had started to drift. Keep one implementation
+  in tools that raises a typed PublishManifestError with a hint, let Sisyphus
+  convert it to Exit at its boundary, and test every contract once through the
+  public entry points. prepare-publish now prints the hint for each failure and
+  preserves the manifest indentation.
+  </details>
+- [`6c9b399`](https://github.com/r5n-labs/clis/commit/6c9b399) refactor(atlas): test config discovery and blank options at the boundary
+  <details>
+  <summary>Details</summary>
+
+  Test discovery through loadAtlasConfig so discoverAtlasConfig no longer needs
+  an export, delete a test that only exercised a local helper, and move the
+  blank --cwd and --profile CLI cases into the validation table with their
+  messages, since the old exit-code check passed for an unrelated reason.
+  </details>
+- [`952d555`](https://github.com/r5n-labs/clis/commit/952d555) refactor(hydra): test log cleanup through its boundaries
+  <details>
+  <summary>Details</summary>
+
+  Remove exports and barrel entries that only tests used, cover log
+  classification through discoverLogFiles, and replace the cutoff formula test
+  with a performCleanup case proving that olderThanDays counts whole days.
+  </details>
+- [`d8b622e`](https://github.com/r5n-labs/clis/commit/d8b622e) refactor(sisyphus): drop test-only release exports and tighten release tests
+  <details>
+  <summary>Details</summary>
+
+  Test npm dist-tags through getNpmTag instead of a re-exported predicate,
+  import the build-output matcher from its module, and pin the report schema
+  version as a literal. Make the visibility default case use the real default,
+  reject invalid timeouts before releasing, and cover resume with a real ledger.
+  Replace resume push tests that could not detect a re-push with reconcile
+  cases guarded by a rejecting pre-push hook, and share the fake registry
+  environment so no test reads the developer's npm config or the public
+  registry.
+  </details>
+- [`63d6583`](https://github.com/r5n-labs/clis/commit/63d6583) refactor(sisyphus): drop dead domain helpers and duplicated tests
+  <details>
+  <summary>Details</summary>
+
+  isBumpType, Stone.withTag, withDescription, withCommits and the
+  Commit.isConventional getter had no production callers and survived only
+  through their tests. Remove them with the tests, drop Package and helper
+  cases that replay VersionCalculator and ChangesetParser, move unique cases to
+  their owners, and make the affectsPackage test exercise affectsPackage.
+  </details>
+
+</details>
+
+### 🪨 Tests
+**Packages:** `@r5n/cli-core` · `@r5n/tools` · `@r5n/argus` · `@r5n/hydra` · `@r5n/sisyphus`
+
+<details>
+<summary>Commits (9)</summary>
+
+- [`1bbfb92`](https://github.com/r5n-labs/clis/commit/1bbfb92) test(core): cover the repeated-flag fallback in number conversion
+  <details>
+  <summary>Details</summary>
+
+  Tokens such as -=n bypass the occurrence check, so convertNumbers still has to
+  reject repeated values; pin that path so it is not removed as dead code.
+  </details>
+- [`e671f21`](https://github.com/r5n-labs/clis/commit/e671f21) test(tools): drop an ignored-input case covered by stronger tests
+  <details>
+  <summary>Details</summary>
+
+  The removed case cannot fail without the build-output or submodule cases
+  failing as well.
+  </details>
+- [`a640f68`](https://github.com/r5n-labs/clis/commit/a640f68) test(argus): keep gettext cases with the gettext parser tests
+  <details>
+  <summary>Details</summary>
+
+  Move the gettext context, plural and source location cases out of the GDScript
+  tests and drop a row that duplicated the trailing garbage case.
+  </details>
+- [`57654d4`](https://github.com/r5n-labs/clis/commit/57654d4) test(hydra): fold cleanup option checks into the mutating options table
+  <details>
+  <summary>Details</summary>
+
+  Every row now asserts its exit code and output and that a _work marker
+  survives, including the dry-run cleanup that previously had its own file.
+  </details>
+- [`80d2fe9`](https://github.com/r5n-labs/clis/commit/80d2fe9) test(sisyphus): drive prompt tests through execute and cover publish-only visibility
+  <details>
+  <summary>Details</summary>
+
+  Replace private method overrides in the version and init tests with mocked
+  prompts at the command boundary, keep the init ordering regression, name the
+  root attribution test after its intended behaviour, fold the 0.0.x range rows
+  into the caret table, and cover the registry visibility check on publish-only
+  releases.
+  </details>
+- [`2b030fb`](https://github.com/r5n-labs/clis/commit/2b030fb) test(sisyphus): run the provider release resume through a CLI subprocess
+  <details>
+  <summary>Details</summary>
+
+  Bun 1.3.14 resolves Bun.$ commands from the PATH it started with, so the gh
+  shim prepended to process.env.PATH was ignored on CI and the test reached the
+  real gh with the runner's credentials. Run sis roll --resume in a subprocess
+  that receives the shim PATH and an isolated Git config at spawn time, as the
+  other provider tests do, and document the pitfall.
+  </details>
+- [`3c2099d`](https://github.com/r5n-labs/clis/commit/3c2099d) test(sisyphus): isolate global git config in the GitHub remote helper
+  <details>
+  <summary>Details</summary>
+
+  The provider release test records a github.com destination, but a global
+  url.insteadOf rule on the CI runner rewrote the push URL and failed the
+  remote check. Point GIT_CONFIG_GLOBAL at an empty file and disable the
+  system config while the routed remote is active, and restore PATH and the
+  git environment through the helper.
+  </details>
+- [`f68e926`](https://github.com/r5n-labs/clis/commit/f68e926) test(argus): remove duplicated and circular review tests
+  <details>
+  <summary>Details</summary>
+
+  Drop an HTML report test whose contracts belong to stronger viewer, render and
+  snapshot tests, remove a fingerprint assertion computed by the helper under
+  test, fold the comment preset upgrade into the config upgrade table with the
+  missing naming row, and keep only the translation row that proves decoding.
+  </details>
+- [`cd85ce2`](https://github.com/r5n-labs/clis/commit/cd85ce2) test(core): remove duplicated CLI and parser tests
+  <details>
+  <summary>Details</summary>
+
+  Drop a router test that repeats the non-terminal subprocess check, replace a
+  negative assertion that could never fail with the real menu prompt, fold the
+  older repeated-flag tests into the occurrence tables while keeping the Exit
+  contract, and collapse deepMerge cases into one table.
+  </details>
+
+</details>
+
+### 🪨 CI
+**Packages:** `@r5n/tools`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`9f3c0a6`](https://github.com/r5n-labs/clis/commit/9f3c0a6) ci: persist the release ledger across release re-runs
+  <details>
+  <summary>Details</summary>
+
+  The self-hosted fleet runs a re-run on any runner instance, so the ledger of a
+  failed release was missing and the job started a new release. Reset local
+  release state, restore the run's cached ledger and save it after the roll so
+  re-running failed jobs resumes the same release.
+  </details>
+
+</details>
+
+### 🪨 Chores
+**Packages:** `@r5n/atlas`
+
+<details>
+<summary>Commits (1)</summary>
+
+- [`0d7e2ce`](https://github.com/r5n-labs/clis/commit/0d7e2ce) chore: align Bun pins with the runner's Bun 1.4.2
+  <details>
+  <summary>Details</summary>
+
+  The self-hosted runner now provides Bun 1.4.2, which the release workflow
+  uses directly. Pin CI, packageManager and @types/bun to the same version so
+  tests, builds and releases run on one runtime.
+  </details>
+
+</details>
+
 ## 2026-10-05 - @r5n/sisyphus@0.13.0
 
 **Packages**

@@ -1,5 +1,43 @@
 # @r5n/tools
 
+## 🐛 0.3.1 (2026-10-05)
+
+### 🪨 Refactoring
+
+- [`2ee0768`](https://github.com/r5n-labs/clis/commit/2ee0768) refactor(tools,sisyphus): share one publish manifest implementation
+  <details>
+  <summary>Details</summary>
+
+  Sisyphus and the tools publish scripts kept identical copies of the workspace
+  and catalogue resolution, which had started to drift. Keep one implementation
+  in tools that raises a typed PublishManifestError with a hint, let Sisyphus
+  convert it to Exit at its boundary, and test every contract once through the
+  public entry points. prepare-publish now prints the hint for each failure and
+  preserves the manifest indentation.
+  </details>
+
+### 🪨 Tests
+
+- [`e671f21`](https://github.com/r5n-labs/clis/commit/e671f21) test(tools): drop an ignored-input case covered by stronger tests
+  <details>
+  <summary>Details</summary>
+
+  The removed case cannot fail without the build-output or submodule cases
+  failing as well.
+  </details>
+
+### 🪨 CI
+
+- [`9f3c0a6`](https://github.com/r5n-labs/clis/commit/9f3c0a6) ci: persist the release ledger across release re-runs
+  <details>
+  <summary>Details</summary>
+
+  The self-hosted fleet runs a re-run on any runner instance, so the ledger of a
+  failed release was missing and the job started a new release. Reset local
+  release state, restore the run's cached ledger and save it after the roll so
+  re-running failed jobs resumes the same release.
+  </details>
+
 ## ✨ 0.3.0 (2026-10-03)
 
 ### 🪨 Features
