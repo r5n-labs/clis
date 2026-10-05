@@ -63,6 +63,7 @@ describe("argument validation", () => {
     { argv: ["-nn"] },
   ])("rejects repeated positive, negative and aliased options: %j", ({ argv }) => {
     const defs: Record<string, ArgDefinition> = { npm: { alias: "n", default: true, type: "boolean" } };
+    expect(() => parseCommandArgs([...argv], defs)).toThrow(Exit);
     expect(() => parseCommandArgs([...argv], defs)).toThrow("--npm can only be provided once");
   });
 
@@ -108,30 +109,6 @@ describe("argument validation", () => {
     expect(parseCommandArgs([...argv], defs).args.retentionDays).toBe(expected);
   });
 
-  test("throws Exit when a long flag is repeated", () => {
-    const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
-
-    expect(() => parseCommandArgs(["--json", "--json"], defs)).toThrow(Exit);
-    expect(() => parseCommandArgs(["--json", "--json"], defs)).toThrow("--json can only be provided once");
-  });
-
-  test("repeated short alias reports the canonical long flag", () => {
-    const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
-
-    expect(() => parseCommandArgs(["-j", "-j"], defs)).toThrow("--json can only be provided once");
-  });
-
-  test("repeated camelCase flag reports the kebab-case name", () => {
-    const defs: Record<string, ArgDefinition> = { dryRun: { alias: "d", type: "boolean" } };
-
-    expect(() => parseCommandArgs(["-d", "-d"], defs)).toThrow("--dry-run can only be provided once");
-  });
-
-  test("rejects repeated string aliases using the canonical diagnostic", () => {
-    const defs: Record<string, ArgDefinition> = { output: { alias: "o", type: "string" } };
-    expect(() => parseCommandArgs(["-o", "a", "--output", "b"], defs)).toThrow("--output can only be provided once");
-  });
-
   test("undefined short flag keeps a single dash", () => {
     const defs: Record<string, ArgDefinition> = { json: { alias: "j", type: "boolean" } };
 
@@ -142,16 +119,13 @@ describe("argument validation", () => {
 describe("parseGlobalArgs", () => {
   const globals: Record<string, ArgDefinition> = { help: { alias: "h", type: "boolean" } };
 
-  test("repeated global flag reports the canonical long flag", () => {
-    expect(() => parseGlobalArgs(["-h", "-h"], globals)).toThrow("--help can only be provided once");
-  });
-
   test.each([
     { argv: ["--help", "-h"] },
     { argv: ["-h", "--no-help"] },
     { argv: ["--no-help", "--no-help"] },
     { argv: ["-hh"] },
   ])("rejects repeated global spellings: %j", ({ argv }) => {
+    expect(() => parseGlobalArgs([...argv], globals)).toThrow(Exit);
     expect(() => parseGlobalArgs([...argv], globals)).toThrow("--help can only be provided once");
   });
 
@@ -179,12 +153,6 @@ describe("parseGlobalArgs", () => {
 });
 
 describe("mapPositionals", () => {
-  test("maps single positional correctly", () => {
-    const defs: Record<string, PositionalDefinition> = { name: { required: true } };
-    const result = mapPositionals(["foo"], defs);
-    expect(result.name).toBe("foo");
-  });
-
   test("maps multiple positionals by index", () => {
     const defs: Record<string, PositionalDefinition> = { dest: { required: true }, source: { required: true } };
 

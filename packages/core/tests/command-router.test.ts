@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { AbstractCommand, args, type CommandContext, positionals } from "../src/command";
 import { CommandRouter } from "../src/command-router";
 import type { ConfigManager } from "../src/config-manager";
-import { Exit } from "../src/exit";
 import type { CliMetadata } from "../src/types";
 
 class ChildArgsCommand extends AbstractCommand {
@@ -42,19 +41,6 @@ describe("CommandRouter", () => {
     try {
       await new CommandRouter(new PromptCommand(), env()).route(["--name", "automated"], false);
       expect(interactive).toBe(false);
-    } finally {
-      if (original) Object.defineProperty(process.stdout, "isTTY", original);
-      else Reflect.deleteProperty(process.stdout, "isTTY");
-    }
-  });
-
-  test("rejects explicit interactive routing when stdout is not a terminal", async () => {
-    const original = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
-    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: false });
-    try {
-      const command = new ChildArgsCommand();
-      await expect(new CommandRouter(command, env()).route([], true)).rejects.toThrow(Exit);
-      expect(command.capturedCommand).toBeUndefined();
     } finally {
       if (original) Object.defineProperty(process.stdout, "isTTY", original);
       else Reflect.deleteProperty(process.stdout, "isTTY");

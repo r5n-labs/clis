@@ -51,7 +51,7 @@ describe("AbstractCLI", () => {
     const result = runFailingCli(undefined, ["--interactive"]);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain("Interactive mode requires a terminal");
-    expect(result.output).not.toContain("Select:");
+    expect(result.output).not.toContain("What would you like to do?");
   });
 
   test("exits with status 1 when a direct command throws Exit", () => {
