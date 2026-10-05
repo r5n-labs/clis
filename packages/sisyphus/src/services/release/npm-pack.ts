@@ -43,7 +43,7 @@ export async function packNpmArtifact(packageDirectory: string, artifactPath: st
   return { name: packed.name, version: packed.version };
 }
 
-export async function listPackFilePaths(pkg: Package, packageDirectory: string): Promise<string[]> {
+async function listPackFilePaths(pkg: Package, packageDirectory: string): Promise<string[]> {
   const result = await Bun.$`npm pack --dry-run --ignore-scripts --json`.cwd(packageDirectory).quiet();
   const files = parseNpmPackOutput(result.stdout.toString())?.files;
   if (!Array.isArray(files)) throw new Error(`npm pack did not return a file list for ${pkg.name}`);

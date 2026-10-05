@@ -19,7 +19,7 @@ export function filterStonesForPackage(stones: Stone[], packageName: string): St
   return stones.filter((stone) => stone.affectsPackage(packageName));
 }
 
-export function formatReleaseNotes(stones: Stone[], pkg: Package, commitUrlFn: CommitUrlFn): string {
+function formatReleaseNotes(stones: Stone[], pkg: Package, commitUrlFn: CommitUrlFn): string {
   const lines: string[] = [];
   const version = pkg.newVersion ?? pkg.version;
 

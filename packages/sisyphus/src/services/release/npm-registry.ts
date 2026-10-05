@@ -77,7 +77,7 @@ function prereleaseChannel(parsed: Semver): string | undefined {
   return identifier.replace(SNAPSHOT_TIMESTAMP_SUFFIX, "");
 }
 
-export function getPackageScope(packageName: string): string | undefined {
+function getPackageScope(packageName: string): string | undefined {
   return packageName.startsWith("@") ? packageName.split("/")[0] : undefined;
 }
 
@@ -146,7 +146,7 @@ export async function resolveNpmRegistry(pkg: Package): Promise<string> {
   );
 }
 
-export function parseNpmRegistry(value: string): string | undefined {
+function parseNpmRegistry(value: string): string | undefined {
   try {
     const url = new URL(value);
     if (
@@ -178,7 +178,7 @@ export function readPublishedPackage(
   return { integrity, name, version };
 }
 
-export async function readPackageManifest(pkg: Package): Promise<Record<string, unknown>> {
+async function readPackageManifest(pkg: Package): Promise<Record<string, unknown>> {
   let content: string;
   try {
     content = await readFile(pkg.file, "utf-8");

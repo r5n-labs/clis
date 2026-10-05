@@ -18,7 +18,7 @@ export async function resolveRemoteDestination(
   };
 }
 
-export async function canonicalizeRemoteUrl(rawUrl: string, repositoryRoot: () => Promise<string>): Promise<string> {
+async function canonicalizeRemoteUrl(rawUrl: string, repositoryRoot: () => Promise<string>): Promise<string> {
   let parsedUrl: URL | null = null;
   try {
     parsedUrl = new URL(rawUrl);
@@ -191,7 +191,7 @@ export async function resolvePushRemote(branch?: string): Promise<string> {
   return remote;
 }
 
-export async function readOptionalGitConfig(key: string): Promise<string | null> {
+async function readOptionalGitConfig(key: string): Promise<string | null> {
   const result = await Bun.$`git config --get ${key}`.quiet().nothrow();
   if (result.exitCode === 1) return null;
   if (result.exitCode !== 0) {
