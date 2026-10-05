@@ -1,7 +1,7 @@
-import { args, color, Exit, log, positionals } from "@r5n/cli-core";
+import { args, color, Exit, log, positionals, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig } from "../services/config";
-import { validateOptions, validatePathOption } from "../utils";
+import { validatePathOption } from "../utils";
 
 const commonArgs = args({
   cwd: { description: "Working directory override", type: "string" },
@@ -86,7 +86,7 @@ export class ProfilesShowCommand extends BaseCommand {
 }
 
 function validateProfileOptions(options: ListCtx["args"]): void {
-  validateOptions(options, commonArgs, "Run 'atlas profiles --help' for supported commands");
+  validateKnownArgs(options, commonArgs, "Run 'atlas profiles --help' for supported commands");
   validatePathOption(options.cwd, "cwd", "Usage: atlas profiles <list|show> --cwd <dir>");
 }
 

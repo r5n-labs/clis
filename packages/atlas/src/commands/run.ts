@@ -1,9 +1,9 @@
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { args, Exit, positionals } from "@r5n/cli-core";
+import { args, Exit, positionals, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig, resolveAtlasEnv } from "../services/config";
-import { hasErrorCode, parseProfileOption, validateOptions, validatePathOption } from "../utils";
+import { hasErrorCode, parseProfileOption, validatePathOption } from "../utils";
 
 const runArgs = args({
   cwd: { description: "Working directory override", type: "string" },
@@ -26,7 +26,7 @@ export class RunCommand extends BaseCommand {
   positionals = runPositionals;
 
   async execute(ctx: RunCtx): Promise<void> {
-    validateOptions(ctx.args, runArgs, PASSTHROUGH_HINT);
+    validateKnownArgs(ctx.args, runArgs, PASSTHROUGH_HINT);
 
     const command = ctx.positionals.command;
     if (command.length === 0) {

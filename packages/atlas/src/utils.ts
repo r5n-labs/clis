@@ -1,22 +1,6 @@
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { type ArgDefinition, Exit } from "@r5n/cli-core";
-
-const ALIAS_FLAG_LENGTH = 1;
-
-export function validateOptions(
-  values: Record<string, unknown>,
-  definitions: Record<string, ArgDefinition>,
-  hint: string,
-): void {
-  const allowed = new Set(
-    Object.entries(definitions).flatMap(([key, value]) => (value.alias ? [key, value.alias] : [key])),
-  );
-  const unknown = Object.keys(values).find((key) => !allowed.has(key));
-  if (unknown === undefined) return;
-  const flag = unknown.length === ALIAS_FLAG_LENGTH ? `-${unknown}` : `--${unknown}`;
-  throw new Exit(`Unknown option: ${flag}`, hint);
-}
+import { Exit } from "@r5n/cli-core";
 
 export function validatePathOption(value: string | undefined, flag: string, hint: string): void {
   if (value !== undefined && value.trim().length === 0) {

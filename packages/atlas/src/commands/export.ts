@@ -1,11 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { args, color, Exit, log } from "@r5n/cli-core";
+import { args, color, Exit, log, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { loadAtlasConfig, resolveAtlasEnv } from "../services/config";
 import { serializeDotenv } from "../services/dotenv";
 import { writePrivateFile } from "../services/file-output";
-import { parseProfileOption, resolvePath, validateOptions, validatePathOption } from "../utils";
+import { parseProfileOption, resolvePath, validatePathOption } from "../utils";
 
 const PROFILE_USAGE = "Usage: atlas export --profile <name,...>";
 
@@ -25,7 +25,7 @@ export class ExportCommand extends BaseCommand {
   args = exportArgs;
 
   async execute(ctx: ExportCtx): Promise<void> {
-    validateOptions(ctx.args, exportArgs, "Run 'atlas export --help' for supported options");
+    validateKnownArgs(ctx.args, exportArgs, "Run 'atlas export --help' for supported options");
     if (ctx.args.stdout && ctx.args.out !== undefined) {
       throw new Exit(
         "--stdout cannot be combined with --out",
