@@ -11,7 +11,7 @@ const BYTES_PER_UNIT = 1024;
 const SIZE_UNITS = ["B", "KB", "MB", "GB"] as const;
 const SIZE_DECIMALS = 1;
 
-export function classifyLogFile(name: string): LogFileType | null {
+function classifyLogFile(name: string): LogFileType | null {
   if (LOG_FILE_PATTERNS.worker.test(name)) return "worker";
   if (LOG_FILE_PATTERNS.runner.test(name)) return "runner";
   return null;

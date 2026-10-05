@@ -3,14 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  classifyLogFile,
-  discoverLogFiles,
-  formatFileSize,
-  pickLogFile,
-  sortLogFilesNewestFirst,
-  tailLines,
-} from "../src/providers/log-files";
+import { discoverLogFiles, formatFileSize, pickLogFile, tailLines } from "../src/providers/log-files";
 import type { RunnerLogFile } from "../src/providers/types";
 
 const makeLogFile = (overrides: Partial<RunnerLogFile>): RunnerLogFile => ({
@@ -20,46 +13,6 @@ const makeLogFile = (overrides: Partial<RunnerLogFile>): RunnerLogFile => ({
   size: 0,
   type: "worker",
   ...overrides,
-});
-
-describe("classifyLogFile", () => {
-  test("classifies Worker logs", () => {
-    expect(classifyLogFile("Worker_20260115-103000-utc.log")).toBe("worker");
-  });
-
-  test("classifies Runner logs", () => {
-    expect(classifyLogFile("Runner_20260115-103000-utc.log")).toBe("runner");
-  });
-
-  test("returns null for unrelated files", () => {
-    expect(classifyLogFile("something.txt")).toBeNull();
-    expect(classifyLogFile("Worker_.log")).toBeNull();
-    expect(classifyLogFile("Worker_20260115.log.bak")).toBeNull();
-    expect(classifyLogFile(".DS_Store")).toBeNull();
-  });
-});
-
-describe("sortLogFilesNewestFirst", () => {
-  test("sorts by mtime descending", () => {
-    const oldFile = makeLogFile({ mtime: new Date("2026-01-01T00:00:00Z"), name: "old" });
-    const newFile = makeLogFile({ mtime: new Date("2026-03-01T00:00:00Z"), name: "new" });
-    const midFile = makeLogFile({ mtime: new Date("2026-02-01T00:00:00Z"), name: "mid" });
-
-    const sorted = sortLogFilesNewestFirst([oldFile, newFile, midFile]);
-
-    expect(sorted.map((f) => f.name)).toEqual(["new", "mid", "old"]);
-  });
-
-  test("does not mutate the input array", () => {
-    const files = [
-      makeLogFile({ mtime: new Date("2026-01-01T00:00:00Z"), name: "a" }),
-      makeLogFile({ mtime: new Date("2026-02-01T00:00:00Z"), name: "b" }),
-    ];
-
-    sortLogFilesNewestFirst(files);
-
-    expect(files.map((f) => f.name)).toEqual(["a", "b"]);
-  });
 });
 
 describe("pickLogFile", () => {
@@ -175,6 +128,9 @@ describe("discoverLogFiles", () => {
   test("ignores unrelated files and directories", async () => {
     await writeLog("Worker_20260101-000000-utc.log", new Date("2026-01-01T00:00:00Z"));
     await writeFile(join(diagDir, "notes.txt"), "not a log");
+    await writeFile(join(diagDir, "Worker_.log"), "not a log");
+    await writeFile(join(diagDir, "Worker_20260115.log.bak"), "not a log");
+    await writeFile(join(diagDir, ".DS_Store"), "not a log");
     await mkdir(join(diagDir, "Worker_20260102-000000-utc.log"), { recursive: true });
 
     const files = await discoverLogFiles(diagDir);

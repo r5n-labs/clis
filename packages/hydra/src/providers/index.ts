@@ -4,8 +4,6 @@ import type { RunnerProvider } from "./types";
 
 export type { CleanupOutcome, CleanupReport, CleanupRunOptions } from "./cleanup";
 export {
-  computeCutoff,
-  dirSize,
   isAutoCleanupDue,
   isRunnerActive,
   newestVersion,
@@ -18,15 +16,7 @@ export {
 } from "./cleanup";
 export { GitHubRunnerProvider } from "./GitHubRunnerProvider";
 export { describeGitHubTarget, type GitHubTarget, parseGitHubUrl } from "./github-url";
-export {
-  classifyLogFile,
-  DIAG_DIR,
-  discoverLogFiles,
-  formatFileSize,
-  pickLogFile,
-  sortLogFilesNewestFirst,
-  tailLines,
-} from "./log-files";
+export { DIAG_DIR, discoverLogFiles, formatFileSize, pickLogFile, tailLines } from "./log-files";
 export { parseExternalsVersion } from "./runner-version";
 export type { DownloadResult, LogFileType, RunnerInfo, RunnerLogFile, RunnerProvider, RunnerStatus } from "./types";
 

@@ -4,8 +4,6 @@ import { mkdir, readdir, readFile, symlink, utimes, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  computeCutoff,
-  dirSize,
   isAutoCleanupDue,
   newestVersion,
   performCleanup,
@@ -22,6 +20,9 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const NOW = Date.parse("2026-07-01T00:00:00Z");
 const SYNTHETIC_PID = 123456789;
+const RETENTION_DAYS = 7;
+const RETAINED_LOG_AGE_DAYS = 3;
+const EXPIRED_LOG_AGE_DAYS = 8;
 
 const makeLogFile = (overrides: Partial<RunnerLogFile>): RunnerLogFile => ({
   mtime: new Date("2026-01-01T00:00:00Z"),
@@ -67,16 +68,6 @@ describe("resolveCleanupConfig", () => {
 
     expect(resolved.lastRun).toBe("2026-06-01T00:00:00Z");
     expect(resolved.targets).toEqual(["work"]);
-  });
-});
-
-describe("computeCutoff", () => {
-  test("subtracts whole days from now", () => {
-    expect(computeCutoff(NOW, 7)).toBe(NOW - 7 * DAY_MS);
-  });
-
-  test("zero days means everything before now", () => {
-    expect(computeCutoff(NOW, 0)).toBe(NOW);
   });
 });
 
@@ -239,6 +230,27 @@ describe("performCleanup", () => {
     expect(remaining.sort()).toEqual(["Runner_20260401-000000-utc.log", "Worker_20260601-000000-utc.log"]);
   });
 
+  test("logs: measures olderThanDays in whole days", async () => {
+    const { dir, entry } = await makeRunner("mac-1");
+    await writeAged(join(dir, "_diag", "Worker_20260630-000000-utc.log"), DAY_MS);
+    await writeAged(join(dir, "_diag", "Worker_20260628-000000-utc.log"), RETAINED_LOG_AGE_DAYS * DAY_MS);
+    await writeAged(join(dir, "_diag", "Worker_20260623-000000-utc.log"), EXPIRED_LOG_AGE_DAYS * DAY_MS);
+
+    const report = await performCleanup({
+      dryRun: false,
+      entries: [entry],
+      now: NOW,
+      olderThanDays: RETENTION_DAYS,
+      targets: ["logs"],
+    });
+
+    expect(report.logs?.removed).toBe(1);
+    expect((await readdir(join(dir, "_diag"))).sort()).toEqual([
+      "Worker_20260628-000000-utc.log",
+      "Worker_20260630-000000-utc.log",
+    ]);
+  });
+
   test("logs: dry run deletes nothing", async () => {
     const { dir, entry } = await makeRunner("mac-1");
     await writeAged(join(dir, "_diag", "Worker_20260501-000000-utc.log"), 30 * DAY_MS);
@@ -383,21 +395,5 @@ describe("performCleanup", () => {
     });
 
     expect(report.shared).toEqual({ freedBytes: 0, removed: 0, skipped: [] });
-  });
-});
-
-describe("dirSize", () => {
-  test("sums nested file sizes and returns 0 for missing dirs", async () => {
-    const root = mkdtempSync(join(tmpdir(), "hydra-dirsize-"));
-    try {
-      await mkdir(join(root, "nested"), { recursive: true });
-      await writeFile(join(root, "a.txt"), "1234");
-      await writeFile(join(root, "nested", "b.txt"), "56");
-
-      expect(await dirSize(root)).toBe(6);
-      expect(await dirSize(join(root, "missing"))).toBe(0);
-    } finally {
-      rmSync(root, { force: true, recursive: true });
-    }
   });
 });

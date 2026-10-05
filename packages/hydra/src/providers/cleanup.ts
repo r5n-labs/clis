@@ -49,7 +49,7 @@ export function resolveCleanupConfig(cleanup?: Partial<CleanupConfig>): CleanupC
   };
 }
 
-export function computeCutoff(now: number, olderThanDays: number): number {
+function computeCutoff(now: number, olderThanDays: number): number {
   return now - olderThanDays * HOURS_PER_DAY * MS_PER_HOUR;
 }
 
@@ -114,7 +114,7 @@ export async function isRunnerActive(runnerDir: string): Promise<boolean> {
   }
 }
 
-export async function dirSize(path: string): Promise<number> {
+async function dirSize(path: string): Promise<number> {
   if (!existsSync(path)) return 0;
 
   const entries = await readdir(path, { withFileTypes: true });
