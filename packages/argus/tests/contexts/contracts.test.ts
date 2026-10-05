@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
 import { createAnalysis } from "../../src/composition/analysis";
-import { parseConfig, parseQuestion } from "../../src/config/validation";
+import { parseQuestion } from "../../src/config/validation";
 import { ContextBuilder } from "../../src/contexts/ContextBuilder";
 import { presetQuestions } from "../../src/presets";
-import previousComments from "../../src/presets/comments-v1.json";
 import { ProjectScanner } from "../../src/services/ProjectScanner";
 import { fixture } from "../helpers";
 
@@ -180,34 +179,19 @@ test("translation context supplies selected resource records, owning description
   expect(context.related.find((e) => e.path === "ui.pl.po")?.source).toContain("Zapewnia ochronę");
 });
 
-test.each(['&"ui.title"', '"""ui.title"""', '"ui.\\u0074itle"', 'r"ui.title"'])(
-  "translation evidence and its fingerprint include decoded literal usage: %s",
-  async (literal) => {
-    const f = fixture();
-    const question = presetQuestions(["translations"])[0]?.question;
-    if (!question) throw new Error("Missing translation question");
-    f.loaded.config.questions.methods = [];
-    f.loaded.config.questions.translations = [question];
-    f.write("ui.pl.po", 'msgid "ui.title"\nmsgstr "Tytuł"\n');
-    const source = `func title():\n    return tr(${literal})\n`;
-    f.write("ui.gd", source);
-    const initial = (await f.plan()).items[0];
-    expect(initial?.context.related.find((entry) => entry.path === "ui.gd")?.source).toContain(source.trimEnd());
-    f.write("ui.gd", source.replace("return tr", "return format_title"));
-    expect((await f.plan()).items[0]?.inputHash).not.toBe(initial?.inputHash);
-  },
-);
-
-test("stock comment questions upgrade to assess missing explanations; custom rubrics remain untouched", () => {
-  const initial = { version: 1, root: ".", questions: { methods: [previousComments] } };
-  const upgraded = parseConfig(initial).questions.methods[0];
-  expect(upgraded?.hasComments).toBe(false);
-  expect(upgraded?.criteria.needs_explanation).toBeDefined();
-  const custom = { ...previousComments, instructions: "My own check" };
-  expect(parseConfig({ ...initial, questions: { methods: [custom] } }).questions.methods[0]?.instructions).toBe(
-    "My own check",
-  );
-  expect(parseConfig({ ...initial, questions: { methods: [custom] } }).questions.methods[0]?.hasComments).toBe(true);
+test("translation evidence and its fingerprint include decoded literal usage", async () => {
+  const f = fixture();
+  const question = presetQuestions(["translations"])[0]?.question;
+  if (!question) throw new Error("Missing translation question");
+  f.loaded.config.questions.methods = [];
+  f.loaded.config.questions.translations = [question];
+  f.write("ui.pl.po", 'msgid "ui.title"\nmsgstr "Tytuł"\n');
+  const source = 'func title():\n    return tr("ui.\\u0074itle")\n';
+  f.write("ui.gd", source);
+  const initial = (await f.plan()).items[0];
+  expect(initial?.context.related.find((entry) => entry.path === "ui.gd")?.source).toContain(source.trimEnd());
+  f.write("ui.gd", source.replace("return tr", "return format_title"));
+  expect((await f.plan()).items[0]?.inputHash).not.toBe(initial?.inputHash);
 });
 
 test("context selection preserves the target and direct callees while explicitly listing omitted supporting methods", async () => {

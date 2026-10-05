@@ -18,6 +18,8 @@ import { loadConfig } from "../../src/config/loader";
 import { parseConfig } from "../../src/config/validation";
 import { presetQuestions } from "../../src/presets";
 import previousArchitecture from "../../src/presets/architecture-v1.json";
+import previousComments from "../../src/presets/comments-v1.json";
+import previousNaming from "../../src/presets/naming-v1.json";
 import previousTranslations from "../../src/presets/translations-v1.json";
 import { ProjectScanner } from "../../src/services/ProjectScanner";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
@@ -260,6 +262,8 @@ test("question patches retain omitted thresholds and explicitly remove them with
 test.each([
   ["architecture", "classes", previousArchitecture],
   ["translations", "translations", previousTranslations],
+  ["comments", "methods", previousComments],
+  ["naming", "methods", previousNaming],
 ] as const)("stock %s rubrics upgrade without overwriting customised questions", (preset, group, previous) => {
   const f = fixture();
   const config = { ...f.loaded.config, questions: { [group]: [{ ...previous, minConfidence: 0.8 }] } };
@@ -272,6 +276,5 @@ test.each([
   );
   const custom = { ...previous, instructions: "My project-specific rubric" };
   const preserved = parseConfig({ ...config, questions: { [group]: [custom] } }).questions[group][0];
-  expect(preserved?.instructions).toBe(custom.instructions);
-  expect(preserved?.criteria).toEqual(custom.criteria);
+  expect(preserved).toMatchObject(custom);
 });

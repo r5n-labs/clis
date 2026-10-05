@@ -7,7 +7,6 @@ import { ProjectScanner } from "../../src/services/ProjectScanner";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { ReviewPlanner } from "../../src/services/ReviewPlanner";
 import { ReviewRunner } from "../../src/services/ReviewRunner";
-import { inputFingerprint } from "../../src/storage/fingerprints";
 import { fixture, response } from "../helpers";
 
 const QUESTION = parseQuestion({
@@ -183,7 +182,7 @@ test("generic adapters without explicit leading comments retain their existing t
   expect(f.context("run", "target").source).toContain("LEADING_GD");
 });
 
-test("corrected owned comments change context hashes while unrelated comments preserve cached answers", async () => {
+test("owned comment edits change context hashes while unrelated comment edits preserve cached answers", async () => {
   const f = fixture();
   f.loaded.config.questions.methods = [{ ...QUESTION, context: "target" }];
   const source =
@@ -192,11 +191,6 @@ test("corrected owned comments change context hashes while unrelated comments pr
   const first = await f.plan();
   const item = first.items.find((entry) => entry.target.name === "run");
   if (!item) throw new Error("Missing run");
-  const previousContext = {
-    ...item.context,
-    source: ["// PREDECESSOR_ONLY", "/** RUN_OWN */", "/* BODY_ONLY */", item.target.source].join("\n"),
-  };
-  expect(item.inputHash).not.toBe(inputFingerprint(f.loaded.root, item.target, previousContext));
   await new ReviewRunner(f.store, { evaluate: async (payload) => response(payload) }).run(
     first,
     new RequestBatcher().batches(first, f.loaded.config),

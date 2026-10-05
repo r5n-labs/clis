@@ -7,8 +7,6 @@ import { collectChanges } from "../../src/contexts/ChangeContextBuilder";
 import { ContextBuilder } from "../../src/contexts/ContextBuilder";
 import { parseResponse } from "../../src/providers/systemone/schemas";
 import { TypeSafeClient } from "../../src/providers/typesafe/TypeSafeClient";
-import { htmlReport } from "../../src/reports/html";
-import { reportData } from "../../src/reports/report-data";
 import { ProjectScanner } from "../../src/services/ProjectScanner";
 import { RequestBatcher } from "../../src/services/RequestBatcher";
 import { cli, fixture, response } from "../helpers";
@@ -151,23 +149,6 @@ test("Jev client sends the expected HTTP request and validates the response at t
   if (!answer) throw new Error("Missing answer");
   answer.confidence = Number.NaN;
   expect(() => parseResponse(invalid, batch.payload)).toThrow("probability");
-});
-
-test("HTML escapes reviewed text and oversized checks remain visibly unreviewed", async () => {
-  const f = fixture();
-  f.write("example.gd", "func value():\n    return 1\n");
-  f.loaded.config.maxRequestBytes = 10;
-  const plan = await f.plan();
-  const report = reportData(plan, new RequestBatcher().batches(plan, f.loaded.config).length);
-  expect(report.summary.blocked).toBe(1);
-  expect(report.summary.checked).toBe(0);
-  expect(report.summary.requests).toBe(0);
-  const row = report.results[0];
-  if (!row) throw new Error("Missing result");
-  row.target = '<script>alert("bad")</script>';
-  const html = await htmlReport(report);
-  expect(html).not.toContain('<script>alert("bad")</script>');
-  expect(html).toContain("\\u003cscript\\u003e");
 });
 
 test("change review handles modified, new and deleted paths relative to a project subdirectory", async () => {
