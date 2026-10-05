@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { boolean, object, optional, string } from "banditypes";
@@ -12,7 +11,7 @@ import type {
   ResolvedAtlasEnv,
   SecretRef,
 } from "../types";
-import { resolvePath } from "../utils";
+import { homeDirectory, resolvePath } from "../utils";
 import { ENV_KEY_PATTERN, parseDotenv } from "./dotenv";
 
 type DiscoveryOptions = { cwd?: string; home?: string };
@@ -35,7 +34,7 @@ class AtlasConfigValidationError extends Error {
 
 function discoverAtlasConfig(options: DiscoveryOptions = {}) {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const home = resolve(options.home ?? homedir());
+  const home = resolve(options.home ?? homeDirectory());
   const globalCandidate = join(home, ATLAS_DIR, ATLAS_CONFIG_FILE);
   const globalPath = existsSync(globalCandidate) ? globalCandidate : undefined;
   const projectPath = findProjectConfig(cwd, globalPath);

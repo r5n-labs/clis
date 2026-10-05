@@ -12,9 +12,13 @@ export function hasErrorCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
+export function homeDirectory(): string {
+  return process.env.HOME || homedir();
+}
+
 export function resolvePath(path: string, baseDir = process.cwd()): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));
+  if (path === "~") return homeDirectory();
+  if (path.startsWith("~/")) return resolve(homeDirectory(), path.slice(2));
   if (isAbsolute(path)) return path;
   return resolve(baseDir, path);
 }

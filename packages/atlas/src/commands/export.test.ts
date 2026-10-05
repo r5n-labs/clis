@@ -23,13 +23,17 @@ const PUBLIC_FILE_MODE = 0o644;
 const PERMISSIONS_MASK = 0o777;
 const RESTRICTIVE_UMASK = 0o777;
 
+const originalHome = process.env.HOME;
 let tmpRoot: string;
 
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "atlas-export-"));
+  process.env.HOME = join(tmpRoot, "home");
 });
 
 afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
   rmSync(tmpRoot, { force: true, recursive: true });
 });
 

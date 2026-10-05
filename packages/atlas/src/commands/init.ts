@@ -1,10 +1,10 @@
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { args, color, log, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { ATLAS_CONFIG_FILE, ATLAS_DIR, DEFAULT_ATLAS_CONFIG } from "../constants";
 import { writePrivateFile } from "../services/file-output";
+import { homeDirectory } from "../utils";
 
 const initArgs = args({
   force: { alias: "f", default: false, description: "Overwrite an existing config", type: "boolean" },
@@ -20,7 +20,7 @@ export class InitCommand extends BaseCommand {
 
   async execute(ctx: InitCtx): Promise<void> {
     validateKnownArgs(ctx.args, initArgs, "Run 'atlas init --help' for supported options");
-    const root = ctx.args.global ? homedir() : process.cwd();
+    const root = ctx.args.global ? homeDirectory() : process.cwd();
     const configPath = join(root, ATLAS_DIR, ATLAS_CONFIG_FILE);
 
     await mkdir(join(root, ATLAS_DIR), { recursive: true });

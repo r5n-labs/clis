@@ -6,13 +6,17 @@ import type { ConfigManager } from "@r5n/cli-core";
 import type { AtlasConfig } from "../types";
 import { ProfilesListCommand, ProfilesShowCommand } from "./profiles";
 
+const originalHome = process.env.HOME;
 let tmpRoot: string;
 
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "atlas-profiles-"));
+  process.env.HOME = join(tmpRoot, "home");
 });
 
 afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
   rmSync(tmpRoot, { force: true, recursive: true });
 });
 
@@ -100,6 +104,7 @@ describe("ProfilesCommand JSON output", () => {
     const cliPath = join(import.meta.dir, "..", "cli.ts");
     const subprocess = Bun.spawn({
       cmd: [process.execPath, "--bun", cliPath, "profiles", "show", "missing", "--json", "--cwd", project],
+      env: { ...process.env, HOME: join(tmpRoot, "home") },
       stderr: "pipe",
       stdout: "pipe",
     });

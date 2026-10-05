@@ -13,13 +13,17 @@ const FILE_POLL_INTERVAL_MS = 10;
 const SIGNAL_EXIT_CODE = 42;
 const TEST_TIMEOUT_MS = 5_000;
 
+const originalHome = process.env.HOME;
 let tmpRoot: string;
 
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "atlas-run-"));
+  process.env.HOME = join(tmpRoot, "home");
 });
 
 afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
   rmSync(tmpRoot, { force: true, recursive: true });
 });
 
@@ -54,19 +58,27 @@ function ctx(args: { command: string[]; cwd?: string; extraArgs?: Record<string,
   } as unknown as RunCtx;
 }
 
+function isolatedEnv(overrides: Record<string, string> = {}): Record<string, string | undefined> {
+  return { ...process.env, HOME: join(tmpRoot, "home"), ...overrides };
+}
+
 function spawnAtlas(args: string[]) {
   return Bun.spawn([process.execPath, "src/cli.ts", ...args], {
     cwd: ATLAS_ROOT,
+    env: isolatedEnv(),
     stderr: "ignore",
     stdin: "ignore",
     stdout: "ignore",
   });
 }
 
-async function runAtlas(args: string[], env = process.env): Promise<{ exitCode: number; stdout: string }> {
+async function runAtlas(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): Promise<{ exitCode: number; stdout: string }> {
   const child = Bun.spawn([process.execPath, "src/cli.ts", ...args], {
     cwd: ATLAS_ROOT,
-    env,
+    env: isolatedEnv(envOverrides),
     stderr: "ignore",
     stdin: "ignore",
     stdout: "pipe",
@@ -137,8 +149,6 @@ describe("RunCommand", () => {
     { expected: "selected", selection: ["--profile", "selected"] },
   ])("delivers inherited and composed profile values to the CLI child: $expected", async ({ expected, selection }) => {
     const project = join(tmpRoot, "repo");
-    const home = join(tmpRoot, "home");
-    mkdirSync(home, { recursive: true });
     writeJson(join(project, ".atlas", "config.json"), {
       defaults: { profiles: ["default"] },
       profiles: {
@@ -150,7 +160,7 @@ describe("RunCommand", () => {
       "console.log(JSON.stringify([process.env.ATLAS_TEST_KEEP, process.env.ATLAS_TEST_OVERLAP, process.env.ATLAS_TEST_DEFAULT]))";
     const { exitCode, stdout } = await runAtlas(
       ["run", "--cwd", project, ...selection, "--", process.execPath, "-e", childScript],
-      { ...process.env, ATLAS_TEST_KEEP: "inherited", ATLAS_TEST_OVERLAP: "process", HOME: home },
+      { ATLAS_TEST_KEEP: "inherited", ATLAS_TEST_OVERLAP: "process" },
     );
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout)).toEqual(["inherited", expected, "applied"]);
