@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { args, Cancel, color, confirm, Exit, group, note, positionals, text, validateKnownArgs } from "@r5n/cli-core";
 import { BaseCommand, type Ctx } from "../base-command";
 import { CLI_BIN, DEFAULT_PROFILE, RUNNERS_DIR, SHARED_DIR } from "../constants";
-import { defaultJobHooks, parseGitHubUrl } from "../providers";
+import { newProfileJobHooks, parseGitHubUrl } from "../providers";
 import type { Profile } from "../types";
 import { parseRunnerCount, validateRunnerCount } from "../utils";
 
@@ -121,7 +121,7 @@ export class InitCommand extends BaseCommand {
 
     return {
       directory: RUNNERS_DIR,
-      jobHooks: defaultJobHooks(),
+      jobHooks: newProfileJobHooks(),
       labels: values.labels || undefined,
       name: values.name,
       numberOfMachines: parseRunnerCount(values.runners),
@@ -142,7 +142,7 @@ export class InitCommand extends BaseCommand {
 
     return {
       directory: RUNNERS_DIR,
-      jobHooks: defaultJobHooks(),
+      jobHooks: newProfileJobHooks(),
       labels: ctx.args.labels,
       name: ctx.args.name ?? "runner",
       numberOfMachines: parseRunnerCount(ctx.args.runners ?? DEFAULT_RUNNER_COUNT),

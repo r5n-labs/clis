@@ -3,11 +3,18 @@ import { dirname, join, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import type { Cast } from "banditypes";
 import { array, boolean, fail, number, string } from "banditypes";
-import { DEFAULT_DNS_HOOK_ENABLED, DEFAULT_DNS_HOOK_HOSTS, DEFAULT_DNS_HOOK_TIMEOUT_SECONDS } from "../constants";
+import {
+  DEFAULT_DNS_HOOK_ENABLED,
+  DEFAULT_DNS_HOOK_HOSTS,
+  DEFAULT_DNS_HOOK_TIMEOUT_SECONDS,
+  DEFAULT_WORKSPACE_CLEANUP_ENABLED,
+  DEFAULT_WORKSPACE_CLEANUP_KEEP_TOOL_CACHE,
+  NEW_PROFILE_WORKSPACE_CLEANUP_ENABLED,
+} from "../constants";
 import type { JobHooksConfig } from "../types";
-import { renderDisabledHook, renderDnsHook } from "./job-hook-scripts";
+import { renderCleanupHook, renderDisabledHook, renderDnsHook } from "./job-hook-scripts";
 
-export type JobHookKind = "started";
+export type JobHookKind = "started" | "completed";
 
 export type JobHookSync = { envChanged: boolean; scriptsChanged: boolean };
 
@@ -17,6 +24,7 @@ export const JOB_HOOKS_DIR = "hydra-hooks";
 export const ENV_FILE = ".env";
 export const JOB_HOOKS: Record<JobHookKind, { envKey: string; file: string }> = {
   started: { envKey: "ACTIONS_RUNNER_HOOK_JOB_STARTED", file: "job-started.sh" },
+  completed: { envKey: "ACTIONS_RUNNER_HOOK_JOB_COMPLETED", file: "job-completed.sh" },
 };
 
 const JOB_HOOK_KINDS = Object.keys(JOB_HOOKS) as JobHookKind[];
@@ -26,6 +34,7 @@ const HOSTNAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const CONFIG_HINT = "Fix the profile's jobHooks in .hydra/config.json; see the Hydra reference for the allowed values";
 const SECTION_KEYS: { [Hook in keyof JobHooksConfig]: readonly (keyof JobHooksConfig[Hook])[] } = {
   dns: ["enabled", "hosts", "timeoutSeconds"],
+  workspaceCleanup: ["enabled", "keepToolCache"],
 };
 
 const hostnameSchema = string().map((host) =>
@@ -34,20 +43,30 @@ const hostnameSchema = string().map((host) =>
 const hostsSchema = array(hostnameSchema).map((hosts) => (hosts.length > 0 ? hosts : fail()));
 const positiveIntegerSchema = number().map((value) => (Number.isSafeInteger(value) && value > 0 ? value : fail()));
 
-export function defaultJobHooks(): JobHooksConfig {
+function defaultJobHooks(): JobHooksConfig {
   return {
     dns: {
       enabled: DEFAULT_DNS_HOOK_ENABLED,
       hosts: [...DEFAULT_DNS_HOOK_HOSTS],
       timeoutSeconds: DEFAULT_DNS_HOOK_TIMEOUT_SECONDS,
     },
+    workspaceCleanup: {
+      enabled: DEFAULT_WORKSPACE_CLEANUP_ENABLED,
+      keepToolCache: DEFAULT_WORKSPACE_CLEANUP_KEEP_TOOL_CACHE,
+    },
   };
+}
+
+export function newProfileJobHooks(): JobHooksConfig {
+  const hooks = defaultJobHooks();
+  return { ...hooks, workspaceCleanup: { ...hooks.workspaceCleanup, enabled: NEW_PROFILE_WORKSPACE_CLEANUP_ENABLED } };
 }
 
 export function resolveJobHooks(settings: unknown): JobHooksConfig {
   const defaults = defaultJobHooks();
   const raw = section(settings, "jobHooks", Object.keys(SECTION_KEYS));
   const dns = section(raw.dns, "jobHooks.dns", SECTION_KEYS.dns);
+  const cleanup = section(raw.workspaceCleanup, "jobHooks.workspaceCleanup", SECTION_KEYS.workspaceCleanup);
 
   return {
     dns: {
@@ -61,6 +80,22 @@ export function resolveJobHooks(settings: unknown): JobHooksConfig {
         "a positive whole number of seconds",
       ),
     },
+    workspaceCleanup: {
+      enabled: field(
+        boolean(),
+        cleanup.enabled,
+        defaults.workspaceCleanup.enabled,
+        "jobHooks.workspaceCleanup.enabled",
+        "a boolean",
+      ),
+      keepToolCache: field(
+        boolean(),
+        cleanup.keepToolCache,
+        defaults.workspaceCleanup.keepToolCache,
+        "jobHooks.workspaceCleanup.keepToolCache",
+        "a boolean",
+      ),
+    },
   };
 }
 
@@ -68,10 +103,12 @@ export function jobHookPath(runnerDir: string, kind: JobHookKind): string {
   return join(resolve(runnerDir), JOB_HOOKS_DIR, JOB_HOOKS[kind].file);
 }
 
-export function renderJobHook(kind: JobHookKind, hooks: JobHooksConfig): string | null {
+export function renderJobHook(kind: JobHookKind, runnerDir: string, hooks: JobHooksConfig): string | null {
   switch (kind) {
     case "started":
       return hooks.dns.enabled ? renderDnsHook(hooks.dns) : null;
+    case "completed":
+      return hooks.workspaceCleanup.enabled ? renderCleanupHook(resolve(runnerDir), hooks.workspaceCleanup) : null;
   }
 }
 
@@ -111,7 +148,7 @@ export async function writeJobHooks(runnerDir: string, hooks: JobHooksConfig): P
 
   for (const kind of JOB_HOOK_KINDS) {
     const path = jobHookPath(runnerDir, kind);
-    const script = renderJobHook(kind, hooks);
+    const script = renderJobHook(kind, runnerDir, hooks);
     const existing = await readOptional(path);
     const desired = script ?? (existing === null ? null : renderDisabledHook());
     if (desired !== null && desired !== existing) {

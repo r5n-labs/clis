@@ -5,7 +5,7 @@ import type { RunnerProvider } from "./types";
 export type { CleanupReport } from "./cleanup";
 export { isAutoCleanupDue, performCleanup, resolveCleanupConfig, totalFreedBytes } from "./cleanup";
 export { parseGitHubUrl } from "./github-url";
-export { defaultJobHooks, resolveJobHooks } from "./job-hooks";
+export { newProfileJobHooks, resolveJobHooks } from "./job-hooks";
 export { formatFileSize, pickLogFile, tailLines } from "./log-files";
 export type { RunnerInfo, RunnerLogFile } from "./types";
 

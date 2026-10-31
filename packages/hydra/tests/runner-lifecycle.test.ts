@@ -15,6 +15,7 @@ import { GitHubRunnerProvider } from "../src/providers/GitHubRunnerProvider";
 import type { HydraConfig, Profile, RunnerEntry } from "../src/types";
 
 const STARTED_HOOK_KEY = "ACTIONS_RUNNER_HOOK_JOB_STARTED";
+const COMPLETED_HOOK_KEY = "ACTIONS_RUNNER_HOOK_JOB_COMPLETED";
 
 const CLI_PATH = resolve(import.meta.dir, "../src/cli.ts");
 const roots: string[] = [];
@@ -80,6 +81,10 @@ fi
 
 function startedHook(directory: string) {
   return join(directory, "hydra-hooks/job-started.sh");
+}
+
+function hookLines(directory: string) {
+  return `${STARTED_HOOK_KEY}=${startedHook(directory)}\n${COMPLETED_HOOK_KEY}=${join(directory, "hydra-hooks/job-completed.sh")}\n`;
 }
 
 function addRunner(f: ReturnType<typeof fixture>, id: string, profileName = "default", version = OLD_VERSION) {
@@ -273,15 +278,36 @@ describe("runner lifecycle", () => {
     expect(readFileSync(join(otherProfile, "bin/Runner.Listener"), "utf8")).toBe(VERSION);
   });
 
-  test("writes the job-started hook on register and keeps .env stable across updates", async () => {
+  test("init enables both job hooks for new profiles", async () => {
+    const f = fixture();
+
+    expect((await run(f, ["init", "https://github.com/owner/repo", "--profile", "new"])).exitCode).toBe(SUCCESS);
+
+    const config = JSON.parse(readFileSync(f.configPath, "utf8")) as HydraConfig;
+    expect(config.profiles.new?.jobHooks).toEqual({
+      dns: {
+        enabled: true,
+        hosts: [
+          "github.com",
+          "api.github.com",
+          "objects.githubusercontent.com",
+          "pipelines.actions.githubusercontent.com",
+        ],
+        timeoutSeconds: 120,
+      },
+      workspaceCleanup: { enabled: true, keepToolCache: true },
+    });
+  });
+
+  test("writes both job hooks on register and keeps .env stable across updates", async () => {
     const f = fixture();
     addDownload(f.root);
-    f.profile.jobHooks = { dns: { hosts: ["example.test"], timeoutSeconds: 7 } };
+    f.profile.jobHooks = { dns: { hosts: ["example.test"], timeoutSeconds: 7 }, workspaceCleanup: { enabled: true } };
     writeFileSync(f.configPath, JSON.stringify(f.config));
 
     expect((await run(f, ["create", "default", "1"])).exitCode).toBe(SUCCESS);
     const created = join(f.profile.directory, "runner-1");
-    const createdEnv = `LANG=C.UTF-8\n${STARTED_HOOK_KEY}=${startedHook(created)}\n`;
+    const createdEnv = `LANG=C.UTF-8\n${hookLines(created)}`;
     expect(readFileSync(join(created, ".env"), "utf8")).toBe(createdEnv);
     const script = readFileSync(startedHook(created), "utf8");
     expect(script).toContain("hosts=('example.test')\ntimeout_seconds=7\n");
@@ -299,9 +325,9 @@ describe("runner lifecycle", () => {
     expect(firstUpdate.output).toContain("Refreshed job hooks on 1 runner(s).");
     expect(firstUpdate.output).not.toContain("hydra stop");
     expect(readFileSync(join(stale, ".env"), "utf8")).toBe(
-      `LANG=C.UTF-8\n${STARTED_HOOK_KEY}=${startedHook(stale)}\nhttps_proxy=http://proxy:3128\n`,
+      `LANG=C.UTF-8\n${STARTED_HOOK_KEY}=${startedHook(stale)}\nhttps_proxy=http://proxy:3128\n${COMPLETED_HOOK_KEY}=${join(stale, "hydra-hooks/job-completed.sh")}\n`,
     );
-    expect(readFileSync(join(current, ".env"), "utf8")).toBe(`${STARTED_HOOK_KEY}=${startedHook(current)}\n`);
+    expect(readFileSync(join(current, ".env"), "utf8")).toBe(hookLines(current));
     expect(readFileSync(startedHook(current), "utf8")).toBe(script);
 
     const envs = [created, stale, current].map((directory) => readFileSync(join(directory, ".env"), "utf8"));

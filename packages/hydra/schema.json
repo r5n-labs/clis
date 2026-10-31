@@ -78,6 +78,23 @@
                 }
               },
               "type": "object"
+            },
+            "workspaceCleanup": {
+              "additionalProperties": false,
+              "description": "Job-completed hook that removes the job's workspace and _temp contents from the runner's _work directory",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Install the cleanup hook; hydra init turns it on for new profiles",
+                  "type": "boolean"
+                },
+                "keepToolCache": {
+                  "default": true,
+                  "description": "Keep _work/_tool; set to false to empty the tool cache after every job as well",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"

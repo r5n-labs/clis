@@ -37,7 +37,7 @@
 
 ### cleanup
 
-`hydra cleanup` frees disk space. By default it prunes `_diag` log files older than 7 days (always keeping the newest runner and worker log per runner) and removes shared runner versions no runner's `externals` link points to (the newest installed version is always kept). `_work` holds job checkouts and caches, so it is never cleaned by default — pass `-w` explicitly. Runners that are currently running are skipped for `_work` cleanup.
+`hydra cleanup` frees disk space. By default it prunes `_diag` log files older than 7 days (always keeping the newest runner and worker log per runner) and removes shared runner versions no runner's `externals` link points to (the newest installed version is always kept). `_work` holds job checkouts and caches, so it is never cleaned by default — pass `-w` explicitly. Runners that are currently running are skipped for `_work` cleanup; the [workspace cleanup hook](#workspace-cleanup) clears each job's workspace while runners keep running.
 
 - `-l, --logs` prune old `_diag` log files
 - `-w, --work` delete `_work` contents of stopped runners
@@ -81,7 +81,8 @@ Passing any of `-l`/`-w`/`-s` cleans only those targets; with none, the targets 
           "enabled": true,
           "hosts": ["github.com", "api.github.com", "objects.githubusercontent.com", "pipelines.actions.githubusercontent.com"],
           "timeoutSeconds": 120
-        }
+        },
+        "workspaceCleanup": { "enabled": true, "keepToolCache": true }
       },
       "os": "osx",
       "provider": "github",
@@ -107,7 +108,7 @@ The `url` is either a repository URL (`https://github.com/owner/repo`) or an org
 
 ## Job hooks
 
-Hydra installs its own scripts as the runner's [job hooks](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/run-scripts). The runner runs the job-started hook as a "Set up runner" step at the start of every job and the job-completed hook as a "Complete runner" step at the end, and fails the job when a hook exits non-zero. `hydra create` writes the scripts into `<runner>/hydra-hooks/` after registration, `hydra update` rewrites them from the profile, and both point the runner's `.env` at them (`ACTIONS_RUNNER_HOOK_JOB_STARTED`). New profiles get the `jobHooks` section from `hydra init`; profiles without one use the defaults below.
+Hydra installs its own scripts as the runner's [job hooks](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/run-scripts). The runner runs the job-started hook as a "Set up runner" step at the start of every job and the job-completed hook as a "Complete runner" step at the end, and fails the job when a hook exits non-zero. `hydra create` writes the scripts into `<runner>/hydra-hooks/` after registration, `hydra update` rewrites them from the profile, and both point the runner's `.env` at them (`ACTIONS_RUNNER_HOOK_JOB_STARTED` and `ACTIONS_RUNNER_HOOK_JOB_COMPLETED`). New profiles get the `jobHooks` section from `hydra init`, with both hooks on. Profiles without the section use the defaults below: the DNS wait is on and workspace cleanup stays off until you enable it.
 
 While a hook is enabled Hydra owns its `.env` key and replaces any other value; the other `.env` lines are left alone. Disabling a hook removes Hydra's line and turns its script into a no-op, so runners that are still running keep finding it until they restart. Script changes apply from the next job; `.env` changes apply when the runner restarts.
 
@@ -122,6 +123,27 @@ While a hook is enabled Hydra owns its `.env` key and replaces any other value; 
 | `timeoutSeconds` | `120` | Seconds to wait before failing the job |
 
 The runner downloads a job's actions before it runs the job-started hook, so an outage at that moment still fails "Set up job"; the hook protects checkout and every step after it. The timeout is checked between lookup rounds, so a lookup that hangs can extend the wait.
+
+### Workspace cleanup
+
+`jobHooks.workspaceCleanup` removes what a job left in its runner's `_work` directory once the job has finished, whatever its result:
+
+- the job's pipeline directory (`$RUNNER_WORKSPACE`, normally `_work/<repo>`), which holds its checkouts; the runner recreates it for the next job;
+- the contents of `_work/_temp`, except the runner's own `_runner_file_commands` and `_github_workflow` files, which it still reads after the hook (the runner also empties `_temp` itself once the job ends);
+- the contents of `_work/_tool` only when `keepToolCache` is `false`.
+
+It keeps the runner's own state (`_actions`, `_PipelineMapping`, `_diag`, registration files and these hooks), the tool cache by default, and checkouts that earlier jobs left before the hook was installed; clear those once with `hydra cleanup --work` while the runners are stopped.
+
+The script resolves every path physically and acts only on directories strictly inside its own runner's `_work`. It refuses, with a warning, a workspace that is unset, relative, a symlink leading out of `_work`, inside another runner, `_work` itself or one of the runner's `_` directories, and it refuses a `_work` or `_temp` that is itself a symlink. It never follows symlinks while deleting. It always exits 0, so a cleanup problem never fails a finished job; anything it could not remove is reported as a `::warning::` annotation.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false`; `true` in profiles created by `hydra init` | Install the cleanup hook |
+| `keepToolCache` | `true` | Keep `_work/_tool` between jobs |
+
+#### Residual risk
+
+Hydra runners are plain processes that share one OS user, with no VM or container between jobs. The cleanup hook only resets the job's `_work` directories. A job can still leave processes running, change files elsewhere in the user's home directory (caches, Git and SSH configuration, keychains, `/tmp`), read or alter the other runners' directories, including their registration credentials, and affect the jobs that follow. Treat every runner on a host as one trust domain: restrict the runner group to private repositories you trust, do not run workflows from forks on it, and use ephemeral VMs for anything less trusted.
 
 ## How it works
 
