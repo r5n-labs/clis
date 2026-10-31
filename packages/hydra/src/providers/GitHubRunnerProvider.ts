@@ -19,9 +19,11 @@ import {
 import { join, resolve } from "node:path";
 import { Exit } from "@r5n/cli-core";
 import { SHARED_DIR } from "../constants";
-import type { Profile } from "../types";
+import type { JobHooksConfig, Profile } from "../types";
 import type { GitHubTarget } from "./github-url";
 import { describeGitHubTarget, parseGitHubUrl } from "./github-url";
+import type { JobHookSync } from "./job-hooks";
+import { resolveJobHooks, writeJobHooks } from "./job-hooks";
 import { DIAG_DIR, discoverLogFiles } from "./log-files";
 import { parseExternalsVersion } from "./runner-version";
 import type { DownloadResult, RunnerInfo, RunnerLogFile, RunnerProvider } from "./types";
@@ -76,6 +78,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
   }
 
   async create(ids: string[]): Promise<RunnerInfo[]> {
+    const hooks = resolveJobHooks(this.profile.jobHooks);
     const shared = await this.ensureDownloaded();
     const runners: RunnerInfo[] = [];
 
@@ -89,7 +92,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
       }
       try {
         await this.setupRunnerDir(shared, runnerDir);
-        await this.registerRunner(runnerDir, id);
+        await this.registerRunner(runnerDir, id, hooks);
       } catch (error) {
         if (!existsSync(join(runnerDir, ".runner"))) {
           await rm(runnerDir, { force: true, recursive: true });
@@ -185,13 +188,22 @@ export class GitHubRunnerProvider implements RunnerProvider {
   }
 
   async update(ids: string[]): Promise<void> {
+    const hooks = resolveJobHooks(this.profile.jobHooks);
     const sharedPath = await this.ensureDownloaded();
 
     for (const id of ids) {
       const runnerDir = join(this.profile.directory, id);
       await this.removeRunnerBinaries(runnerDir);
       await this.setupRunnerDir(sharedPath, runnerDir);
+      await writeJobHooks(runnerDir, hooks);
     }
+  }
+
+  async configureJobHooks(id: string): Promise<JobHookSync> {
+    const hooks = resolveJobHooks(this.profile.jobHooks);
+    const runnerDir = join(this.profile.directory, id);
+    if (!existsSync(join(runnerDir, ".runner"))) return { envChanged: false, scriptsChanged: false };
+    return writeJobHooks(runnerDir, hooks);
   }
 
   private async getRunnerStatus(runnerDir: string, id: string): Promise<RunnerInfo> {
@@ -275,7 +287,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
     }
   }
 
-  private async registerRunner(runnerDir: string, name: string) {
+  private async registerRunner(runnerDir: string, name: string, hooks: JobHooksConfig) {
     const regToken = await this.fetchRegistrationToken();
     const configArgs = [
       "--url",
@@ -291,6 +303,7 @@ export class GitHubRunnerProvider implements RunnerProvider {
     if (this.profile.runnerGroup) configArgs.push("--runnergroup", this.profile.runnerGroup);
 
     await Bun.$`bash ./config.sh ${configArgs}`.cwd(runnerDir).quiet();
+    await writeJobHooks(runnerDir, hooks);
   }
 
   private async fetchRegistrationToken(): Promise<string> {

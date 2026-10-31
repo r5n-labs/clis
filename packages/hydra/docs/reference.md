@@ -16,7 +16,7 @@
 
 ### create
 
-`hydra create [profile] [count]` downloads the latest `actions/runner` release (once per version, shared across runners), then registers runners named `<name>-1`, `<name>-2`, … It tops up to the target count: if the profile already has enough runners recorded, it does nothing. `count` overrides the profile's `numberOfMachines`.
+`hydra create [profile] [count]` downloads the latest `actions/runner` release (once per version, shared across runners), then registers runners named `<name>-1`, `<name>-2`, … and installs their [job hooks](#job-hooks). It tops up to the target count: if the profile already has enough runners recorded, it does nothing. `count` overrides the profile's `numberOfMachines`.
 
 ### start / stop
 
@@ -50,7 +50,7 @@ Passing any of `-l`/`-w`/`-s` cleans only those targets; with none, the targets 
 
 ### update
 
-`hydra update` checks the latest `actions/runner` release, and if it differs from the installed version, swaps the binaries for every runner. Runners that were running are stopped, updated, and restarted.
+`hydra update` checks the latest `actions/runner` release and swaps the binaries of every runner on an older version; runners that were running are stopped, updated and restarted. It also rewrites every runner's [job hooks](#job-hooks) from its profile, including runners already on the latest version. The runner reads `.env` only when it starts, so when a running runner's hook settings change, `update` prints the `hydra stop` and `hydra start` commands that restart it instead of interrupting its job.
 
 ### remove
 
@@ -76,6 +76,13 @@ Passing any of `-l`/`-w`/`-s` cleans only those targets; with none, the targets 
       "numberOfMachines": 2,
       "labels": "macOS,ARM64",
       "directory": ".hydra/runners",
+      "jobHooks": {
+        "dns": {
+          "enabled": true,
+          "hosts": ["github.com", "api.github.com", "objects.githubusercontent.com", "pipelines.actions.githubusercontent.com"],
+          "timeoutSeconds": 120
+        }
+      },
       "os": "osx",
       "provider": "github",
       "overwrite": false,
@@ -97,6 +104,24 @@ An optional `cleanup` section controls `hydra cleanup` and automatic cleanup:
 All fields are optional; the values above (with `auto: false`) are the defaults. With `auto` enabled, `hydra start` and `hydra update` run a cleanup afterwards whenever the last run is more than `intervalHours` ago. Automatic runs never prompt and only touch the configured `targets` — `work` only if you list it explicitly. Hydra records `lastRun` itself; leave it alone.
 
 The `url` is either a repository URL (`https://github.com/owner/repo`) or an organisation URL (`https://github.com/org`). Repository URLs mint tokens from the repository endpoint (requires repo admin); organisation URLs use the organisation endpoint (requires the `admin:org` scope).
+
+## Job hooks
+
+Hydra installs its own scripts as the runner's [job hooks](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/run-scripts). The runner runs the job-started hook as a "Set up runner" step at the start of every job and the job-completed hook as a "Complete runner" step at the end, and fails the job when a hook exits non-zero. `hydra create` writes the scripts into `<runner>/hydra-hooks/` after registration, `hydra update` rewrites them from the profile, and both point the runner's `.env` at them (`ACTIONS_RUNNER_HOOK_JOB_STARTED`). New profiles get the `jobHooks` section from `hydra init`; profiles without one use the defaults below.
+
+While a hook is enabled Hydra owns its `.env` key and replaces any other value; the other `.env` lines are left alone. Disabling a hook removes Hydra's line and turns its script into a no-op, so runners that are still running keep finding it until they restart. Script changes apply from the next job; `.env` changes apply when the runner restarts.
+
+### DNS wait
+
+`jobHooks.dns` makes every job wait for DNS before it starts. The script looks up each host with `dscacheutil -q host -a name` (`getent hosts` where `dscacheutil` does not exist) and retries the unresolved ones every second. If it had to wait, it prints `::warning::DNS recovered after N s`. If the hosts do not all resolve within `timeoutSeconds`, it prints an `::error::` annotation naming them and exits 1, which fails the job before checkout. When neither lookup command exists it prints a warning and lets the job run.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Install the DNS wait hook |
+| `hosts` | `github.com`, `api.github.com`, `objects.githubusercontent.com`, `pipelines.actions.githubusercontent.com` | Hosts that must all resolve |
+| `timeoutSeconds` | `120` | Seconds to wait before failing the job |
+
+The runner downloads a job's actions before it runs the job-started hook, so an outage at that moment still fails "Set up job"; the hook protects checkout and every step after it. The timeout is checked between lookup rounds, so a lookup that hangs can extend the wait.
 
 ## How it works
 

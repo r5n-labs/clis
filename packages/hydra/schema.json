@@ -45,6 +45,43 @@
           "description": "Directory where runners will be created",
           "type": "string"
         },
+        "jobHooks": {
+          "additionalProperties": false,
+          "description": "Scripts Hydra installs as each runner's job hooks; hydra create and hydra update write them",
+          "properties": {
+            "dns": {
+              "additionalProperties": false,
+              "description": "Job-started hook that waits for DNS before every job and fails the job if it does not recover",
+              "properties": {
+                "enabled": { "default": true, "description": "Install the DNS wait hook", "type": "boolean" },
+                "hosts": {
+                  "default": [
+                    "github.com",
+                    "api.github.com",
+                    "objects.githubusercontent.com",
+                    "pipelines.actions.githubusercontent.com"
+                  ],
+                  "description": "Hosts that must all resolve before the job starts",
+                  "items": {
+                    "format": "hostname",
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$",
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "timeoutSeconds": {
+                  "default": 120,
+                  "description": "Seconds to wait for DNS before failing the job",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "labels": { "description": "Comma-separated list of labels for the runners", "type": "string" },
         "name": { "default": "runner", "description": "Base name for the runners", "type": "string" },
         "numberOfMachines": {
