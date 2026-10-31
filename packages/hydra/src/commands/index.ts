@@ -1,5 +1,6 @@
 export { CleanupCommand } from "./cleanup";
 export { CreateCommand } from "./create";
+export { DoctorCommand } from "./doctor";
 export { InitCommand } from "./init";
 export { LogsCommand } from "./logs";
 export { ProfileCommand } from "./profile";

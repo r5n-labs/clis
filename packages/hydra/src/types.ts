@@ -2,8 +2,19 @@ export type Provider = "github" | "gitlab";
 
 export type Os = "osx" | "linux" | "windows";
 
+export type DnsHookConfig = { enabled: boolean; hosts: string[]; timeoutSeconds: number };
+
+export type WorkspaceCleanupHookConfig = { enabled: boolean; keepToolCache: boolean };
+
+export type JobHooksConfig = { dns: DnsHookConfig; workspaceCleanup: WorkspaceCleanupHookConfig };
+
+export type JobHooksSettings = {
+  [Hook in keyof JobHooksConfig]?: Partial<JobHooksConfig[Hook]>;
+};
+
 export type Profile = {
   directory: string;
+  jobHooks?: JobHooksSettings;
   labels?: string;
   name: string;
   numberOfMachines: number;

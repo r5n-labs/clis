@@ -1,6 +1,15 @@
+import type { JobHookSync } from "./job-hooks";
+
 export type RunnerStatus = "running" | "stopped" | "registered" | "unknown";
 
-export type RunnerInfo = { id: string; name: string; directory: string; status: RunnerStatus; pid?: number };
+export type RunnerInfo = {
+  id: string;
+  name: string;
+  directory: string;
+  status: RunnerStatus;
+  pid?: number;
+  startedAt?: Date;
+};
 
 export type DownloadResult = { version: string; path: string };
 
@@ -17,5 +26,6 @@ export interface RunnerProvider {
   list(): Promise<RunnerInfo[]>;
   currentVersion(id: string): Promise<string | null>;
   update(ids: string[]): Promise<void>;
+  configureJobHooks(id: string): Promise<JobHookSync>;
   logFiles(id: string): Promise<RunnerLogFile[]>;
 }

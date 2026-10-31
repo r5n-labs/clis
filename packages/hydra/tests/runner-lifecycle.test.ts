@@ -14,6 +14,9 @@ import { join, resolve } from "node:path";
 import { GitHubRunnerProvider } from "../src/providers/GitHubRunnerProvider";
 import type { HydraConfig, Profile, RunnerEntry } from "../src/types";
 
+const STARTED_HOOK_KEY = "ACTIONS_RUNNER_HOOK_JOB_STARTED";
+const COMPLETED_HOOK_KEY = "ACTIONS_RUNNER_HOOK_JOB_COMPLETED";
+
 const CLI_PATH = resolve(import.meta.dir, "../src/cli.ts");
 const roots: string[] = [];
 const EXECUTABLE_MODE = 0o755;
@@ -68,11 +71,20 @@ if [ "$1" = remove ]; then
   rm .runner
 else
   echo '{"gitHubUrl":"https://github.com/example/repo","agentName":"runner"}' > .runner
+  echo 'LANG=C.UTF-8' >> .env
   if [ "$HYDRA_FAIL_AFTER_REGISTRATION" = true ]; then exit 1; fi
 fi
 `,
   );
   return directory;
+}
+
+function startedHook(directory: string) {
+  return join(directory, "hydra-hooks/job-started.sh");
+}
+
+function hookLines(directory: string) {
+  return `${STARTED_HOOK_KEY}=${startedHook(directory)}\n${COMPLETED_HOOK_KEY}=${join(directory, "hydra-hooks/job-completed.sh")}\n`;
 }
 
 function addRunner(f: ReturnType<typeof fixture>, id: string, profileName = "default", version = OLD_VERSION) {
@@ -264,6 +276,108 @@ describe("runner lifecycle", () => {
     expect(result.output).toContain("2 runner(s)");
     expect(readFileSync(join(sameProfile, "bin/Runner.Listener"), "utf8")).toBe(VERSION);
     expect(readFileSync(join(otherProfile, "bin/Runner.Listener"), "utf8")).toBe(VERSION);
+  });
+
+  test("init enables both job hooks for new profiles", async () => {
+    const f = fixture();
+
+    expect((await run(f, ["init", "https://github.com/owner/repo", "--profile", "new"])).exitCode).toBe(SUCCESS);
+
+    const config = JSON.parse(readFileSync(f.configPath, "utf8")) as HydraConfig;
+    expect(config.profiles.new?.jobHooks).toEqual({
+      dns: {
+        enabled: true,
+        hosts: [
+          "github.com",
+          "api.github.com",
+          "objects.githubusercontent.com",
+          "pipelines.actions.githubusercontent.com",
+        ],
+        timeoutSeconds: 120,
+      },
+      workspaceCleanup: { enabled: true, keepToolCache: true },
+    });
+  });
+
+  test("writes both job hooks on register and keeps .env stable across updates", async () => {
+    const f = fixture();
+    addDownload(f.root);
+    f.profile.jobHooks = { dns: { hosts: ["example.test"], timeoutSeconds: 7 }, workspaceCleanup: { enabled: true } };
+    writeFileSync(f.configPath, JSON.stringify(f.config));
+
+    expect((await run(f, ["create", "default", "1"])).exitCode).toBe(SUCCESS);
+    const created = join(f.profile.directory, "runner-1");
+    const createdEnv = `LANG=C.UTF-8\n${hookLines(created)}`;
+    expect(readFileSync(join(created, ".env"), "utf8")).toBe(createdEnv);
+    const script = readFileSync(startedHook(created), "utf8");
+    expect(script).toContain("hosts=('example.test')\ntimeout_seconds=7\n");
+
+    const stale = addRunner(f, "runner-2");
+    writeFileSync(
+      join(stale, ".env"),
+      `LANG=C.UTF-8\n${STARTED_HOOK_KEY}=/opt/custom.sh\nhttps_proxy=http://proxy:3128\n`,
+    );
+    const current = addRunner(f, "runner-3", "default", VERSION);
+    const firstUpdate = await run(f, ["update"]);
+
+    expect(firstUpdate.exitCode).toBe(SUCCESS);
+    expect(firstUpdate.output).toContain("Updated 1 runner(s).");
+    expect(firstUpdate.output).toContain("Refreshed job hooks on 1 runner(s).");
+    expect(firstUpdate.output).not.toContain("hydra stop");
+    expect(readFileSync(join(stale, ".env"), "utf8")).toBe(
+      `LANG=C.UTF-8\n${STARTED_HOOK_KEY}=${startedHook(stale)}\nhttps_proxy=http://proxy:3128\n${COMPLETED_HOOK_KEY}=${join(stale, "hydra-hooks/job-completed.sh")}\n`,
+    );
+    expect(readFileSync(join(current, ".env"), "utf8")).toBe(hookLines(current));
+    expect(readFileSync(startedHook(current), "utf8")).toBe(script);
+
+    const envs = [created, stale, current].map((directory) => readFileSync(join(directory, ".env"), "utf8"));
+    const secondUpdate = await run(f, ["update"]);
+
+    expect(secondUpdate.exitCode).toBe(SUCCESS);
+    expect(secondUpdate.output).toContain("All runners are already on the latest version.");
+    expect(secondUpdate.output).not.toContain("Refreshed");
+    expect([created, stale, current].map((directory) => readFileSync(join(directory, ".env"), "utf8"))).toEqual(envs);
+    expect(envs[0]).toBe(createdEnv);
+  });
+
+  test("disabling the DNS hook drops only Hydra's .env line and leaves a no-op script behind", async () => {
+    const f = fixture();
+    addDownload(f.root);
+    expect((await run(f, ["create", "default", "1"])).exitCode).toBe(SUCCESS);
+    const managed = join(f.profile.directory, "runner-1");
+    f.config = JSON.parse(readFileSync(f.configPath, "utf8")) as HydraConfig;
+    const profile = f.config.profiles.default;
+    if (!profile) throw new Error("Missing test profile default");
+    profile.jobHooks = { dns: { enabled: false } };
+    const foreign = addRunner(f, "runner-2", "default", VERSION);
+    writeFileSync(join(foreign, ".env"), `${STARTED_HOOK_KEY}=/opt/custom.sh\n`);
+
+    const result = await run(f, ["update"]);
+
+    expect(result.exitCode).toBe(SUCCESS);
+    expect(readFileSync(join(managed, ".env"), "utf8")).toBe("LANG=C.UTF-8\n");
+    expect(readFileSync(join(foreign, ".env"), "utf8")).toBe(`${STARTED_HOOK_KEY}=/opt/custom.sh\n`);
+    expect(existsSync(join(foreign, "hydra-hooks"))).toBe(false);
+    const leftover = Bun.spawn(["/bin/bash", "-e", startedHook(managed)], { stderr: "pipe", stdout: "pipe" });
+    expect(await leftover.exited).toBe(SUCCESS);
+    expect(await new Response(leftover.stdout).text()).toBe("");
+  });
+
+  test("rejects invalid job hook settings before contacting GitHub or touching runners", async () => {
+    const f = fixture();
+    addDownload(f.root);
+    const directory = addRunner(f, "runner-1");
+    f.profile.jobHooks = { dns: { hosts: [] } };
+    writeFileSync(f.configPath, JSON.stringify(f.config));
+    script(join(f.bin, "gh"), '#!/bin/sh\ntouch "$HYDRA_TEST_ROOT/provider-called"\nexit 1\n');
+
+    const result = await run(f, ["update"]);
+
+    expect(result.exitCode).not.toBe(SUCCESS);
+    expect(result.output).toContain("Invalid jobHooks.dns.hosts");
+    expect(existsSync(join(f.root, "provider-called"))).toBe(false);
+    expect(readFileSync(join(directory, "bin/Runner.Listener"), "utf8")).toBe(OLD_VERSION);
+    expect(existsSync(join(directory, ".env"))).toBe(false);
   });
 
   test("profile removal preserves its failed runner and can finish on a later attempt", async () => {

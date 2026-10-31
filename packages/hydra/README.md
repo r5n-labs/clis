@@ -35,12 +35,13 @@ hydra status
 | Start or stop runners | `hydra start [profile] [ids...]` / `hydra stop [profile] [ids...]` |
 | Inspect local runner state | `hydra status` |
 | Tail the latest job log | `hydra logs [id]` |
+| Check DNS and each runner's job hooks | `hydra doctor` |
 | Preview disk cleanup | `hydra cleanup --dry-run` |
-| Update shared runner binaries | `hydra update` |
+| Update runner binaries and job hooks | `hydra update` |
 | Deregister and remove runners | `hydra remove [profile] [ids...]` |
 | Manage fleet profiles | `hydra profile` |
 
-Runners are background processes; start them again after a reboot. Cleanup preserves job workspaces by default, and automatic runner updates are disabled in favour of `hydra update`.
+Runners are background processes; start them again after a reboot. Cleanup preserves job workspaces by default, and automatic runner updates are disabled in favour of `hydra update`. Every job first waits for DNS to resolve the GitHub hosts, so a brief resolver outage delays the job instead of failing its checkout. New profiles also remove each job's workspace when it finishes; runners still share one user, so keep them to private repositories you trust.
 
 See the [command and configuration reference](https://github.com/r5n-labs/clis/blob/develop/packages/hydra/docs/reference.md) for flags, profiles, cleanup policy and storage details.
 
