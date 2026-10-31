@@ -14,7 +14,7 @@ Bun + TypeScript monorepo of zero-dependency, single-file CLIs built on one priv
 | Run all tests (sequential) | `bun run test` |
 | Run one test file | `bun test packages/sisyphus/tests/domain/semver.test.ts` |
 | Run tests by name | `bun test -t "pattern"` |
-| Lint workflows | `actionlint` (config in `.github/actionlint.yaml`) |
+| Lint workflows | `actionlint` |
 | Clean and reinstall | `bun clean` |
 | Run a CLI from source | `bun sis <command>` / `bun hydra <command>` / `bun atlas <command>` / `bun argus <command>` |
 | Debug a CLI | `bun sis:dbg <command>` (also `hydra:dbg`, `atlas:dbg`) |
@@ -53,9 +53,9 @@ Tests live in `packages/<name>/tests/` for core, sisyphus, hydra and argus, colo
 | Where | Value |
 |-------|-------|
 | `package.json` `packageManager` | `bun@1.4.2` |
-| `.github/workflows/ci.yml` `BUN_VERSION` | `1.4.2` |
+| `.github/workflows/ci.yml` and `release.yml` `BUN_VERSION` | `1.4.2` |
 | `@types/bun` | `1.4.2` |
-| Release workflow | the self-hosted runner's own bun; `npm@11` bootstrapped into `$RUNNER_TEMP` |
+| Release workflow | `npm@11` bootstrapped into `$RUNNER_TEMP` |
 | Root devDependencies | exact pins (Biome, @clack/prompts, lefthook, TypeScript 7) |
 
 Sisyphus and tools parse both the npm 11 and npm 12 output shapes of `npm pack --json` (array vs object keyed by name) and `npm view <name@version> --json` (object vs one-element array). Keep that in mind when touching `services/release/npm-*.ts` or `tools/scripts/package-artifact.ts`.
@@ -141,7 +141,7 @@ Argus extracts GDScript, TypeScript/TSX, Godot resources and gettext entries thr
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, test, build, integration (built CLI smoke) and a release check on the self-hosted `r5n-m2-ultra` runner. `tools/github/setup` installs Bun beneath each job's `runner.temp` to avoid shared executable writes. Pull requests check out `github.head_ref`. `actionlint` knows the runner label through `.github/actionlint.yaml`.
+`.github/workflows/ci.yml` runs lint, type-check, test, build, integration (built CLI smoke) and a release check on GitHub-hosted `macos-latest` runners; the release workflow runs there too. This repository is public, so it stays off the organisation's self-hosted fleet, which serves private repositories only. `tools/github/setup` installs Bun beneath each job's `runner.temp`. Pull requests check out `github.head_ref`.
 
 ## Releases
 
@@ -149,7 +149,7 @@ Sisyphus releases this repo itself:
 
 - Conventional commits become stones: `bun sis version --fromCommits -y` (stones live in `.sisyphus/stones/`; `bun sis check --json` lists them).
 - Pushing pending stones to `develop` triggers `.github/workflows/release.yml`: it rolls with `bun sis roll --json --yes` (or `--resume --json` when `.git/sisyphus/release/active.json` exists), prints the JSON report, exposes `published` and `publishedPackages` as job outputs and exits with the roll's status. The workflow skips its own `release(🎉):` commits.
-- npm auth is trusted publishing (OIDC): `id-token: write`, npm 11 bootstrapped in the workflow, `NPM_CONFIG_PROVENANCE=false` because the self-hosted runner cannot sign provenance.
+- npm auth is trusted publishing (OIDC): `id-token: write`, npm 11 bootstrapped in the workflow, `NPM_CONFIG_PROVENANCE=false`: provenance stayed off while releases ran on the self-hosted runner, which cannot sign it; GitHub-hosted runners can, so it can be turned on once each published package's `repository` field matches this repository.
 - `private: true` packages (core, tools) get version bumps and tags but are never published.
 - `.sisyphus/config.json` declares the release build (`bun run build`, outputs `packages/*/dist/**`); undeclared gitignored files block `roll --npm` and `package:dryRun`, so run those from a pristine `git worktree add` when the checkout carries `dist/`, `.DS_Store` or `CLAUDE.md`.
 - Manual per-package publishing goes through `package:publish` / `package:dryRun`, which use `tools/scripts/publish-package.ts` to resolve `workspace:` and `catalog:` protocols, pack an immutable artifact and restore `package.json` even on failure. The pure manifest logic is in `tools/scripts/publish-manifest.ts` (tested).

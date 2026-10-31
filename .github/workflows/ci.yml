@@ -12,7 +12,7 @@ env:
 jobs:
   lint:
     name: Lint
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -36,7 +36,7 @@ jobs:
 
   typecheck:
     name: Type Check
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -60,7 +60,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -84,7 +84,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -122,7 +122,7 @@ jobs:
   integration:
     name: Integration Tests
     needs: build
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -168,7 +168,7 @@ jobs:
   release-check:
     name: Release Check
     if: github.event_name == 'pull_request'
-    runs-on: r5n-m2-ultra
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
