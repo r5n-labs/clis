@@ -1,5 +1,80 @@
 # Changelog
 
+## 2026-10-31 - @r5n/hydra@0.12.0
+
+**Packages**
+- ✨ `@r5n/hydra` 0.11.3 → 0.12.0
+
+### 🪨 Features
+**Packages:** `@r5n/hydra`
+
+<details>
+<summary>Commits (3)</summary>
+
+- [`19a39f8`](https://github.com/r5n-labs/clis/commit/19a39f8) feat(hydra): add doctor command for DNS and job hooks
+  <details>
+  <summary>Details</summary>
+
+  Rolling the job hooks out across a fleet needs a quick way to see whether
+  DNS works on the host and whether every runner has loaded the hooks.
+  hydra doctor prints the DNS servers in use, times a lookup of each
+  DNS-wait host with the command the hook uses, and lists each runner's
+  hooks as configured, missing, outdated, off or set to another script. It
+  marks running runners whose .env changed after they started, because the
+  runner reads .env only at startup.
+  
+  Runner status now carries the start time from the pid file so doctor can
+  make that comparison.
+  </details>
+- [`70e3277`](https://github.com/r5n-labs/clis/commit/70e3277) feat(hydra): clean the job workspace after every job
+  <details>
+  <summary>Details</summary>
+
+  Runners are reused between jobs and only stopped runners had their _work
+  directory cleared, so every job inherited the previous job's checkouts and
+  temporary files. Install a job-completed hook that removes the finished
+  job's pipeline directory and the contents of _temp, and keeps the runner's
+  own state and, unless keepToolCache is off, the tool cache.
+  
+  The script acts only on paths that resolve physically inside its own
+  runner's _work directory. It refuses unset, relative and runner-owned
+  workspaces, symlinks that leave _work, other runners' directories and a
+  symlinked _work or _temp, and it leaves the file-command files the runner
+  still reads after the hook. It always exits 0 and reports what it could
+  not remove as warnings, so a cleanup problem never fails a finished job.
+  
+  New profiles get the hook from hydra init; profiles without the setting
+  keep it off until enabled, so upgrading does not start deleting existing
+  workspaces. The reference documents the residual risk of runners that
+  share one user without VM isolation.
+  </details>
+- [`b4b52cc`](https://github.com/r5n-labs/clis/commit/b4b52cc) feat(hydra): wait for DNS before every job
+  <details>
+  <summary>Details</summary>
+
+  The runner host's resolver refused new lookups for over a minute at a
+  time, and jobs that started during an outage failed at checkout. Install a
+  job-started hook that waits for the GitHub hosts to resolve, warns how
+  long it waited, and fails the job only when DNS has not recovered within
+  the timeout.
+  
+  The hook script lives in each runner's hydra-hooks directory and the
+  runner's .env points at it. hydra create writes both after registration
+  and hydra update rewrites them on every runner, including runners already
+  on the latest version, so existing fleets pick the hook up. The .env merge
+  replaces lines in place, keeps every other line, and removes only Hydra's
+  own line when the hook is disabled. A disabled hook becomes a no-op
+  script rather than disappearing, because a runner still running with the
+  old .env would otherwise fail every job. Update reports the restart a
+  running runner needs instead of interrupting its job.
+  
+  Profiles gain a validated jobHooks.dns section (enabled, hosts,
+  timeoutSeconds); hydra init writes the defaults and profiles without the
+  section use them.
+  </details>
+
+</details>
+
 ## 2026-10-05 - @r5n/argus@0.3.4, @r5n/atlas@0.6.4, @r5n/cli-core@0.5.1, @r5n/hydra@0.11.3, @r5n/sisyphus@0.13.1, @r5n/tools@0.3.1
 
 **Packages**
