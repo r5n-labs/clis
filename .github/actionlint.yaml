@@ -1,3 +1,0 @@
-self-hosted-runner:
-  labels:
-    - r5n-m2-ultra
