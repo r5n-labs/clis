@@ -2,7 +2,14 @@ import type { JobHookSync } from "./job-hooks";
 
 export type RunnerStatus = "running" | "stopped" | "registered" | "unknown";
 
-export type RunnerInfo = { id: string; name: string; directory: string; status: RunnerStatus; pid?: number };
+export type RunnerInfo = {
+  id: string;
+  name: string;
+  directory: string;
+  status: RunnerStatus;
+  pid?: number;
+  startedAt?: Date;
+};
 
 export type DownloadResult = { version: string; path: string };
 

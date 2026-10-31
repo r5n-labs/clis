@@ -35,6 +35,10 @@
 - `-l, --list` list available log files with timestamps and sizes
 - `-o, --open` open the log in `$EDITOR` (falls back to `open` on macOS)
 
+### doctor
+
+`hydra doctor` checks what the [job hooks](#job-hooks) depend on, without changing anything. It prints the DNS servers the host uses (`scutil --dns`, or `/etc/resolv.conf` on Linux), then for each profile times a lookup of every DNS-wait host with the same command the hook uses, and lists each runner's hooks as `configured`, `missing` or `outdated` (run `hydra update`), `off`, or `set to another script`. A running runner whose `.env` changed after it started is marked `restart`, because the runner has not loaded the change yet.
+
 ### cleanup
 
 `hydra cleanup` frees disk space. By default it prunes `_diag` log files older than 7 days (always keeping the newest runner and worker log per runner) and removes shared runner versions no runner's `externals` link points to (the newest installed version is always kept). `_work` holds job checkouts and caches, so it is never cleaned by default — pass `-w` explicitly. Runners that are currently running are skipped for `_work` cleanup; the [workspace cleanup hook](#workspace-cleanup) clears each job's workspace while runners keep running.

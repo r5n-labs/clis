@@ -215,7 +215,9 @@ export class GitHubRunnerProvider implements RunnerProvider {
     if (isRunning) status = "running";
     else if (existsSync(join(runnerDir, ".runner"))) status = "registered";
 
-    return { directory: runnerDir, id, name, pid: isRunning ? pid : undefined, status };
+    const startedAt = isRunning ? await this.readStartTime(runnerDir) : undefined;
+
+    return { directory: runnerDir, id, name, pid: isRunning ? pid : undefined, startedAt, status };
   }
 
   private async ensureDownloaded(): Promise<string> {
@@ -363,6 +365,14 @@ export class GitHubRunnerProvider implements RunnerProvider {
       return Number.isSafeInteger(pid) && pid > FIRST_PROCESS_ID ? pid : null;
     } catch {
       return null;
+    }
+  }
+
+  private async readStartTime(runnerDir: string): Promise<Date | undefined> {
+    try {
+      return (await stat(this.pidFilePath(runnerDir))).mtime;
+    } catch {
+      return undefined;
     }
   }
 

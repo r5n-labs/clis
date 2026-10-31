@@ -35,6 +35,7 @@ hydra status
 | Start or stop runners | `hydra start [profile] [ids...]` / `hydra stop [profile] [ids...]` |
 | Inspect local runner state | `hydra status` |
 | Tail the latest job log | `hydra logs [id]` |
+| Check DNS and each runner's job hooks | `hydra doctor` |
 | Preview disk cleanup | `hydra cleanup --dry-run` |
 | Update runner binaries and job hooks | `hydra update` |
 | Deregister and remove runners | `hydra remove [profile] [ids...]` |
